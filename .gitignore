@@ -1,0 +1,34 @@
+# Local brainstorming previews
+.superpowers/
+
+# Original installers and extracted binary baseline
+*.dmg
+source-original/app-asar/
+source-original/app-asar-unpacked/
+source-original/app-bundle/
+
+# Dependencies and build outputs
+node_modules/
+dist/
+release/
+out/
+*.app/
+
+# Runtime data and large AI models
+data/
+models/
+*.gguf
+*.ggml
+*.part
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+license-generator/private/
+
+# Logs and local OS files
+*.log
+.DS_Store

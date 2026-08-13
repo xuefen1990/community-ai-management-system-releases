@@ -1,0 +1,15 @@
+type	mode	size	sha256	path	link_target
+file	644	219	a05a5eaa184172167d607e3e94062326fe30c9e63039115588e258d7a24ab061	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/_nlcBuildMetadata.json	
+file	644	730112	66ba4ea4be6cb41d86c4c0e23f3a1fe5274ac95c3968e3ec59f6350ed39bda7d	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-base.dylib	
+file	644	58832	41489ed3b6ce4c77c1005596701bcefe5ae16fa11661f43fa27dc19e810f7ea1	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-blas.so	
+file	644	934728	35854192f08172e631d6b469a69705ca70133687cd5db4efc593eaeacd1a08f1	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-cpu-apple_m1.so	
+file	644	951240	0fccbfb73a266744711e439fac595846c93b969c9e45d197b9658a9cccf478d7	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-cpu-apple_m2_m3.so	
+file	644	951240	40ac65911eb5b33ed18d3a1db465a484dcb368815b74b5c9546bbff0bfcd6631	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-cpu-apple_m4.so	
+file	644	867424	02974085a46e97b0472f397413712c5a91029d0123d2c3a2e089921fdaf4f7ff	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml-metal.so	
+file	644	76792	8ae225e688d926cfd23505b8f7d35cab680fe1d10a414ab3a946c90e75f25dfb	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libggml.metal.b10068.dylib	
+file	644	4980888	a96aacc40f441292cfa3f7410e941bd8bfe11319315da50416d2520126a6cd11	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libllama-common.dylib	
+file	644	2660392	fb7890fdba30d474f063749f9e2a2dd8f1d298fef08cd66106356063f5142614	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/libllama.metal.b10068.dylib	
+file	644	529008	a6c773be6050823293ae46f097e2c72c97452db64ff92a7fde58d6ffb9b96acd	node_modules/@node-llama-cpp/mac-arm64-metal/bins/mac-arm64-metal/llama-addon.node	
+file	644	422	032284f3124f6952b49b78f2f0098fba0102fc276780028e6859a45f560f53cb	node_modules/@node-llama-cpp/mac-arm64-metal/dist/index.js	
+file	644	1065	c34e5ffca98ede216da5157cff6df2ee6762a48d3391797edb6593df24849501	node_modules/@node-llama-cpp/mac-arm64-metal/LICENSE	
+file	644	781	6799aaeef256689ea7f306dd1eeffdd171009c9929be7f04a52244be1ffc1081	node_modules/@node-llama-cpp/mac-arm64-metal/package.json	

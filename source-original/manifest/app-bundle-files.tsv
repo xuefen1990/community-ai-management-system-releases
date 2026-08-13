@@ -1,0 +1,3 @@
+type	mode	size	sha256	path	link_target
+file	644	854492	af30f18fe4b5331cb610988717030f7bb89b4aa40f4baa4ae7474f8abd4e7a8c	icon.icns	
+file	644	2986	cca2276ea54de3897298d95a9ab7fb695bc6ca8b1e4f75f046969b844c196774	Info.plist	
