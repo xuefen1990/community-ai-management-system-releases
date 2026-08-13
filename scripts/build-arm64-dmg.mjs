@@ -49,6 +49,7 @@ await requirePath(templateApp, '原版 ARM64 应用模板');
 await requirePath(path.join(projectRoot, 'source-original', 'app-asar', 'node_modules'), '已提取的运行依赖');
 
 run(process.execPath, [path.join(projectRoot, 'scripts', 'prepare-local-runtime.mjs'), templateApp, appProject]);
+run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', runtimeApp]);
 

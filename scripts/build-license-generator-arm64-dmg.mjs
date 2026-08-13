@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from 'node:crypto';
-import { chmod, cp, lstat, mkdir, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -51,19 +51,37 @@ await cp(path.join(generatorRoot, 'src'), path.join(runtimeSource, 'src'), { rec
 await cp(path.join(generatorRoot, 'private', 'license-private-key.pem'), path.join(resourcesDirectory, 'license-private-key.pem'));
 await cp(path.join(projectRoot, 'app', 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
 
-const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
-const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI授权工具');
-await rename(originalExecutable, runtimeExecutable);
+const frameworksDirectory = path.join(runtimeApp, 'Contents', 'Frameworks');
+const helperVariants = [
+  { suffix: '', identifierSuffix: '' },
+  { suffix: ' (GPU)', identifierSuffix: '.GPU' },
+  { suffix: ' (Plugin)', identifierSuffix: '.Plugin' },
+  { suffix: ' (Renderer)', identifierSuffix: '.Renderer' },
+];
+for (const { suffix, identifierSuffix } of helperVariants) {
+  const helperName = `村务通管理系统 Helper${suffix}`;
+  const helperInfoPlistPath = path.join(frameworksDirectory, `${helperName}.app`, 'Contents', 'Info.plist');
+  let helperInfoPlist = await readFile(helperInfoPlistPath, 'utf8');
+  helperInfoPlist = helperInfoPlist.replace(
+    /<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u,
+    `<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.license-generator.helper${identifierSuffix}</string>`,
+  );
+  await writeFile(helperInfoPlistPath, helperInfoPlist, 'utf8');
+}
+
 const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
 let infoPlist = await readFile(infoPlistPath, 'utf8');
 infoPlist = infoPlist
+  .replace(/\s*<key>ElectronAsarIntegrity<\/key>\s*<dict>\s*<key>Resources\/app\.asar<\/key>\s*<dict>[\s\S]*?<\/dict>\s*<\/dict>/u, '')
   .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI授权工具</string>')
-  .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI授权工具</string>')
+  .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>村务通管理系统</string>')
   .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.license-generator</string>')
   .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI授权工具</string>')
   .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI授权工具</string>');
 await writeFile(infoPlistPath, infoPlist, 'utf8');
 
+await makeTreeWritable(runtimeApp);
+run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', runtimeApp]);
 

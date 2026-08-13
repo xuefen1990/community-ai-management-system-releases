@@ -39,7 +39,7 @@ if (!templateAppArgument || !projectAppArgument) {
   const runtimeSource = path.join(resourcesDirectory, 'app');
   const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
   const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
-  const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI管理系统');
+  const runtimeExecutable = originalExecutable;
 
   await makeTreeWritable(runtimeRoot);
   await rm(runtimeRoot, { recursive: true, force: true });
@@ -59,16 +59,36 @@ if (!templateAppArgument || !projectAppArgument) {
     preserveTimestamps: true,
   });
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
-  await rename(originalExecutable, runtimeExecutable);
+
+  const frameworksDirectory = path.join(runtimeApp, 'Contents', 'Frameworks');
+  const helperVariants = [
+    { suffix: '', identifierSuffix: '' },
+    { suffix: ' (GPU)', identifierSuffix: '.GPU' },
+    { suffix: ' (Plugin)', identifierSuffix: '.Plugin' },
+    { suffix: ' (Renderer)', identifierSuffix: '.Renderer' },
+  ];
+  for (const { suffix, identifierSuffix } of helperVariants) {
+    const originalHelperName = `村务通管理系统 Helper${suffix}`;
+    const helperApp = path.join(frameworksDirectory, `${originalHelperName}.app`);
+    const helperInfoPlistPath = path.join(helperApp, 'Contents', 'Info.plist');
+    let helperInfoPlist = await readFile(helperInfoPlistPath, 'utf8');
+    helperInfoPlist = helperInfoPlist.replace(
+      /<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u,
+      `<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management.helper${identifierSuffix}</string>`,
+    );
+    await writeFile(helperInfoPlistPath, helperInfoPlist, 'utf8');
+  }
 
   let infoPlist = await readFile(infoPlistPath, 'utf8');
   infoPlist = infoPlist
+    .replace(/\s*<key>ElectronAsarIntegrity<\/key>\s*<dict>\s*<key>Resources\/app\.asar<\/key>\s*<dict>[\s\S]*?<\/dict>\s*<\/dict>/u, '')
     .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI管理系统</string>')
-    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>村务通管理系统</string>')
     .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management</string>')
     .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>')
     .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI管理系统</string>');
   await writeFile(infoPlistPath, infoPlist, 'utf8');
+  await makeTreeWritable(runtimeApp);
 
   console.log(JSON.stringify({
     runtimeApp,
