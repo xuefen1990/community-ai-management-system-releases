@@ -19,6 +19,9 @@ function registerCompatibilityHandlers({
   onlineClient,
   localAiRuntime,
   aiRouter,
+  documentDraftingService,
+  writingProfileService,
+  documentExportService,
 }) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
@@ -86,6 +89,49 @@ function registerCompatibilityHandlers({
   if (aiRouter) {
     handle(INVOKE_CHANNELS.chatWithAi, async (_event, value) => aiRouter.chat(value));
   }
+
+  function documentResult(callback) {
+    return async (...argumentsList) => {
+      try {
+        return { ok: true, data: await callback(...argumentsList) };
+      } catch (error) {
+        return { ok: false, error: error?.message || '公文操作失败' };
+      }
+    };
+  }
+
+  const requireDraftingService = () => {
+    if (!documentDraftingService) throw new Error('公文拟写服务尚未配置');
+    return documentDraftingService;
+  };
+  const requireProfileService = () => {
+    if (!writingProfileService) throw new Error('写作偏好服务尚未配置');
+    return writingProfileService;
+  };
+  const requireExportService = () => {
+    if (!documentExportService) throw new Error('公文导出服务尚未配置');
+    return documentExportService;
+  };
+
+  handle(INVOKE_CHANNELS.listDocumentTemplates, documentResult(async (_event, value = {}) => requireDraftingService().listTemplates(value.documentKind)));
+  handle(INVOKE_CHANNELS.listDraftDocuments, documentResult(async (_event, value = {}) => requireDraftingService().listDocuments(value)));
+  handle(INVOKE_CHANNELS.getDraftDocument, documentResult(async (_event, value) => requireDraftingService().getDocument(value?.documentId)));
+  handle(INVOKE_CHANNELS.createDraftDocument, documentResult(async (_event, value) => requireDraftingService().createDraft(value || {})));
+  handle(INVOKE_CHANNELS.saveDraftDocument, documentResult(async (_event, value) => requireDraftingService().saveDraft(value || {})));
+  handle(INVOKE_CHANNELS.saveDraftVersion, documentResult(async (_event, value) => requireDraftingService().saveVersion(value || {})));
+  handle(INVOKE_CHANNELS.restoreDraftVersion, documentResult(async (_event, value) => requireDraftingService().restoreVersion(value || {})));
+  handle(INVOKE_CHANNELS.finalizeDraftDocument, documentResult(async (_event, value) => requireDraftingService().finalize(value?.documentId)));
+  handle(INVOKE_CHANNELS.reopenDraftDocument, documentResult(async (_event, value) => requireDraftingService().reopen(value?.documentId)));
+  handle(INVOKE_CHANNELS.archiveDraftDocument, documentResult(async (_event, value) => requireDraftingService().archive(value?.documentId)));
+  handle(INVOKE_CHANNELS.recommendDraftReferences, documentResult(async (_event, value) => requireDraftingService().recommend(value || {})));
+  handle(INVOKE_CHANNELS.listDraftBusinessSources, documentResult(async (_event, value) => requireDraftingService().listBusinessSources(value || {})));
+  handle(INVOKE_CHANNELS.generateDraftDocument, documentResult(async (_event, value) => requireDraftingService().generate(value || {})));
+  handle(INVOKE_CHANNELS.createDraftFromHistory, documentResult(async (_event, value) => requireDraftingService().createFromHistory(value || {})));
+  handle(INVOKE_CHANNELS.getWritingProfile, documentResult(async () => requireProfileService().get()));
+  handle(INVOKE_CHANNELS.saveWritingProfile, documentResult(async (_event, value) => requireProfileService().save(value || {})));
+  handle(INVOKE_CHANNELS.resetWritingProfile, documentResult(async () => requireProfileService().reset()));
+  handle(INVOKE_CHANNELS.exportDraftDocument, documentResult(async (_event, value) => requireExportService().export(value || {})));
+  handle(INVOKE_CHANNELS.printDraftDocument, documentResult(async (_event, value) => requireExportService().print(value || {})));
 
   const successChannels = [
     INVOKE_CHANNELS.writePersonnelImport,

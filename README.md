@@ -18,5 +18,13 @@
 - 原始解包基线生成后保持只读。
 - 所有开发和品牌替换都在 `app/` 中进行。
 
-详细范围见 [设计文档](docs/superpowers/specs/2026-08-13-community-ai-management-system-design.md)，执行顺序见 [实施计划](docs/superpowers/plans/2026-08-13-community-ai-management-system-implementation.md)。
+## 主要新增功能
 
+- 公文拟写：支持报告、合同、历史记录、版本管理和跨类型引用。
+- AI 可结合用户填写字段、主动勾选的历史公文和业务记录生成初稿。
+- 每位管理员拥有独立、可查看和可重置的写作偏好画像。
+- 定稿支持复制、打印以及 Word、PDF 导出。
+
+公文拟写操作见 [公文拟写使用说明](docs/features/document-drafting.md)。
+
+详细范围见 [设计文档](docs/superpowers/specs/2026-08-13-community-ai-management-system-design.md)，执行顺序见 [实施计划](docs/superpowers/plans/2026-08-13-community-ai-management-system-implementation.md)。

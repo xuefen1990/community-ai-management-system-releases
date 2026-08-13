@@ -215,3 +215,11 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);
   else initialize();
 }());
+
+// Load the readable public-document workspace separately from the legacy renderer bundle.
+if (!document.querySelector('script[data-document-drafting-ui]')) {
+  const documentDraftingScript = document.createElement('script');
+  documentDraftingScript.src = 'js/document-drafting-ui.js?v=1.0.0';
+  documentDraftingScript.dataset.documentDraftingUi = 'true';
+  document.head.appendChild(documentDraftingScript);
+}

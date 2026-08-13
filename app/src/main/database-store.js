@@ -21,8 +21,12 @@ function normalizeDatabase(value) {
   const normalized = {
     ...defaults,
     ...value,
+    version: defaults.version,
     settings: { ...defaults.settings, ...(value.settings || {}) },
   };
+  for (const key of Object.keys(defaults)) {
+    if (Array.isArray(defaults[key]) && !Array.isArray(value[key])) normalized[key] = [];
+  }
   if (!Array.isArray(value.landParcel)) {
     normalized.landParcel = Array.isArray(value.lands) ? value.lands : [];
   }
@@ -76,17 +80,35 @@ class JsonDatabaseStore {
   async write(value) {
     validateDatabase(value);
     const snapshot = clone(value);
-    this.writeQueue = this.writeQueue.then(async () => {
-      await fs.mkdir(this.backupsDirectory, { recursive: true });
-      const temporaryPath = `${this.databasePath}.tmp-${process.pid}`;
-      await fs.writeFile(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`, {
-        encoding: 'utf8',
-        mode: 0o600,
-      });
-      await fs.rename(temporaryPath, this.databasePath);
-    });
+    this.writeQueue = this.writeQueue.catch(() => {}).then(() => this.writeSnapshot(snapshot));
     await this.writeQueue;
     return { ok: true };
+  }
+
+  async writeSnapshot(snapshot) {
+    await fs.mkdir(this.backupsDirectory, { recursive: true });
+    const temporaryPath = `${this.databasePath}.tmp-${process.pid}`;
+    await fs.writeFile(temporaryPath, `${JSON.stringify(snapshot, null, 2)}\n`, {
+      encoding: 'utf8',
+      mode: 0o600,
+    });
+    await fs.rename(temporaryPath, this.databasePath);
+  }
+
+  async update(mutator) {
+    if (typeof mutator !== 'function') throw new TypeError('mutator must be a function');
+    await this.initialize();
+    let outcome;
+    this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
+      const current = normalizeDatabase(JSON.parse(await fs.readFile(this.databasePath, 'utf8')));
+      const draft = clone(current);
+      const result = await mutator(draft);
+      const normalized = normalizeDatabase(draft);
+      await this.writeSnapshot(normalized);
+      outcome = { data: clone(normalized), result: clone(result) };
+    });
+    await this.writeQueue;
+    return outcome;
   }
 
   async createBackup() {

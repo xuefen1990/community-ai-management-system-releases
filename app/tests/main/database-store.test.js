@@ -24,7 +24,12 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.equal(database.settings.appSubtitle, '社区AI管理系统');
   assert.deepEqual(database.personnel, []);
   assert.deepEqual(database.landParcel, []);
-  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 1);
+  assert.deepEqual(database.documentDrafts, []);
+  assert.deepEqual(database.documentVersions, []);
+  assert.deepEqual(database.documentReferences, []);
+  assert.deepEqual(database.documentTemplates, []);
+  assert.deepEqual(database.writingProfiles, []);
+  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 2);
 });
 
 test('older empty databases are normalized for the compatibility renderer', async (t) => {
@@ -35,6 +40,29 @@ test('older empty databases are normalized for the compatibility renderer', asyn
   const database = await store.read();
   assert.deepEqual(database.landParcel, [{ id: 'land-1' }]);
   assert.deepEqual(database.operationLogs, []);
+  assert.equal(database.version, 2);
+  assert.deepEqual(database.documentDrafts, []);
+  assert.deepEqual(database.writingProfiles, []);
+});
+
+test('atomic updates serialize concurrent domain mutations', async (t) => {
+  const store = await makeStore(t);
+  await store.read();
+
+  await Promise.all([
+    store.update(async (database) => {
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      database.documentDrafts.push({ id: 'draft-1' });
+      return 'first';
+    }),
+    store.update((database) => {
+      database.documentDrafts.push({ id: 'draft-2' });
+      return 'second';
+    }),
+  ]);
+
+  const persisted = await store.read();
+  assert.deepEqual(persisted.documentDrafts.map((draft) => draft.id), ['draft-1', 'draft-2']);
 });
 
 test('writes are persisted and returned as defensive copies', async (t) => {

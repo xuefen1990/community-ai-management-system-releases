@@ -14,6 +14,10 @@ const { AiSettingsStore } = require('./ai-settings-store');
 const { OpenAiCompatibleClient } = require('./openai-compatible-client');
 const { LocalAiRuntime } = require('./local-ai-runtime');
 const { AiRouter } = require('./ai-router');
+const { JsonDatabaseStore } = require('./database-store');
+const { DocumentDraftingService } = require('./document-drafting-service');
+const { WritingProfileService } = require('./writing-profile-service');
+const { DocumentExportService } = require('./document-export-service');
 const { createWindowOptions } = require('./window-config');
 const { SEND_CHANNELS } = require('../shared/ipc-contract');
 
@@ -46,6 +50,11 @@ app.whenReady().then(() => {
   const onlineClient = new OpenAiCompatibleClient();
   const localAiRuntime = new LocalAiRuntime();
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient });
+  const databaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
+  const getCurrentAccount = async () => (await authService.getStatus()).account;
+  const documentDraftingService = new DocumentDraftingService({ databaseStore, getCurrentAccount, aiRouter });
+  const writingProfileService = new WritingProfileService({ databaseStore, getCurrentAccount });
+  const documentExportService = new DocumentExportService({ documentDraftingService, dialog, BrowserWindow });
   registerCompatibilityHandlers({
     app,
     ipcMain,
@@ -58,6 +67,10 @@ app.whenReady().then(() => {
     onlineClient,
     localAiRuntime,
     aiRouter,
+    databaseStore,
+    documentDraftingService,
+    writingProfileService,
+    documentExportService,
   });
   ipcMain.on(SEND_CHANNELS.startWindowDrag, () => {});
   createMainWindow();
