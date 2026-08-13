@@ -32,6 +32,7 @@ models/
 !.env.example
 *.key
 *.pem
+!app/src/main/license-public-key.pem
 license-generator/private/
 
 # Logs and local OS files

@@ -38,6 +38,11 @@ const INVOKE_CHANNELS = Object.freeze({
   openModelsDir: 'open-models-dir',
   appendAiLog: 'append-ai-log',
   exportAiLog: 'export-ai-log',
+  registerLocalAccount: 'register-local-account',
+  loginLocalAccount: 'login-local-account',
+  logoutLocalAccount: 'logout-local-account',
+  getLocalAuthStatus: 'get-local-auth-status',
+  activateOfflineLicense: 'activate-offline-license',
 });
 
 const SEND_CHANNELS = Object.freeze({
@@ -51,4 +56,3 @@ const EVENT_CHANNELS = Object.freeze({
 });
 
 module.exports = { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS };
-

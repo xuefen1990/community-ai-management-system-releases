@@ -1,13 +1,12 @@
 'use strict';
 
-const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
 const { JsonDatabaseStore } = require('./database-store');
 
-function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore }) {
+function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore, authService, machineId }) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
 
@@ -28,9 +27,7 @@ function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore }) {
   handle(INVOKE_CHANNELS.listDbBackups, async () => store.listBackups());
   handle(INVOKE_CHANNELS.restoreDbBackup, async (_event, value) => store.restoreBackup(value));
   handle(INVOKE_CHANNELS.getDbDir, async () => store.dataDirectory);
-  handle(INVOKE_CHANNELS.getMachineId, async () => crypto.createHash('sha256')
-    .update(`${app.getPath('userData')}|${process.arch}`)
-    .digest('hex'));
+  handle(INVOKE_CHANNELS.getMachineId, async () => machineId);
   handle(INVOKE_CHANNELS.isDev, async () => !app.isPackaged);
   handle(INVOKE_CHANNELS.getVersion, async () => app.getVersion());
   handle(INVOKE_CHANNELS.getFilesMetadata, async () => []);
@@ -41,6 +38,13 @@ function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore }) {
   handle(INVOKE_CHANNELS.getMobileUploadInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.scanLocalModels, async () => []);
   handle(INVOKE_CHANNELS.getInternalAiServerStatus, async () => ({ running: false }));
+  if (authService) {
+    handle(INVOKE_CHANNELS.registerLocalAccount, async (_event, value) => authService.register(value));
+    handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
+    handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
+    handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
+    handle(INVOKE_CHANNELS.activateOfflineLicense, async (_event, code) => authService.activate(code));
+  }
 
   const successChannels = [
     INVOKE_CHANNELS.writePersonnelImport,

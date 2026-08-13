@@ -57,7 +57,11 @@ const api = {
   openModelsDir: () => invoke('openModelsDir'),
   appendAiLog: (value) => invoke('appendAiLog', value),
   exportAiLog: (value) => invoke('exportAiLog', value),
+  registerLocalAccount: (value) => invoke('registerLocalAccount', value),
+  loginLocalAccount: (value) => invoke('loginLocalAccount', value),
+  logoutLocalAccount: () => invoke('logoutLocalAccount'),
+  getLocalAuthStatus: () => invoke('getLocalAuthStatus'),
+  activateOfflineLicense: (code) => invoke('activateOfflineLicense', code),
 };
 
 contextBridge.exposeInMainWorld('api', Object.freeze(api));
-

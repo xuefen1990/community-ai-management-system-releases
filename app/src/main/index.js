@@ -1,9 +1,14 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 
 const { registerCompatibilityHandlers } = require('./ipc-handlers');
+const { AuthStore } = require('./auth-store');
+const { LocalAuthService } = require('./local-auth-service');
+const { createMachineId } = require('./machine-id');
+const { verifyOfflineLicense } = require('./license-codec');
 const { createWindowOptions } = require('./window-config');
 const { SEND_CHANNELS } = require('../shared/ipc-contract');
 
@@ -20,7 +25,18 @@ function createMainWindow() {
 }
 
 app.whenReady().then(() => {
-  registerCompatibilityHandlers({ app, ipcMain, shell });
+  const machineId = createMachineId();
+  const publicKey = fs.readFileSync(path.join(__dirname, 'license-public-key.pem'), 'utf8');
+  const authService = new LocalAuthService({
+    store: new AuthStore({ userDataPath: app.getPath('userData') }),
+    machineId,
+    verifyActivation: (code, boundMachineId, now) => verifyOfflineLicense(code, {
+      publicKey,
+      machineId: boundMachineId,
+      now,
+    }),
+  });
+  registerCompatibilityHandlers({ app, ipcMain, shell, authService, machineId });
   ipcMain.on(SEND_CHANNELS.startWindowDrag, () => {});
   createMainWindow();
 
@@ -32,4 +48,3 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
-
