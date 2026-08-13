@@ -6,7 +6,20 @@ const path = require('node:path');
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
 const { JsonDatabaseStore } = require('./database-store');
 
-function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore, authService, machineId }) {
+function registerCompatibilityHandlers({
+  app,
+  ipcMain,
+  shell,
+  dialog,
+  databaseStore,
+  authService,
+  machineId,
+  modelCatalog,
+  aiSettingsStore,
+  onlineClient,
+  localAiRuntime,
+  aiRouter,
+}) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
 
@@ -36,14 +49,42 @@ function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore, aut
   handle(INVOKE_CHANNELS.readExcelColumns, async () => ({ columns: [], rows: [] }));
   handle(INVOKE_CHANNELS.getLanShareInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.getMobileUploadInfo, async () => ({ enabled: false, url: null }));
-  handle(INVOKE_CHANNELS.scanLocalModels, async () => []);
-  handle(INVOKE_CHANNELS.getInternalAiServerStatus, async () => ({ running: false }));
+  handle(INVOKE_CHANNELS.scanLocalModels, async () => modelCatalog ? modelCatalog.scan() : []);
+  handle(INVOKE_CHANNELS.getInternalAiServerStatus, async () => localAiRuntime
+    ? localAiRuntime.getStatus()
+    : ({ running: false }));
   if (authService) {
     handle(INVOKE_CHANNELS.registerLocalAccount, async (_event, value) => authService.register(value));
     handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
     handle(INVOKE_CHANNELS.activateOfflineLicense, async (_event, code) => authService.activate(code));
+  }
+  if (modelCatalog && dialog) {
+    handle(INVOKE_CHANNELS.importLocalModel, async () => {
+      const result = await dialog.showOpenDialog({
+        title: '导入本地 GGUF 模型',
+        properties: ['openFile'],
+        filters: [{ name: 'GGUF 模型', extensions: ['gguf'] }],
+      });
+      if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
+      return modelCatalog.importFile(result.filePaths[0]);
+    });
+  }
+  if (aiSettingsStore && onlineClient) {
+    handle(INVOKE_CHANNELS.getAiSettings, async () => aiSettingsStore.getPublicSettings());
+    handle(INVOKE_CHANNELS.saveAiSettings, async (_event, value) => aiSettingsStore.save(value));
+    handle(INVOKE_CHANNELS.testOnlineAi, async () => onlineClient.chat({
+      ...(await aiSettingsStore.getOnlineCredentials()),
+      messages: [{ role: 'user', content: '请只回复：连接成功' }],
+      temperature: 0,
+    }));
+  }
+  if (localAiRuntime) {
+    handle(INVOKE_CHANNELS.toggleInternalAiServer, async (_event, value) => localAiRuntime.toggle(value));
+  }
+  if (aiRouter) {
+    handle(INVOKE_CHANNELS.chatWithAi, async (_event, value) => aiRouter.chat(value));
   }
 
   const successChannels = [
@@ -61,7 +102,6 @@ function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore, aut
     INVOKE_CHANNELS.setLanShareAuthState,
     INVOKE_CHANNELS.writeOperationLog,
     INVOKE_CHANNELS.sendVoiceParseResult,
-    INVOKE_CHANNELS.toggleInternalAiServer,
     INVOKE_CHANNELS.appendAiLog,
     INVOKE_CHANNELS.exportAiLog,
   ];
@@ -77,7 +117,9 @@ function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore, aut
     return error ? { ok: false, error } : { ok: true };
   });
   handle(INVOKE_CHANNELS.openModelsDir, async () => {
-    const modelsDirectory = path.join(app.getPath('userData'), 'models');
+    const modelsDirectory = modelCatalog
+      ? await modelCatalog.ensureDirectory()
+      : path.join(app.getPath('userData'), 'models');
     fs.mkdirSync(modelsDirectory, { recursive: true });
     const error = await shell.openPath(modelsDirectory);
     return error ? { ok: false, error } : { ok: true };

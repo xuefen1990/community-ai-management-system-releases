@@ -43,6 +43,11 @@ const INVOKE_CHANNELS = Object.freeze({
   logoutLocalAccount: 'logout-local-account',
   getLocalAuthStatus: 'get-local-auth-status',
   activateOfflineLicense: 'activate-offline-license',
+  importLocalModel: 'import-local-model',
+  getAiSettings: 'get-ai-settings',
+  saveAiSettings: 'save-ai-settings',
+  testOnlineAi: 'test-online-ai',
+  chatWithAi: 'chat-with-ai',
 });
 
 const SEND_CHANNELS = Object.freeze({

@@ -1,0 +1,22 @@
+appId: com.community.ai.license-generator
+productName: 社区AI授权工具
+asar: true
+directories:
+  output: release
+files:
+  - src/**/*
+  - package.json
+extraResources:
+  - from: private/license-private-key.pem
+    to: license-private-key.pem
+mac:
+  category: public.app-category.utilities
+  icon: ../app/build/icon.icns
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+dmg:
+  title: 社区AI授权工具 ${version}
+  artifactName: 社区AI授权工具-${version}-${arch}.${ext}

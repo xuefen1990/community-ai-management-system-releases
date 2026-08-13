@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>社区AI授权工具</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="brand">
+      <img src="logo.png" alt="社区AI">
+      <div><h1>社区AI授权工具</h1><p>管理员专用 · 离线签名授权</p></div>
+    </header>
+    <section class="warning">⚠️ 本工具包含签名私钥，只能由授权管理员保管，禁止随客户版软件分发。</section>
+    <section class="card">
+      <label>客户/社区名称<input id="customer" placeholder="例如：幸福社区居民委员会"></label>
+      <label>客户设备码<input id="machineId" placeholder="CAI-XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX"></label>
+      <div class="plans">
+        <label><input type="radio" name="plan" value="monthly" checked><span><b>月度授权</b><small>30 天</small></span></label>
+        <label><input type="radio" name="plan" value="yearly"><span><b>年度授权</b><small>365 天</small></span></label>
+        <label><input type="radio" name="plan" value="permanent"><span><b>永久授权</b><small>无到期日</small></span></label>
+      </div>
+      <label>备注（仅写入签名内容）<input id="notes" placeholder="可填写订单号或经办人"></label>
+      <button id="generate">生成离线授权码</button>
+      <div id="error" class="error"></div>
+    </section>
+    <section id="result" class="card result hidden">
+      <div class="result-head"><div><b>授权码已生成</b><p id="summary"></p></div><button id="copy">复制授权码</button></div>
+      <textarea id="code" readonly></textarea>
+      <p class="hint">将完整授权码发送给对应设备的客户；该码在其他设备上无法使用。</p>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>

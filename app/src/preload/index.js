@@ -62,6 +62,11 @@ const api = {
   logoutLocalAccount: () => invoke('logoutLocalAccount'),
   getLocalAuthStatus: () => invoke('getLocalAuthStatus'),
   activateOfflineLicense: (code) => invoke('activateOfflineLicense', code),
+  importLocalModel: () => invoke('importLocalModel'),
+  getAiSettings: () => invoke('getAiSettings'),
+  saveAiSettings: (value) => invoke('saveAiSettings', value),
+  testOnlineAi: () => invoke('testOnlineAi'),
+  chatWithAi: (messages) => invoke('chatWithAi', { messages }),
 };
 
 contextBridge.exposeInMainWorld('api', Object.freeze(api));
