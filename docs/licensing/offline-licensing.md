@@ -26,3 +26,12 @@ node license-generator/scripts/create-signing-key.mjs
 ```
 
 脚本检测到私钥已存在时会拒绝覆盖。
+
+构建 Apple Silicon 授权工具：
+
+```sh
+cd license-generator
+npm run build:arm64
+```
+
+输出位置：`license-generator/release/社区AI授权工具-0.1.0-arm64.dmg`。该安装镜像包含签名私钥，只能由授权管理员保管。
