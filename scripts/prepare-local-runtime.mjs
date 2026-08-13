@@ -39,7 +39,7 @@ if (!templateAppArgument || !projectAppArgument) {
   const runtimeSource = path.join(resourcesDirectory, 'app');
   const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
   const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
-  const runtimeExecutable = originalExecutable;
+  const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI管理系统');
 
   await makeTreeWritable(runtimeRoot);
   await rm(runtimeRoot, { recursive: true, force: true });
@@ -59,6 +59,7 @@ if (!templateAppArgument || !projectAppArgument) {
     preserveTimestamps: true,
   });
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
+  await rename(originalExecutable, runtimeExecutable);
 
   const frameworksDirectory = path.join(runtimeApp, 'Contents', 'Frameworks');
   const helperVariants = [
@@ -69,13 +70,24 @@ if (!templateAppArgument || !projectAppArgument) {
   ];
   for (const { suffix, identifierSuffix } of helperVariants) {
     const originalHelperName = `村务通管理系统 Helper${suffix}`;
-    const helperApp = path.join(frameworksDirectory, `${originalHelperName}.app`);
-    const helperInfoPlistPath = path.join(helperApp, 'Contents', 'Info.plist');
-    let helperInfoPlist = await readFile(helperInfoPlistPath, 'utf8');
-    helperInfoPlist = helperInfoPlist.replace(
-      /<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u,
-      `<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management.helper${identifierSuffix}</string>`,
+    const runtimeHelperName = `社区AI管理系统 Helper${suffix}`;
+    const originalHelperApp = path.join(frameworksDirectory, `${originalHelperName}.app`);
+    const runtimeHelperApp = path.join(frameworksDirectory, `${runtimeHelperName}.app`);
+    await rename(originalHelperApp, runtimeHelperApp);
+
+    const helperMacOsDirectory = path.join(runtimeHelperApp, 'Contents', 'MacOS');
+    await rename(
+      path.join(helperMacOsDirectory, originalHelperName),
+      path.join(helperMacOsDirectory, runtimeHelperName),
     );
+
+    const helperInfoPlistPath = path.join(runtimeHelperApp, 'Contents', 'Info.plist');
+    let helperInfoPlist = await readFile(helperInfoPlistPath, 'utf8');
+    helperInfoPlist = helperInfoPlist
+      .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleDisplayName</key>\n\t<string>${runtimeHelperName}</string>`)
+      .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleExecutable</key>\n\t<string>${runtimeHelperName}</string>`)
+      .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management.helper${identifierSuffix}</string>`)
+      .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleName</key>\n\t<string>${runtimeHelperName}</string>`);
     await writeFile(helperInfoPlistPath, helperInfoPlist, 'utf8');
   }
 
@@ -83,7 +95,7 @@ if (!templateAppArgument || !projectAppArgument) {
   infoPlist = infoPlist
     .replace(/\s*<key>ElectronAsarIntegrity<\/key>\s*<dict>\s*<key>Resources\/app\.asar<\/key>\s*<dict>[\s\S]*?<\/dict>\s*<\/dict>/u, '')
     .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI管理系统</string>')
-    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>村务通管理系统</string>')
+    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI管理系统</string>')
     .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management</string>')
     .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>')
     .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI管理系统</string>');

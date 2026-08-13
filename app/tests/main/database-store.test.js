@@ -23,7 +23,18 @@ test('first read creates an empty isolated database on disk', async (t) => {
 
   assert.equal(database.settings.appSubtitle, '社区AI管理系统');
   assert.deepEqual(database.personnel, []);
+  assert.deepEqual(database.landParcel, []);
   assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 1);
+});
+
+test('older empty databases are normalized for the compatibility renderer', async (t) => {
+  const store = await makeStore(t);
+  await store.initialize();
+  await fs.writeFile(store.databasePath, JSON.stringify({ version: 1, lands: [{ id: 'land-1' }] }), 'utf8');
+
+  const database = await store.read();
+  assert.deepEqual(database.landParcel, [{ id: 'land-1' }]);
+  assert.deepEqual(database.operationLogs, []);
 });
 
 test('writes are persisted and returned as defensive copies', async (t) => {

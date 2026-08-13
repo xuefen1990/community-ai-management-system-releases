@@ -15,6 +15,7 @@ function createEmptyDatabase() {
     dutyRecords: [],
     finances: [],
     lands: [],
+    landParcel: [],
     certificates: [],
     documents: [],
     operationLogs: [],
@@ -22,4 +23,3 @@ function createEmptyDatabase() {
 }
 
 module.exports = { createEmptyDatabase };
-

@@ -6,6 +6,11 @@
 
   let currentStatus = null;
 
+  function applyProductBrand() {
+    const subtitle = document.getElementById('displayAppSubtitle');
+    if (subtitle && subtitle.textContent !== '社区AI管理系统') subtitle.textContent = '社区AI管理系统';
+  }
+
   function setError(kind, message = '') {
     const container = document.getElementById(`${kind}ErrorContainer`);
     const text = document.getElementById(`${kind}ErrorText`);
@@ -155,6 +160,11 @@
   }
 
   async function initialize() {
+    applyProductBrand();
+    const brandObserver = new MutationObserver(applyProductBrand);
+    const subtitle = document.getElementById('displayAppSubtitle');
+    if (subtitle) brandObserver.observe(subtitle, { childList: true, characterData: true, subtree: true });
+
     window.submitLogin = submitLogin;
     window.submitRegister = submitRegister;
     window.handleLogout = logout;

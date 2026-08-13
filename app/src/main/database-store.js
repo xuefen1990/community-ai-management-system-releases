@@ -15,6 +15,20 @@ function validateDatabase(value) {
   }
 }
 
+function normalizeDatabase(value) {
+  validateDatabase(value);
+  const defaults = createEmptyDatabase();
+  const normalized = {
+    ...defaults,
+    ...value,
+    settings: { ...defaults.settings, ...(value.settings || {}) },
+  };
+  if (!Array.isArray(value.landParcel)) {
+    normalized.landParcel = Array.isArray(value.lands) ? value.lands : [];
+  }
+  return normalized;
+}
+
 function timestampForFile(date = new Date()) {
   return date.toISOString().replaceAll(':', '-').replaceAll('.', '-');
 }
@@ -44,8 +58,7 @@ class JsonDatabaseStore {
     await this.initialize();
     try {
       const contents = await fs.readFile(this.databasePath, 'utf8');
-      const database = JSON.parse(contents);
-      validateDatabase(database);
+      const database = normalizeDatabase(JSON.parse(contents));
       return clone(database);
     } catch (error) {
       if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error;
@@ -127,4 +140,4 @@ class JsonDatabaseStore {
   }
 }
 
-module.exports = { JsonDatabaseStore, timestampForFile, validateDatabase };
+module.exports = { JsonDatabaseStore, normalizeDatabase, timestampForFile, validateDatabase };
