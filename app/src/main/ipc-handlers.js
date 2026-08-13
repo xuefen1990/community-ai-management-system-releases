@@ -5,10 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
-const { createEmptyDatabase } = require('./empty-database');
+const { JsonDatabaseStore } = require('./database-store');
 
-function registerCompatibilityHandlers({ app, ipcMain, shell }) {
-  let database = createEmptyDatabase();
+function registerCompatibilityHandlers({ app, ipcMain, shell, databaseStore }) {
+  const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
 
   function handle(channel, callback) {
@@ -16,21 +16,23 @@ function registerCompatibilityHandlers({ app, ipcMain, shell }) {
     handlerNames.add(channel);
   }
 
-  handle(INVOKE_CHANNELS.readDb, async () => structuredClone(database));
+  handle(INVOKE_CHANNELS.readDb, async () => store.read());
   handle(INVOKE_CHANNELS.writeDb, async (_event, value) => {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-      return { ok: false, error: '数据库内容必须是对象' };
+    try {
+      return await store.write(value);
+    } catch (error) {
+      return { ok: false, error: error.message };
     }
-    database = structuredClone(value);
-    return { ok: true };
   });
-  handle(INVOKE_CHANNELS.getDbDir, async () => path.join(app.getPath('userData'), 'data'));
+  handle(INVOKE_CHANNELS.createDbBackup, async () => store.createBackup());
+  handle(INVOKE_CHANNELS.listDbBackups, async () => store.listBackups());
+  handle(INVOKE_CHANNELS.restoreDbBackup, async (_event, value) => store.restoreBackup(value));
+  handle(INVOKE_CHANNELS.getDbDir, async () => store.dataDirectory);
   handle(INVOKE_CHANNELS.getMachineId, async () => crypto.createHash('sha256')
     .update(`${app.getPath('userData')}|${process.arch}`)
     .digest('hex'));
   handle(INVOKE_CHANNELS.isDev, async () => !app.isPackaged);
   handle(INVOKE_CHANNELS.getVersion, async () => app.getVersion());
-  handle(INVOKE_CHANNELS.listDbBackups, async () => []);
   handle(INVOKE_CHANNELS.getFilesMetadata, async () => []);
   handle(INVOKE_CHANNELS.selectFilesAndFolders, async () => []);
   handle(INVOKE_CHANNELS.selectExcelFile, async () => null);
@@ -41,8 +43,6 @@ function registerCompatibilityHandlers({ app, ipcMain, shell }) {
   handle(INVOKE_CHANNELS.getInternalAiServerStatus, async () => ({ running: false }));
 
   const successChannels = [
-    INVOKE_CHANNELS.createDbBackup,
-    INVOKE_CHANNELS.restoreDbBackup,
     INVOKE_CHANNELS.writePersonnelImport,
     INVOKE_CHANNELS.restorePersonnelImportVersion,
     INVOKE_CHANNELS.writeLandImport,

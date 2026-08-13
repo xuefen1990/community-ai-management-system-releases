@@ -38,6 +38,8 @@ if (!templateAppArgument || !projectAppArgument) {
   const preservedAsar = path.join(resourcesDirectory, 'app.asar.original');
   const runtimeSource = path.join(resourcesDirectory, 'app');
   const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
+  const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
+  const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI管理系统');
 
   await makeTreeWritable(runtimeRoot);
   await rm(runtimeRoot, { recursive: true, force: true });
@@ -51,17 +53,21 @@ if (!templateAppArgument || !projectAppArgument) {
   await mkdir(runtimeSource, { recursive: true });
   await cp(path.join(projectApp, 'package.json'), path.join(runtimeSource, 'package.json'));
   await cp(path.join(projectApp, 'src'), path.join(runtimeSource, 'src'), { recursive: true });
+  await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
+  await rename(originalExecutable, runtimeExecutable);
 
   let infoPlist = await readFile(infoPlistPath, 'utf8');
   infoPlist = infoPlist
     .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI管理系统</string>')
     .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management.dev</string>')
-    .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>');
+    .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI管理系统</string>');
   await writeFile(infoPlistPath, infoPlist, 'utf8');
 
   console.log(JSON.stringify({
     runtimeApp,
-    executable: path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统'),
+    executable: runtimeExecutable,
     preservedAsar,
     runtimeSource,
   }, null, 2));
