@@ -1,0 +1,20 @@
+appId: com.community.ai.management
+productName: 社区AI管理系统
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+mac:
+  category: public.app-category.utilities
+  identity: null
+  target:
+    - target: dmg
+      arch:
+        - arm64
+dmg:
+  title: 社区AI管理系统 ${version}
+  artifactName: 社区AI管理系统-${version}-${arch}.${ext}
+

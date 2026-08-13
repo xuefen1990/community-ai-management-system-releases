@@ -1,0 +1,54 @@
+'use strict';
+
+const INVOKE_CHANNELS = Object.freeze({
+  readDb: 'read-db',
+  writeDb: 'write-db',
+  createDbBackup: 'create-db-backup',
+  listDbBackups: 'list-db-backups',
+  restoreDbBackup: 'restore-db-backup',
+  writePersonnelImport: 'write-personnel-import',
+  restorePersonnelImportVersion: 'restore-personnel-import-version',
+  writeLandImport: 'write-land-import',
+  restoreLandImportVersion: 'restore-land-import-version',
+  archiveFile: 'archive-file',
+  deleteFile: 'move-to-trash',
+  moveToTrash: 'move-to-trash',
+  restoreFromTrash: 'restore-from-trash',
+  deletePermanently: 'delete-permanently',
+  emptyTrash: 'empty-trash',
+  getFilesMetadata: 'get-files-metadata',
+  selectFilesAndFolders: 'select-files-and-folders',
+  openPath: 'open-path',
+  readExcelColumns: 'read-excel-columns',
+  selectExcelFile: 'select-excel-file',
+  getDbDir: 'get-db-dir',
+  selectAndMigrateDataDir: 'select-and-migrate-data-dir',
+  getMachineId: 'get-machine-id',
+  isDev: 'is-dev',
+  getVersion: 'get-version',
+  getLanShareInfo: 'get-lan-share-info',
+  updateLanShareConfig: 'update-lan-share-config',
+  setLanShareAuthState: 'set-lan-share-auth-state',
+  writeOperationLog: 'write-operation-log',
+  getMobileUploadInfo: 'get-mobile-upload-info',
+  sendVoiceParseResult: 'resolve-voice-parse-result',
+  scanLocalModels: 'scan-local-models',
+  toggleInternalAiServer: 'toggle-internal-ai-server',
+  getInternalAiServerStatus: 'get-internal-ai-server-status',
+  openModelsDir: 'open-models-dir',
+  appendAiLog: 'append-ai-log',
+  exportAiLog: 'export-ai-log',
+});
+
+const SEND_CHANNELS = Object.freeze({
+  startWindowDrag: 'start-window-drag',
+});
+
+const EVENT_CHANNELS = Object.freeze({
+  onMobileFileUploaded: 'mobile-file-uploaded',
+  onMobileVoiceParseRequest: 'mobile-voice-parse-request',
+  onMobileVoiceConfirmSave: 'mobile-voice-confirm-save',
+});
+
+module.exports = { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS };
+

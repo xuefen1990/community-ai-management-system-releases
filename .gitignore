@@ -9,6 +9,7 @@ source-original/app-bundle/
 
 # Dependencies and build outputs
 node_modules/
+app/.runtime/
 dist/
 release/
 out/

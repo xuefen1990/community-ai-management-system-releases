@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>村务通无线扫描枪</title>
+  <style>
+    :root {
+      --primary: #10b981;
+      --primary-dark: #059669;
+      --primary-light: #ecfdf5;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #0f172a;
+      --text-sub: #64748b;
+      --border: #e2e8f0;
+      --danger: #ef4444;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .header {
+      text-align: center;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 14px;
+    }
+
+    .header h1 {
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .header p {
+      font-size: 13px;
+      color: var(--text-sub);
+      margin-top: 4px;
+    }
+
+    .context-badge {
+      background-color: var(--primary-light);
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    /* 模式选择按钮组：4 列布局 */
+    .pick-mode-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 10px 4px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      border: 1.5px solid var(--border);
+      background-color: #f8fafc;
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .mode-btn-camera {
+      background-color: #ecfdf5;
+      border-color: #a7f3d0;
+      color: #047857;
+    }
+
+    .mode-btn-video {
+      background-color: #fef3c7;
+      border-color: #fde68a;
+      color: #b45309;
+    }
+
+    .mode-btn-album {
+      background-color: #eff6ff;
+      border-color: #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    .mode-btn-file {
+      background-color: #f5f5f4;
+      border-color: #d6d3d1;
+      color: #44403c;
+    }
+
+
+    .mode-btn:active {
+      transform: scale(0.98);
+      opacity: 0.9;
+    }
+
+    .photo-area {
+      border: 2px dashed var(--border);
+      border-radius: 12px;
+      min-height: 220px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      background-color: #fafafa;
+      padding: 12px;
+      transition: border-color 0.2s;
+    }
+
+    .photo-placeholder {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      color: var(--text-sub);
+    }
+
+    .photo-placeholder svg {
+      color: var(--primary);
+    }
+
+    /* 单图/单视频与多图网格预览 */
+    .single-preview-img {
+      max-width: 100%;
+      max-height: 240px;
+      object-fit: contain;
+      border-radius: 8px;
+    }
+
+    .multi-preview-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: 100%;
+    }
+
+    .multi-preview-item {
+      position: relative;
+      aspect-ratio: 1;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #000;
+    }
+
+    .multi-preview-item img,
+    .multi-preview-item video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .video-tag-badge {
+      position: absolute;
+      bottom: 4px;
+      right: 4px;
+      background: rgba(0, 0, 0, 0.75);
+      color: #fff;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .input-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .input-group input {
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 14px;
+      outline: none;
+      background-color: #f8fafc;
+      transition: border-color 0.2s;
+    }
+
+    .input-group input:focus {
+      border-color: var(--primary);
+      background-color: #fff;
+    }
+
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 700;
+      text-align: center;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+
+    .btn-primary {
+      background-color: var(--primary);
+      color: #fff;
+    }
+
+    .btn-primary:active {
+      background-color: var(--primary-dark);
+    }
+
+    .btn-primary:disabled {
+      background-color: #cbd5e1;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    /* 进度与遮罩层 */
+    .progress-bar-container {
+      width: 100%;
+      background-color: #f1f5f9;
+      height: 6px;
+      border-radius: 3px;
+      overflow: hidden;
+      display: none;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background-color: var(--primary);
+      transition: width 0.1s;
+    }
+
+    .status-msg {
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status-success { color: var(--primary-dark); }
+    .status-error { color: var(--danger); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📷 村务通扫描直传</h1>
+      <p>无需微信，照片与音视频极速直发电脑端</p>
+    </div>
+
+    <!-- 上下文信息，如村民或地块 -->
+    <div class="context-badge" id="contextBadge">
+      📂 归档至：通用待整理分拣箱
+    </div>
+
+    <!-- 模式选择按钮组：3 列分别触发 现场拍照 / 现场录像 / 相册视频库 -->
+    <div class="pick-mode-grid">
+      <button type="button" class="mode-btn mode-btn-camera" onclick="triggerCameraPhoto()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        <span>📸 现场拍照</span>
+      </button>
+      <button type="button" class="mode-btn mode-btn-video" onclick="triggerCameraVideo()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+        <span>🎥 现场录像</span>
+      </button>
+      <button type="button" class="mode-btn mode-btn-album" onclick="triggerAlbum()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>🖼️ 相册选图/视</span>
+      </button>
+      <button type="button" class="mode-btn mode-btn-file" onclick="triggerFile()">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="13" y2="17"/></svg>
+        <span>📄 文件</span>
+      </button>
+    </div>
+
+    <!-- 文件名输入 -->
+    <div class="input-group">
+      <label for="fileNameInput">给文件起个名字（可选）：</label>
+      <input type="text" id="fileNameInput" placeholder="输入名称，如：现场视频、土地合同...">
+    </div>
+
+    <!-- 媒体预览区域 -->
+    <div class="photo-area" id="photoArea" onclick="triggerAlbum()">
+      <div class="photo-placeholder" id="photoPlaceholder">
+        <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        <span>点击上方按钮【拍照】或【录像】，或直接点这里选文件</span>
+      </div>
+      <div id="previewContainer" style="width: 100%; display: none;"></div>
+    </div>
+
+    <!-- 隐藏的文件选择框：精确分流拍照、录像、相册/视频库多选 -->
+    <input type="file" id="cameraPhotoInput" accept="image/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+    <input type="file" id="cameraVideoInput" accept="video/*" capture="environment" style="display: none;" onchange="handleFileSelect(event)">
+    <input type="file" id="albumInput" accept="image/*,video/*" multiple style="display: none;" onchange="handleFileSelect(event)">
+    <input type="file" id="fileInput" accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt" multiple style="display: none;" onchange="handleFileSelect(event)">
+
+    <!-- 进度条 -->
+    <div class="progress-bar-container" id="progressBarContainer">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div class="status-msg" id="statusMessage"></div>
+
+    <button class="btn btn-primary" id="uploadBtn" onclick="uploadPhoto()" disabled>
+      🚀 上传到电脑端
+    </button>
+  </div>
+
+  <script>
+    let preparedMediaList = []; // 存储准备发送的图片/视频对象数组 { type, base64, originalName, url }
+
+    // 解析 URL 参数
+    const urlParams = new URLSearchParams(window.location.search);
+    const ownerType = urlParams.get('ownerType') || '未关联';
+    const ownerKey = urlParams.get('ownerKey') || '';
+
+    // 更新界面上的上下文绑定展示
+    const badge = document.getElementById('contextBadge');
+    if (ownerType === '人员') {
+      badge.innerHTML = `👤 关联村民：<strong>${escapeHtml(ownerKey)}</strong>`;
+      document.getElementById('fileNameInput').placeholder = `${ownerKey}_现场资料`;
+    } else if (ownerType === '地块') {
+      badge.innerHTML = `🌾 关联地块：<strong>${escapeHtml(ownerKey)}</strong>`;
+      document.getElementById('fileNameInput').placeholder = `地块_${ownerKey}_相关资料`;
+    } else {
+      badge.innerHTML = `📂 归档至：<strong>通用待整理分拣箱</strong>`;
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function triggerCameraPhoto() {
+      document.getElementById('cameraPhotoInput').click();
+    }
+
+    function triggerCameraVideo() {
+      document.getElementById('cameraVideoInput').click();
+    }
+
+    function triggerAlbum() {
+      document.getElementById('albumInput').click();
+    }
+
+    function triggerFile() {
+      document.getElementById('fileInput').click();
+    }
+
+    function isVideoFile(file) {
+      if (!file) return false;
+      if (file.type && file.type.startsWith('video/')) return true;
+      const lowerName = String(file.name || '').toLowerCase();
+      return ['.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv', '.3gp'].some(ext => lowerName.endsWith(ext));
+    }
+
+    function isDocumentFile(file) {
+      if (!file) return false;
+      if (file.type && (file.type.startsWith('image/') || file.type.startsWith('video/'))) return false;
+      const lowerName = String(file.name || '').toLowerCase();
+      return ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt'].some(ext => lowerName.endsWith(ext));
+    }
+
+    function handleFileSelect(event) {
+      const files = Array.from(event.target.files || []);
+      if (files.length === 0) return;
+
+      showStatus(`正在加载处理 ${files.length} 个文件...`, '');
+      preparedMediaList = [];
+      
+      let processedCount = 0;
+      files.forEach((file, index) => {
+        const isVideo = isVideoFile(file);
+
+        if (isVideo) {
+          // 视频文件读取为 Base64 Data URL
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            preparedMediaList.push({
+              type: 'video',
+              base64: e.target.result,
+              originalName: file.name || `video_${index + 1}.mp4`,
+              blobUrl: URL.createObjectURL(file)
+            });
+            processedCount++;
+            if (processedCount === files.length) {
+              renderPreview();
+            }
+          };
+          reader.readAsDataURL(file);
+        } else if (isDocumentFile(file)) {
+          // 办公文档：原样读取为 Base64 上传（不压缩）
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            preparedMediaList.push({
+              type: 'document',
+              base64: e.target.result,
+              originalName: file.name || `file_${index + 1}`
+            });
+            processedCount++;
+            if (processedCount === files.length) renderPreview();
+          };
+          reader.readAsDataURL(file);
+        } else {
+          // 图片文件等比压缩 Canvas 导出（解码失败时原图直传兜底，保证多图不丢文件）
+          const reader = new FileReader();
+          reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+              const maxDim = 1600;
+              let width = img.width;
+              let height = img.height;
+
+              if (width > maxDim || height > maxDim) {
+                if (width > height) {
+                  height = Math.round((height * maxDim) / width);
+                  width = maxDim;
+                } else {
+                  width = Math.round((width * maxDim) / height);
+                  height = maxDim;
+                }
+              }
+
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(img, 0, 0, width, height);
+
+              const base64 = canvas.toDataURL('image/jpeg', 0.82);
+              preparedMediaList.push({
+                type: 'image',
+                base64: base64,
+                originalName: file.name || `photo_${index + 1}.jpg`
+              });
+
+              processedCount++;
+              if (processedCount === files.length) renderPreview();
+            };
+            // 解码失败（如 iPhone 的 HEIC 格式）：原图直传兜底，保证多图不丢文件
+            img.onerror = function() {
+              preparedMediaList.push({
+                type: 'image',
+                base64: e.target.result,
+                originalName: file.name || `photo_${index + 1}.jpg`,
+                fallback: true
+              });
+              processedCount++;
+              if (processedCount === files.length) renderPreview();
+            };
+            img.src = e.target.result;
+          };
+          reader.readAsDataURL(file);
+        }
+      });
+    }
+
+    function renderPreview() {
+      const placeholder = document.getElementById('photoPlaceholder');
+      const container = document.getElementById('previewContainer');
+      placeholder.style.display = 'none';
+      container.style.display = 'block';
+      container.innerHTML = '';
+
+      if (preparedMediaList.length === 1) {
+        const item = preparedMediaList[0];
+        if (item.type === 'video') {
+          container.innerHTML = `<video src="${item.blobUrl || item.base64}" controls class="single-preview-img" style="max-height: 240px; border-radius: 8px; width: 100%;"></video>`;
+          document.getElementById('uploadBtn').innerText = '🚀 上传 1 个视频文件到电脑端';
+        } else if (item.type === 'document') {
+          container.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;background:#f8fafc;border:1px dashed #cbd5e1;border-radius:10px;padding:28px 12px;text-align:center;font-size:13px;color:#475569;"><div style="font-size:44px;">📄</div><div style="word-break:break-all;font-weight:600;">${escapeHtml(item.originalName)}</div><div style="font-size:12px;color:#94a3b8;">办公文档将原样上传（不压缩）</div></div>`;
+          document.getElementById('uploadBtn').innerText = '🚀 上传 1 个文档到电脑端';
+        } else {
+          container.innerHTML = `<img src="${item.base64}" class="single-preview-img" alt="预览">`;
+          document.getElementById('uploadBtn').innerText = '🚀 上传 1 张照片到电脑端';
+        }
+      } else {
+        const grid = document.createElement('div');
+        grid.className = 'multi-preview-grid';
+        preparedMediaList.forEach(item => {
+          const div = document.createElement('div');
+          div.className = 'multi-preview-item';
+          if (item.type === 'video') {
+            div.innerHTML = `<video src="${item.blobUrl || item.base64}" muted preload="metadata"></video><span class="video-tag-badge">🎥 视频</span>`;
+          } else if (item.type === 'document') {
+            div.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;font-size:34px;background:#f8fafc;height:100%;">📄</div><span class="video-tag-badge" style="background:#eef2ff;color:#4338ca;">📄 文档</span>`;
+          } else {
+            div.innerHTML = `<img src="${item.base64}" alt="缩略图">`;
+          }
+          grid.appendChild(div);
+        });
+        container.appendChild(grid);
+        document.getElementById('uploadBtn').innerText = `🚀 批量上传 ${preparedMediaList.length} 个文件到电脑端`;
+      }
+
+      document.getElementById('uploadBtn').disabled = false;
+      showStatus(`已选中 ${preparedMediaList.length} 个媒体文件，点击下方按钮发送`, 'success');
+    }
+
+    function showStatus(text, type) {
+      const msgEl = document.getElementById('statusMessage');
+      msgEl.textContent = text;
+      msgEl.className = 'status-msg ' + (type ? 'status-' + type : '');
+    }
+
+    async function uploadPhoto() {
+      if (preparedMediaList.length === 0) return;
+
+      const uploadBtn = document.getElementById('uploadBtn');
+      uploadBtn.disabled = true;
+      const container = document.getElementById('progressBarContainer');
+      const progressBar = document.getElementById('progressBar');
+      container.style.display = 'block';
+
+      const customName = document.getElementById('fileNameInput').value.trim();
+      const total = preparedMediaList.length;
+      let successCount = 0;
+
+      for (let i = 0; i < total; i++) {
+        const item = preparedMediaList[i];
+        const percent = Math.round(((i + 1) / total) * 100);
+        progressBar.style.width = `${percent}%`;
+        const typeLabel = item.type === 'video' ? '视频' : item.type === 'document' ? '文档' : '照片';
+        showStatus(`正在发送第 (${i + 1}/${total}) 个${typeLabel}...`, '');
+
+        let filename = customName;
+        if (!filename) {
+          filename = item.originalName;
+        } else {
+          const ext = item.originalName.includes('.') ? item.originalName.split('.').pop() : (item.type === 'video' ? 'mp4' : item.type === 'document' ? 'pdf' : 'jpg');
+          filename = total > 1 ? `${customName}_${i + 1}.${ext}` : `${customName}.${ext}`;
+        }
+
+        const payload = {
+          image: item.base64,
+          filename: filename,
+          ownerType: ownerType,
+          ownerKey: ownerKey
+        };
+
+        try {
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            successCount++;
+          } else {
+            throw new Error(data.error || '上传失败');
+          }
+        } catch (err) {
+          console.error(err);
+          showStatus(`❌ 第 ${i + 1} 个文件发送失败：${err.message}`, 'error');
+          uploadBtn.disabled = false;
+          return;
+        }
+      }
+
+      showStatus(`🎉 成功上传 ${successCount} 个媒体文件到电脑端！`, 'success');
+      preparedMediaList = [];
+      document.getElementById('cameraPhotoInput').value = '';
+      document.getElementById('cameraVideoInput').value = '';
+      document.getElementById('albumInput').value = '';
+      document.getElementById('fileInput').value = '';
+      document.getElementById('previewContainer').style.display = 'none';
+      document.getElementById('photoPlaceholder').style.display = 'flex';
+      document.getElementById('fileNameInput').value = '';
+      uploadBtn.innerText = '🚀 上传到电脑端';
+
+      setTimeout(() => {
+        container.style.display = 'none';
+        progressBar.style.width = '0%';
+      }, 2500);
+    }
+  </script>
+</body>
+</html>
