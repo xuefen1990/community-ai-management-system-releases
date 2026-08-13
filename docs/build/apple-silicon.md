@@ -20,7 +20,7 @@ npm run build:arm64
 构建脚本会：
 
 1. 创建独立 bundle `社区AI管理系统.app`。
-2. 设置独立标识 `com.community.ai.management.dev`。
+2. 设置独立标识 `com.community.ai.management`。
 3. 替换品牌图标和应用源码。
 4. 加入 ARM64 Metal 本地 AI 组件。
 5. 执行 ad-hoc 深度签名与校验。
