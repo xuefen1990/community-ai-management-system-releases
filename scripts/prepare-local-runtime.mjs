@@ -53,6 +53,11 @@ if (!templateAppArgument || !projectAppArgument) {
   await mkdir(runtimeSource, { recursive: true });
   await cp(path.join(projectApp, 'package.json'), path.join(runtimeSource, 'package.json'));
   await cp(path.join(projectApp, 'src'), path.join(runtimeSource, 'src'), { recursive: true });
+  const baselineNodeModules = path.resolve(projectApp, '..', 'source-original', 'app-asar', 'node_modules');
+  await cp(baselineNodeModules, path.join(runtimeSource, 'node_modules'), {
+    recursive: true,
+    preserveTimestamps: true,
+  });
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
   await rename(originalExecutable, runtimeExecutable);
 
