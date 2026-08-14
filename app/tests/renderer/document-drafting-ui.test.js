@@ -13,14 +13,17 @@ test('sidebar exposes the document drafting top-level destination', async () => 
   assert.match(html, />\s*公文拟写\s*</u);
 });
 
-test('readable renderer module builds a conversational drafting workspace', async () => {
+test('readable renderer module builds a direct drafting workspace with one input and editable preview', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'document-drafting-ui.js'), 'utf8');
   assert.match(source, /id="tab-document-drafting"/u);
   assert.match(source, /AI 公文助手/u);
   assert.match(source, /documentConversationInput/u);
-  assert.match(source, /documentConversationMessages/u);
+  assert.doesNotMatch(source, /documentConversationMessages/u);
+  assert.doesNotMatch(source, /documentUnderstandingSummary/u);
   assert.match(source, /documentKindAuto/u);
-  assert.match(source, /继续告诉 AI 怎么修改/u);
+  assert.match(source, /补充修改要求/u);
+  assert.match(source, /根据补充重新生成/u);
+  assert.match(source, /contenteditable="true"/u);
   assert.match(source, /历史记录/u);
   assert.doesNotMatch(source, /1 选择模板/u);
   assert.doesNotMatch(source, /documentDynamicFields/u);

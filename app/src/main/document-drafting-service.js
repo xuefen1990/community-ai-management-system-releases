@@ -79,12 +79,6 @@ function provisionalFields(templateId, message, now) {
   return fields;
 }
 
-function hasHistoryReferenceIntent(value) {
-  const text = cleanText(value);
-  return /(参考|引用|根据|基于).*(之前|此前|前几天|上次|历史|那份|报告|合同|公文)/u.test(text)
-    || /(之前|此前|前几天|上次|历史|那份).*(报告|合同|公文)/u.test(text);
-}
-
 class DocumentDraftingService {
   constructor({ databaseStore, getCurrentAccount, aiRouter = null, now = () => new Date(), createId = (prefix) => `${prefix}-${crypto.randomUUID()}` }) {
     this.databaseStore = databaseStore;
@@ -282,7 +276,7 @@ class DocumentDraftingService {
     if (!this.aiRouter) throw new Error('AI 拟写服务尚未配置');
     const account = await requireAccount(this.getCurrentAccount);
     const userMessage = cleanText(message);
-    if (!documentId && !userMessage) throw new Error('请先描述需要拟写的公文');
+    if (!userMessage) throw new Error(documentId ? '请先填写补充修改要求' : '请先描述需要拟写的公文');
     if (!['auto', 'report', 'contract'].includes(preferredKind)) throw new Error('公文类型偏好无效');
 
     if (!documentId) {
@@ -300,14 +294,8 @@ class DocumentDraftingService {
       if (!Array.isArray(database.documentDraftMessages)) database.documentDraftMessages = [];
       const document = requireDocument(database, documentId);
       requireOwner(document, account.id);
-      if (document.status === 'final') throw new Error('该公文已定稿，请先取消定稿再继续对话');
+      if (document.status === 'final') throw new Error('该公文已定稿，请先取消定稿再重新生成');
       const now = this.now().toISOString();
-      if (userMessage) {
-        database.documentDraftMessages.push({
-          id: this.createId('message'), documentId, role: 'user', messageType: 'text', content: userMessage,
-          versionId: null, referenceCandidates: [], createdAt: now,
-        });
-      }
       const existingState = document.conversationState && typeof document.conversationState === 'object' ? document.conversationState : {};
       const references = Array.isArray(confirmedReferences) && confirmedReferences.length
         ? structuredClone(confirmedReferences)
@@ -316,38 +304,16 @@ class DocumentDraftingService {
       document.conversationState = {
         preferredKind,
         status: 'thinking',
-        fields: structuredClone(existingState.fields || {}),
-        pendingReferenceQuery: userMessage || existingState.pendingReferenceQuery || '',
+        fields: structuredClone(existingState.fields || document.fieldSnapshot || {}),
+        lastInstruction: userMessage,
         updatedAt: now,
       };
       document.updatedAt = now;
       return structuredClone(document);
     });
-    let document = prepared.result;
-    let database = await this.databaseStore.read();
-    let conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
+    const document = prepared.result;
+    const database = await this.databaseStore.read();
     const selectedReferences = document.pendingReferences || [];
-
-    if (userMessage && hasHistoryReferenceIntent(userMessage) && selectedReferences.length === 0) {
-      const candidates = recommendDocuments({ database, accountId: account.id, query: userMessage, now: this.now(), limit: 3 })
-        .filter((item) => item.documentId !== documentId);
-      if (candidates.length) {
-        const assistantMessage = '我找到了可能相关的历史公文，请确认要引用哪一份。确认后我再继续拟写。';
-        const outcome = await this.databaseStore.update((freshDatabase) => {
-          const freshDocument = requireDocument(freshDatabase, documentId);
-          const now = this.now().toISOString();
-          freshDocument.conversationState.status = 'awaiting_reference';
-          freshDocument.conversationState.pendingReferenceQuery = userMessage;
-          freshDocument.conversationState.updatedAt = now;
-          freshDatabase.documentDraftMessages.push({
-            id: this.createId('message'), documentId, role: 'assistant', messageType: 'reference_confirmation', content: assistantMessage,
-            versionId: null, referenceCandidates: structuredClone(candidates), createdAt: now,
-          });
-          return structuredClone(freshDocument);
-        });
-        return { action: 'reference_confirmation', document: outcome.result, assistantMessage, referenceCandidates: candidates, messages: [...conversation, { role: 'assistant', messageType: 'reference_confirmation', content: assistantMessage, referenceCandidates: candidates }] };
-      }
-    }
 
     const profile = (database.writingProfiles || []).find((item) => item.userId === account.id) || null;
     const template = getTemplate(document.templateId);
@@ -355,49 +321,23 @@ class DocumentDraftingService {
       database,
       accountId: account.id,
       template,
-      fields: { conversation: conversation.filter((item) => item.role === 'user').map((item) => item.content).join('\n') },
+      fields: { request: userMessage },
       selectedReferences,
       profile,
     });
     const currentVersion = versionFor(database, document);
     const aiResponse = await this.aiRouter.chat({ messages: buildConversationMessages({
       preferredKind,
-      conversation,
-      currentFields: document.conversationState?.fields || {},
+      conversation: [{ role: 'user', content: userMessage }],
+      currentFields: document.conversationState?.fields || document.fieldSnapshot || {},
       currentContent: document.workingContentText || currentVersion?.contentText || '',
       referencePrompt: context.prompt,
     }) });
     const plan = parseConversationResponse(aiResponse?.content, {
       fallbackKind: document.documentKind,
       fallbackTemplateId: document.templateId,
-      currentFields: document.conversationState?.fields || {},
+      currentFields: document.conversationState?.fields || document.fieldSnapshot || {},
     });
-
-    if (plan.status !== 'ready') {
-      const outcome = await this.databaseStore.update((freshDatabase) => {
-        const freshDocument = requireDocument(freshDatabase, documentId);
-        requireOwner(freshDocument, account.id);
-        const now = this.now().toISOString();
-        freshDocument.documentKind = plan.documentKind;
-        freshDocument.templateId = plan.templateId;
-        freshDocument.conversationState = {
-          preferredKind,
-          status: 'needs_input',
-          fields: structuredClone(plan.fields),
-          pendingReferenceQuery: '',
-          updatedAt: now,
-        };
-        freshDocument.updatedAt = now;
-        freshDatabase.documentDraftMessages.push({
-          id: this.createId('message'), documentId, role: 'assistant', messageType: 'question', content: plan.assistantMessage,
-          versionId: null, referenceCandidates: [], createdAt: now,
-        });
-        return structuredClone(freshDocument);
-      });
-      database = await this.databaseStore.read();
-      conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
-      return { action: 'needs_input', document: outcome.result, assistantMessage: plan.assistantMessage, summary: plan.fields, messages: conversation };
-    }
 
     const outcome = await this.databaseStore.update((freshDatabase) => {
       const freshDocument = requireDocument(freshDatabase, documentId);
@@ -414,7 +354,7 @@ class DocumentDraftingService {
       }
       const version = {
         id: versionId, documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
-        contentHtml: textToHtml(plan.documentText), contentText: plan.documentText, changeOrigin: 'ai', changeSummary: '对话式 AI 拟写',
+        contentHtml: textToHtml(plan.documentText), contentText: plan.documentText, changeOrigin: 'ai', changeSummary: 'AI 直接拟写',
         referenceIds, aiMode: aiResponse?.provider || null, modelName: aiResponse?.model || null,
         createdBy: account.id, createdAt: now,
       };
@@ -431,18 +371,12 @@ class DocumentDraftingService {
         preferredKind,
         status: 'ready',
         fields: structuredClone(plan.fields),
-        pendingReferenceQuery: '',
+        lastInstruction: userMessage,
         updatedAt: now,
       };
       freshDocument.updatedAt = now;
-      freshDatabase.documentDraftMessages.push({
-        id: this.createId('message'), documentId, role: 'assistant', messageType: 'generated', content: plan.assistantMessage,
-        versionId: version.id, referenceCandidates: [], createdAt: now,
-      });
       return { document: structuredClone(freshDocument), version: structuredClone(version) };
     });
-    database = await this.databaseStore.read();
-    conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
     return {
       action: 'generated',
       document: outcome.result.document,
@@ -451,7 +385,6 @@ class DocumentDraftingService {
       summary: plan.fields,
       references: context.references,
       omitted: context.omitted,
-      messages: conversation,
     };
   }
 

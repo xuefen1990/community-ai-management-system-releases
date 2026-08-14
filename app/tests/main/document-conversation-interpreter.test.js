@@ -21,7 +21,7 @@ test('preferred kind overrides automatic recognition', () => {
   assert.equal(detectDocumentKind('把这份报告改一下', 'contract'), 'contract');
 });
 
-test('conversation prompt includes current summary, content, and selected references', () => {
+test('direct drafting prompt includes current summary, content, selected references, and forbids follow-up questions', () => {
   const messages = buildConversationMessages({
     preferredKind: 'auto',
     conversation: [{ role: 'user', content: '写一份请示' }],
@@ -31,9 +31,12 @@ test('conversation prompt includes current summary, content, and selected refere
   });
   const combined = messages.map((item) => item.content).join('\n');
   assert.match(combined, /严格 JSON/u);
+  assert.match(combined, /直接生成完整正文/u);
+  assert.match(combined, /不得向用户追问/u);
   assert.match(combined, /费用请示/u);
   assert.match(combined, /现有正文/u);
   assert.match(combined, /参考正文/u);
+  assert.doesNotMatch(combined, /needs_input/u);
 });
 
 test('parses a ready report response and keeps only template fields', () => {
@@ -47,15 +50,17 @@ test('parses a ready report response and keeps only template fields', () => {
   assert.equal(result.documentText, '完整正文');
 });
 
-test('contracts missing high-risk terms are converted to a follow-up question', () => {
+test('contracts missing high-risk terms are generated with explicit placeholders instead of follow-up questions', () => {
   const result = parseConversationResponse('{"documentKind":"contract","templateId":"contract-service","status":"ready","assistantMessage":"已生成","fields":{"title":"服务合同","partyA":"甲方","partyB":"乙方","subject":"保洁","amount":"1000元","term":"一年","payment":"验收后付款"},"documentText":"合同正文"}', {
     fallbackKind: 'contract',
     fallbackTemplateId: 'contract-service',
   });
-  assert.equal(result.status, 'needs_input');
-  assert.match(result.assistantMessage, /违约责任/u);
-  assert.match(result.assistantMessage, /争议解决/u);
-  assert.equal(result.documentText, '');
+  assert.equal(result.status, 'ready');
+  assert.equal(result.fields.breach, '【待补充】');
+  assert.equal(result.fields.dispute, '【待补充】');
+  assert.match(result.documentText, /待补充事项/u);
+  assert.match(result.documentText, /违约责任：【待补充】/u);
+  assert.match(result.documentText, /争议解决：【待补充】/u);
 });
 
 test('invalid AI JSON is rejected', () => {

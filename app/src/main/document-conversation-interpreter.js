@@ -12,6 +12,7 @@ const CONTRACT_REQUIRED = Object.freeze([
   ['breach', '违约责任'],
   ['dispute', '争议解决'],
 ]);
+const REQUIRED_PLACEHOLDER = '【待补充】';
 
 function cleanText(value) {
   return String(value ?? '').replaceAll(/\r\n?/gu, '\n').trim();
@@ -56,19 +57,18 @@ function buildConversationMessages({
   const schema = {
     documentKind: 'report 或 contract',
     templateId: '上方模板中的一个 id',
-    status: 'needs_input 或 ready',
-    assistantMessage: '给用户的简短回复；缺信息时最多追问三个相关问题',
-    fields: '所选模板的完整字段对象，只能填写用户明确提供或确认的事实',
-    documentText: 'status=ready 时返回完整公文纯文本；needs_input 时必须为空字符串',
+    assistantMessage: '简短说明已经生成或重新生成',
+    fields: `所选模板的字段对象，只能填写用户明确提供或确认的事实；合同关键项缺失时填写${REQUIRED_PLACEHOLDER}`,
+    documentText: `直接生成的完整公文纯文本；合同关键项缺失时在正文对应位置写${REQUIRED_PLACEHOLDER}`,
   };
   return [
     {
       role: 'system',
       content: [
-        '你是社区公文拟写助手，需要根据连续对话追问或生成报告、请示、合同。',
+        '你是社区公文拟写助手。收到用户要求后必须直接生成完整正文，不得向用户追问。',
         '只输出一个可解析的严格 JSON 对象，不要 Markdown 代码块，不要分析过程，不要输出 JSON 之外的文字。',
-        '不得杜撰姓名、主体、金额、日期、政策编号或其他事实。信息不足时 status 必须是 needs_input。',
-        '合同生成前必须确认甲乙双方、标的或服务、金额或计价、期限、付款、违约责任和争议解决。',
+        `不得杜撰姓名、主体、金额、日期、政策编号或其他事实。普通缺失内容可以省略；合同必需信息缺失时使用${REQUIRED_PLACEHOLDER}。`,
+        `合同中的甲乙双方、标的或服务、金额或计价、期限、付款、违约责任和争议解决缺失时，字段和正文都必须明确写${REQUIRED_PLACEHOLDER}，不能因此停止生成。`,
         `输出结构：${JSON.stringify(schema)}`,
         `可选模板：${JSON.stringify(templates)}`,
       ].join('\n'),
@@ -80,8 +80,8 @@ function buildConversationMessages({
         `当前已确认字段：${JSON.stringify(currentFields || {})}`,
         `当前公文正文：${cleanText(currentContent) || '无'}`,
         `已确认参考资料：${cleanText(referencePrompt) || '无'}`,
-        `对话记录：${JSON.stringify(conversation.map((item) => ({ role: item.role, content: cleanText(item.content) })))}`,
-        '请根据最新一条用户消息继续处理。修改现有正文时返回修改后的完整正文，不要只返回修改片段。',
+        `本次拟写或补充要求：${JSON.stringify(conversation.map((item) => ({ role: item.role, content: cleanText(item.content) })))}`,
+        '如果已有正文，请结合当前正文与本次补充要求重新生成全文；不要只返回修改片段。',
       ].join('\n\n'),
     },
   ];
@@ -97,10 +97,6 @@ function extractJson(value) {
   } catch {
     throw new Error('AI 无法理解本次公文需求，请换一种说法后重试');
   }
-}
-
-function missingContractFields(fields) {
-  return CONTRACT_REQUIRED.filter(([key]) => !cleanText(fields[key])).map(([, label]) => label);
 }
 
 function parseConversationResponse(content, {
@@ -123,21 +119,28 @@ function parseConversationResponse(content, {
   const merged = { ...(currentFields || {}), ...(parsed.fields && typeof parsed.fields === 'object' && !Array.isArray(parsed.fields) ? parsed.fields : {}) };
   const fields = Object.fromEntries(Object.entries(merged).filter(([key]) => allowedKeys.has(key)).map(([key, value]) => [key, cleanText(value)]));
   const validation = validateFields(templateId, fields);
-  const missing = documentKind === 'contract'
-    ? [...new Set([...validation.missing.map((key) => template.fields.find((field) => field.key === key)?.label || key), ...missingContractFields(fields)])]
-    : validation.missing.map((key) => template.fields.find((field) => field.key === key)?.label || key);
-  let status = parsed.status === 'ready' ? 'ready' : 'needs_input';
-  if (missing.length) status = 'needs_input';
+  const missingKeys = documentKind === 'contract'
+    ? [...new Set([...validation.missing, ...CONTRACT_REQUIRED.filter(([key]) => !cleanText(fields[key]) || ['待补充', '请补充'].includes(cleanText(fields[key]))).map(([key]) => key)])]
+    : validation.missing;
+  const missing = missingKeys.map((key) => template.fields.find((field) => field.key === key)?.label || key);
+  if (documentKind === 'contract') {
+    for (const key of missingKeys) fields[key] = REQUIRED_PLACEHOLDER;
+  }
+  const status = 'ready';
   let assistantMessage = cleanText(parsed.assistantMessage);
-  if (status === 'needs_input' && missing.length) assistantMessage = `还需要补充：${missing.slice(0, 3).join('、')}。请直接在下方告诉我。`;
-  if (!assistantMessage) assistantMessage = status === 'ready' ? '公文已生成，请在右侧核验和修改。' : '请继续补充公文所需信息。';
-  const documentText = status === 'ready' ? cleanText(parsed.documentText) : '';
-  if (status === 'ready' && !documentText) throw new Error('AI 未返回完整公文正文，请重试');
+  if (!assistantMessage) assistantMessage = '公文已生成，请在右侧核验和修改。';
+  let documentText = cleanText(parsed.documentText);
+  if (!documentText) throw new Error('AI 未返回完整公文正文，请重试');
+  if (documentKind === 'contract' && missing.length) {
+    const missingNotice = missing.map((label) => `${label}：${REQUIRED_PLACEHOLDER}`).join('\n');
+    documentText = `${documentText}\n\n待补充事项\n${missingNotice}`;
+  }
   return { documentKind, templateId, status, assistantMessage, fields, documentText, missing };
 }
 
 module.exports = {
   CONTRACT_REQUIRED,
+  REQUIRED_PLACEHOLDER,
   buildConversationMessages,
   defaultTemplateFor,
   detectDocumentKind,

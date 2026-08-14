@@ -25,25 +25,28 @@
   function sectionMarkup() {
     return `<section class="tab-content hidden" id="tab-document-drafting">
       <div class="content-header document-drafting-header">
-        <div><h2>公文拟写 <span class="header-sub-tag">像聊天一样描述，AI 帮你形成公文</span></h2><p class="text-secondary">一句话生成报告或合同，不满意可以继续补充要求，旧版本自动保留。</p></div>
+        <div><h2>公文拟写 <span class="header-sub-tag">描述需求，AI 直接生成</span></h2><p class="text-secondary">输入一段内容即可生成报告或合同；右侧可直接修改，也可补充要求重新生成全文。</p></div>
         <div class="document-header-actions"><button class="btn btn-outline" id="documentProfileBtn">我的写作偏好</button><button class="btn btn-outline" id="documentHistoryBtn">历史记录</button><button class="btn btn-primary" id="documentNewDraftBtn">＋ 新建公文</button></div>
       </div>
       <div id="documentWorkspaceView" class="document-workspace-view">
         <div class="document-conversation-grid">
           <aside class="document-chat-panel">
-            <div class="document-chat-header"><div><strong>🤖 AI 公文助手</strong><small>直接说清楚事情，我会追问必要信息</small></div><span id="documentDraftStatus" class="badge badge-info">新公文</span></div>
+            <div class="document-chat-header"><div><strong>🤖 AI 公文助手</strong><small>说清事项和要求，AI 立即生成完整公文</small></div><span id="documentDraftStatus" class="badge badge-info">新公文</span></div>
             <div class="document-kind-switch" aria-label="公文类型">
               <button class="active" id="documentKindAuto" data-document-kind="auto">自动识别</button>
               <button id="documentKindReport" data-document-kind="report">报告</button>
               <button id="documentKindContract" data-document-kind="contract">合同</button>
             </div>
-            <div id="documentConversationMessages" class="document-conversation-messages"></div>
-            <div id="documentUnderstandingSummary" class="document-understanding-summary hidden"></div>
+            <div id="documentDirectIntro" class="document-direct-intro">
+              <b>只需描述一次，直接生成全文</b>
+              <p>可写明事项、对象、金额、时间和重点要求。资料不完整时，AI 会先完成可写内容，合同关键缺项将标记“【待补充】”。</p>
+              <div class="document-prompt-examples"><button data-example="写一份申请拨付过渡房费用的请示，说明事项、金额和拨付要求。">费用请示示例</button><button data-example="写一份社区保洁服务合同，已知内容直接写入，缺少的关键条款标记待补充。">服务合同示例</button></div>
+            </div>
             <div class="document-chat-composer">
-              <label for="documentConversationInput" id="documentConversationLabel">描述你想拟写的公文</label>
+              <label for="documentConversationInput" id="documentConversationLabel">描述需要拟写的内容</label>
               <textarea id="documentConversationInput" rows="5" placeholder="例如：写一份申请拨付小杨庄过渡房费用的请示。东七组占地40余亩，每亩900元，合计36000元，请求按期拨付。"></textarea>
-              <div class="document-composer-actions"><span id="documentReferenceCount">未引用历史资料</span><button class="btn btn-primary" id="documentConversationSendBtn">✦ 生成公文</button></div>
-              <p class="document-chat-hint">生成后可在这里继续告诉 AI 怎么修改，例如“语气更正式，再补充付款依据”。</p>
+              <div class="document-composer-actions"><span id="documentReferenceCount">未引用历史资料</span><button class="btn btn-primary" id="documentConversationSendBtn">✦ 开始 AI 拟写</button></div>
+              <p class="document-chat-hint">生成后可直接修改右侧正文；整体不满意时，在同一输入框补充要求并重新生成全文。</p>
             </div>
             <details class="document-advanced-settings">
               <summary>参考资料与高级设置</summary>
@@ -111,41 +114,12 @@
     document.getElementById('documentFinalizeBtn').textContent = isFinal ? '取消定稿后编辑' : '标记定稿';
     document.getElementById('documentConversationSendBtn').disabled = Boolean(isFinal);
     document.getElementById('documentSaveVersionBtn').disabled = Boolean(isFinal);
-    document.getElementById('documentConversationLabel').textContent = documentValue?.workingContentText ? '继续告诉 AI 怎么修改' : '描述你想拟写的公文';
+    document.getElementById('documentConversationLabel').textContent = documentValue?.workingContentText ? '补充修改要求' : '描述需要拟写的内容';
     document.getElementById('documentConversationInput').placeholder = documentValue?.workingContentText
-      ? '例如：语气更正式，补充付款依据；或者把这份报告改成合同……'
+      ? '例如：语气更正式，增加分期付款依据，并结合右侧当前正文重新生成全文……'
       : '例如：写一份申请拨付小杨庄过渡房费用的请示。东七组占地40余亩，每亩900元，合计36000元，请求按期拨付。';
-    document.getElementById('documentConversationSendBtn').textContent = documentValue?.workingContentText ? '↗ 重新生成' : '✦ 生成公文';
+    document.getElementById('documentConversationSendBtn').textContent = documentValue?.workingContentText ? '↻ 根据补充重新生成' : '✦ 开始 AI 拟写';
     updateKindUi(state.preferredKind);
-  }
-
-  function welcomeMarkup() {
-    return `<div class="document-message assistant"><div class="document-message-avatar">AI</div><div class="document-message-bubble"><b>把要办的事情直接告诉我</b><p>我会自动判断是报告还是合同。信息不够时，我只追问必要内容；生成后你可以继续补充要求。</p><div class="document-prompt-examples"><button data-example="写一份申请拨付过渡房费用的请示，说明事项、金额和拨付要求。">费用请示</button><button data-example="写一份社区保洁服务合同，需要包含金额、期限、付款和违约责任。">服务合同</button></div></div></div>`;
-  }
-
-  function referenceCandidatesMarkup(items = []) {
-    return items.length ? `<div class="document-reference-candidates">${items.map((item) => `<button class="document-reference-candidate" data-confirm-document-id="${escapeHtml(item.documentId)}" data-confirm-version-id="${escapeHtml(item.versionId)}" data-confirm-title="${escapeHtml(item.title)}"><b>${escapeHtml(item.title)}</b><small>${escapeHtml((item.reasons || []).join(' · ') || '历史公文')}</small><span>确认引用</span></button>`).join('')}</div>` : '';
-  }
-
-  function renderMessages(messages = state.current?.messages || []) {
-    const container = document.getElementById('documentConversationMessages');
-    if (!messages.length) {
-      container.innerHTML = welcomeMarkup();
-      return;
-    }
-    container.innerHTML = messages.map((message) => {
-      const user = message.role === 'user';
-      return `<div class="document-message ${user ? 'user' : 'assistant'}"><div class="document-message-avatar">${user ? '我' : 'AI'}</div><div class="document-message-bubble"><p>${escapeHtml(message.content).replaceAll('\n', '<br>')}</p>${message.messageType === 'generated' ? '<small>右侧已更新为新版本</small>' : ''}${referenceCandidatesMarkup(message.referenceCandidates)}</div></div>`;
-    }).join('');
-    container.scrollTop = container.scrollHeight;
-  }
-
-  function renderSummary(values = state.current?.document?.conversationState?.fields || {}) {
-    const container = document.getElementById('documentUnderstandingSummary');
-    const labels = { title: '标题', period: '时间', recipient: '报送对象', partyA: '甲方', partyB: '乙方', subject: '事项/标的', amount: '金额', term: '期限', payment: '付款', keyPoints: '重点内容' };
-    const entries = Object.entries(values || {}).filter(([key, value]) => labels[key] && value && value !== '待补充').slice(0, 7);
-    container.classList.toggle('hidden', entries.length === 0);
-    container.innerHTML = entries.length ? `<div class="document-summary-title"><span>AI 已理解</span><small>如有错误，直接在对话中纠正</small></div><div class="document-summary-chips">${entries.map(([key, value]) => `<span><b>${labels[key]}</b>${escapeHtml(String(value).slice(0, 52))}</span>`).join('')}</div>` : '';
   }
 
   function setBusy(button, busy, busyLabel) {
@@ -165,11 +139,20 @@
   async function submitConversation(messageOverride = null) {
     const input = document.getElementById('documentConversationInput');
     const message = messageOverride === null ? input.value.trim() : messageOverride;
-    if (!message && state.selectedReferences.size === 0) throw new Error('请先描述需要拟写或修改的内容');
+    if (!message) throw new Error(state.current?.document?.workingContentText ? '请先填写补充修改要求' : '请先描述需要拟写的内容');
     const button = document.getElementById('documentConversationSendBtn');
     setBusy(button, true, 'AI 正在处理…');
-    document.getElementById('documentAutosaveStatus').textContent = 'AI 正在理解并拟写…';
+    document.getElementById('documentAutosaveStatus').textContent = state.current?.document?.workingContentText ? '正在根据补充要求重新生成…' : 'AI 正在拟写完整公文…';
     try {
+      if (state.current?.document) {
+        clearTimeout(state.autosaveTimer);
+        state.current.document = await callApi('saveDraftDocument', {
+          documentId: state.current.document.id,
+          visibility: document.getElementById('documentVisibility').value,
+          contentHtml: document.getElementById('documentEditor').innerHTML,
+          contentText: document.getElementById('documentEditor').innerText,
+        });
+      }
       const result = await callApi('converseDraftDocument', {
         documentId: state.current?.document?.id || null,
         message,
@@ -181,22 +164,17 @@
         document: result.document,
         versions: result.version ? [result.version, ...versions] : versions,
         references: state.current?.references || [],
-        messages: result.messages || [],
       };
-      input.value = '';
-      renderMessages();
-      renderSummary(result.summary);
-      updateDraftStatus();
       if (result.version) {
+        input.value = '';
         document.getElementById('documentEditor').innerHTML = result.version.contentHtml;
         document.getElementById('documentAutosaveStatus').textContent = `AI 已生成 · 版本 ${result.version.versionNumber}`;
         showSourceSummary(result);
-        showMessage('公文已生成，可以继续补充修改要求');
-      } else if (result.action === 'reference_confirmation') {
-        document.getElementById('documentAutosaveStatus').textContent = '等待确认历史资料';
+        showMessage(versions.length ? '已根据补充要求重新生成全文，上一版本已保留' : '公文已生成，右侧正文可以直接修改');
       } else {
-        document.getElementById('documentAutosaveStatus').textContent = '等待补充信息';
+        throw new Error('AI 未返回有效正文，请重试');
       }
+      updateDraftStatus();
       if (result.document?.visibility !== document.getElementById('documentVisibility').value) {
         state.current.document = await callApi('saveDraftDocument', { documentId: result.document.id, visibility: document.getElementById('documentVisibility').value });
       }
@@ -207,15 +185,6 @@
       setBusy(button, false);
       updateDraftStatus();
     }
-  }
-
-  async function confirmReference(button) {
-    const reference = { type: 'document', documentId: button.dataset.confirmDocumentId, versionId: button.dataset.confirmVersionId, selectedBy: 'user' };
-    state.selectedReferences.set(referenceKey(reference), reference);
-    updateReferenceCount();
-    button.disabled = true;
-    button.querySelector('span').textContent = '已确认';
-    await submitConversation('');
   }
 
   async function refreshRecommendations() {
@@ -342,9 +311,6 @@
     const currentVersion = state.current.versions.find((version) => version.id === state.current.document.currentVersionId);
     document.getElementById('documentEditor').innerHTML = state.current.document.workingContentHtml || currentVersion?.contentHtml || '';
     document.getElementById('documentVisibility').value = state.current.document.visibility;
-    if (!state.current.messages?.length) state.current.messages = [{ role: 'assistant', messageType: 'text', content: '已打开历史草稿。你可以继续告诉我怎么修改，或者直接编辑右侧正文。' }];
-    renderMessages();
-    renderSummary();
     updateReferenceCount();
     updateDraftStatus();
     document.getElementById('documentAutosaveStatus').textContent = `已打开 · ${state.current.versions.length} 个版本`;
@@ -375,10 +341,8 @@
     document.getElementById('documentConversationInput').value = '';
     document.getElementById('documentEditor').innerHTML = '';
     document.getElementById('documentSourceSummary').classList.add('hidden');
-    document.getElementById('documentUnderstandingSummary').classList.add('hidden');
     document.getElementById('documentRecommendedReferences').innerHTML = '';
     document.getElementById('documentBusinessReferences').innerHTML = '';
-    renderMessages([]);
     updateReferenceCount();
     updateDraftStatus();
     document.getElementById('documentAutosaveStatus').textContent = '等待描述';
@@ -463,17 +427,14 @@
     bind('documentProfileResetBtn', 'click', async () => { if (window.confirm('重置写作偏好不会删除历史公文，确认继续吗？')) { await callApi('resetWritingProfile'); await openProfile(); } });
     document.querySelectorAll('[data-document-kind]').forEach((button) => button.addEventListener('click', () => updateKindUi(button.dataset.documentKind)));
     document.getElementById('documentConversationInput').addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submitConversation().catch((error) => showMessage(error.message, 'error')); });
-    document.getElementById('documentConversationMessages').addEventListener('click', (event) => {
+    document.getElementById('documentDirectIntro').addEventListener('click', (event) => {
       const example = event.target.closest('[data-example]');
       if (example) document.getElementById('documentConversationInput').value = example.dataset.example;
-      const candidate = event.target.closest('[data-confirm-document-id]');
-      if (candidate) confirmReference(candidate).catch((error) => showMessage(error.message, 'error'));
     });
     document.getElementById('documentHistoryList').addEventListener('click', (event) => handleHistoryAction(event).catch((error) => showMessage(error.message, 'error')));
     document.getElementById('documentVersionsList').addEventListener('click', (event) => { const button = event.target.closest('[data-restore-version-id]'); if (button) restoreVersion(button.dataset.restoreVersionId).catch((error) => showMessage(error.message, 'error')); });
     document.getElementById('documentEditor').addEventListener('input', queueAutosave);
     document.querySelectorAll('[data-editor-command]').forEach((button) => button.addEventListener('click', () => { document.execCommand(button.dataset.editorCommand, false); document.getElementById('documentEditor').focus(); queueAutosave(); }));
-    document.querySelector('[data-target="tab-document-drafting"]')?.addEventListener('click', () => { if (!document.getElementById('documentConversationMessages').innerHTML) resetDraft(); });
     bindReferenceLists();
     await resetDraft();
   }

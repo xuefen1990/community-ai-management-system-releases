@@ -25,15 +25,15 @@ test('registers all dedicated document drafting channels', () => {
   }
 });
 
-test('conversation channel delegates to the drafting service', async () => {
+test('direct drafting channel delegates to the compatible drafting service entry point', async () => {
   const received = [];
   const documentDraftingService = {
-    converse: async (value) => { received.push(value); return { action: 'needs_input', assistantMessage: '请补充金额' }; },
+    converse: async (value) => { received.push(value); return { action: 'generated', version: { id: 'v1' } }; },
   };
   const { callbacks } = makeHandlers({ documentDraftingService });
   const result = await callbacks.get(INVOKE_CHANNELS.converseDraftDocument)({}, { message: '帮我写合同' });
   assert.equal(result.ok, true);
-  assert.equal(result.data.action, 'needs_input');
+  assert.equal(result.data.action, 'generated');
   assert.deepEqual(received, [{ message: '帮我写合同' }]);
 });
 

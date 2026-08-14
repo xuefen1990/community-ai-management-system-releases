@@ -157,7 +157,7 @@ test('document HTML sanitizer keeps formatting but removes scripts, remote resou
   assert.equal(sanitized, '<p>正文<strong>重点</strong></p>');
 });
 
-test('conversation creates a draft, stores messages, and generates the first version', async () => {
+test('direct drafting creates a draft and generates the first version without storing chat messages', async () => {
   const harness = makeHarness({ aiResponses: [JSON.stringify({
     documentKind: 'report', templateId: 'report-request', status: 'ready', assistantMessage: '已生成请示',
     fields: { title: '关于拨付过渡房费用的请示', period: '2026年8月', recipient: '上级部门', keyPoints: '申请拨付36000元过渡房费用' },
@@ -169,37 +169,58 @@ test('conversation creates a draft, stores messages, and generates the first ver
   assert.equal(result.action, 'generated');
   assert.equal(result.document.documentKind, 'report');
   assert.equal(result.version.versionNumber, 2);
-  assert.equal(harness.database.documentDraftMessages.length, 2);
+  assert.equal(harness.database.documentDraftMessages.length, 0);
   assert.equal(harness.database.documentDrafts[0].conversationState.status, 'ready');
 });
 
-test('conversation asks for missing information and generates after the reply', async () => {
-  const harness = makeHarness({ aiResponses: [
-    JSON.stringify({ documentKind: 'contract', templateId: 'contract-service', status: 'needs_input', assistantMessage: '请补充甲乙双方和付款方式', fields: { title: '保洁服务合同', subject: '保洁服务' }, documentText: '' }),
-    JSON.stringify({ documentKind: 'contract', templateId: 'contract-service', status: 'ready', assistantMessage: '合同已生成', fields: { title: '保洁服务合同', partyA: '陆庄社区', partyB: '保洁公司', subject: '保洁服务', amount: '36000元', term: '一年', payment: '按月付款', breach: '违约方承担损失', dispute: '向甲方所在地法院起诉' }, documentText: '保洁服务合同\n\n甲方：陆庄社区\n乙方：保洁公司' }),
-  ] });
+test('direct drafting generates an incomplete contract immediately with explicit placeholders', async () => {
+  const harness = makeHarness({ aiResponses: [JSON.stringify({
+    documentKind: 'contract', templateId: 'contract-service', status: 'ready', assistantMessage: '合同已生成',
+    fields: { title: '保洁服务合同', subject: '保洁服务' },
+    documentText: '保洁服务合同\n\n甲方：【待补充】\n乙方：【待补充】\n服务内容：保洁服务\n金额：【待补充】',
+  })] });
 
-  const first = await harness.service.converse({ message: '帮我写一份保洁服务合同' });
-  assert.equal(first.action, 'needs_input');
-  assert.equal(harness.database.documentVersions.length, 1);
-
-  const second = await harness.service.converse({ documentId: first.document.id, message: '甲方陆庄社区，乙方保洁公司，36000元，一年，按月付款，违约方承担损失，争议向甲方所在地法院起诉' });
-  assert.equal(second.action, 'generated');
-  assert.equal(second.version.versionNumber, 2);
-  assert.equal(harness.database.documentDraftMessages.length, 4);
+  const result = await harness.service.converse({ message: '帮我写一份保洁服务合同' });
+  assert.equal(result.action, 'generated');
+  assert.equal(result.version.versionNumber, 2);
+  assert.equal(result.document.fieldSnapshot.partyA, '【待补充】');
+  assert.equal(result.document.fieldSnapshot.payment, '【待补充】');
+  assert.equal(harness.database.documentVersions.length, 2);
+  assert.equal(harness.database.documentDraftMessages.length, 0);
 });
 
-test('history intent returns candidates before sending content to AI', async () => {
-  const harness = makeHarness();
+test('typed history intent does not interrupt generation with a confirmation conversation', async () => {
+  const harness = makeHarness({ aiResponses: [JSON.stringify({
+    documentKind: 'contract', templateId: 'contract-service', status: 'ready', assistantMessage: '已生成',
+    fields: { title: '新合同', subject: '历史事项' }, documentText: '新合同\n\n甲方：【待补充】',
+  })] });
   const source = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
   await harness.service.saveDraft({ documentId: source.document.id, contentText: '过渡房费用历史报告', contentHtml: '<p>过渡房费用历史报告</p>' });
   await harness.service.saveVersion({ documentId: source.document.id });
   await harness.service.finalize(source.document.id);
 
   const result = await harness.service.converse({ message: '参考前几天那份报告，再写一份合同' });
-  assert.equal(result.action, 'reference_confirmation');
-  assert.equal(result.referenceCandidates[0].documentId, source.document.id);
-  assert.equal(harness.aiPrompts.length, 0);
+  assert.equal(result.action, 'generated');
+  assert.equal(harness.aiPrompts.length, 1);
+  assert.doesNotMatch(harness.aiPrompts[0].map((item) => item.content).join('\n'), /过渡房费用历史报告/u);
+});
+
+test('supplemental regeneration uses the manually edited current body and creates a new version', async () => {
+  const harness = makeHarness({ aiResponses: [JSON.stringify({
+    documentKind: 'report', templateId: 'report-work', status: 'ready', assistantMessage: '已重新生成',
+    fields: { title: '环境整治报告', period: '2026年8月', keyPoints: '增加整改安排' },
+    documentText: '环境整治报告\n\n一、现状\n人工核对后的事实。\n\n二、整改安排\n立即整改。',
+  })] });
+  const created = await harness.service.createDraft({ templateId: 'report-work', fields: { title: '环境整治报告', period: '2026年8月', keyPoints: '初稿' } });
+  await harness.service.saveDraft({ documentId: created.document.id, contentText: '人工核对后的事实。', contentHtml: '<p>人工核对后的事实。</p>' });
+
+  const result = await harness.service.converse({ documentId: created.document.id, message: '增加整改安排，全文重新生成' });
+
+  assert.equal(result.action, 'generated');
+  assert.equal(result.version.versionNumber, 2);
+  const prompt = harness.aiPrompts[0].map((item) => item.content).join('\n');
+  assert.match(prompt, /人工核对后的事实/u);
+  assert.match(prompt, /增加整改安排/u);
 });
 
 test('manual history search merges the typed query with the current draft', async () => {
