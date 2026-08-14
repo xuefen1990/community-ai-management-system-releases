@@ -64,5 +64,28 @@ test('contracts missing high-risk terms are generated with explicit placeholders
 });
 
 test('invalid AI JSON is rejected', () => {
-  assert.throws(() => parseConversationResponse('不是 JSON', { fallbackKind: 'report', fallbackTemplateId: 'report-work' }), /无法理解/u);
+  const result = parseConversationResponse('工作报告\n\n一、工作情况\n本月已完成环境整治。', {
+    fallbackKind: 'report',
+    fallbackTemplateId: 'report-work',
+    currentFields: { title: '环境整治工作报告', period: '2026年8月', keyPoints: '完成环境整治' },
+  });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.fields.title, '环境整治工作报告');
+  assert.match(result.documentText, /本月已完成环境整治/u);
+});
+
+test('plain-text contract responses preserve required-field safeguards', () => {
+  const result = parseConversationResponse('保洁服务合同\n\n双方就保洁服务达成如下约定。', {
+    fallbackKind: 'contract',
+    fallbackTemplateId: 'contract-service',
+    currentFields: { title: '保洁服务合同', subject: '保洁服务' },
+  });
+  assert.equal(result.status, 'ready');
+  assert.equal(result.fields.partyA, '【待补充】');
+  assert.match(result.documentText, /待补充事项/u);
+  assert.match(result.documentText, /付款方式：【待补充】/u);
+});
+
+test('empty AI content is rejected', () => {
+  assert.throws(() => parseConversationResponse('   ', { fallbackKind: 'report', fallbackTemplateId: 'report-work' }), /未返回完整公文正文/u);
 });

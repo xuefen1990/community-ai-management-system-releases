@@ -235,9 +235,17 @@ test('manual history search merges the typed query with the current draft', asyn
   assert.equal(results[0].documentId, source.document.id);
 });
 
-test('invalid conversation output preserves the empty draft version', async () => {
-  const harness = makeHarness({ aiResponses: ['无法解析的内容'] });
-  await assert.rejects(() => harness.service.converse({ message: '写一份完整的工作报告' }), /无法理解/u);
+test('plain-text conversation output creates a new document version', async () => {
+  const harness = makeHarness({ aiResponses: ['工作报告\n\n一、工作情况\n本月已完成环境整治。'] });
+  const result = await harness.service.converse({ message: '写一份完整的工作报告' });
+  assert.equal(result.action, 'generated');
+  assert.equal(result.version.versionNumber, 2);
+  assert.match(result.version.contentText, /本月已完成环境整治/u);
+});
+
+test('empty conversation output preserves the empty draft version', async () => {
+  const harness = makeHarness({ aiResponses: ['   '] });
+  await assert.rejects(() => harness.service.converse({ message: '写一份完整的工作报告' }), /未返回完整公文正文/u);
   assert.equal(harness.database.documentVersions.length, 1);
   assert.equal(harness.database.documentVersions[0].contentText, '');
 });
