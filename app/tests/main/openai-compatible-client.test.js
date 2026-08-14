@@ -38,6 +38,21 @@ test('client joins text parts from a segmented assistant message', async () => {
   assert.equal(result.content, '关于拨付费用的请示\n\n现申请拨付相关费用。');
 });
 
+test('client disables DeepSeek V4 thinking by default and allows long document responses', async () => {
+  let requestBody;
+  const client = new OpenAiCompatibleClient({ fetchImplementation: async (_url, options) => {
+    requestBody = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ choices: [{ message: { content: '完整公文正文' } }] }) };
+  } });
+
+  await client.chat({
+    baseUrl: 'https://api.deepseek.com', apiKey: 'key', model: 'deepseek-v4-pro', messages: [{ role: 'user', content: '拟写公文' }],
+  });
+
+  assert.deepEqual(requestBody.thinking, { type: 'disabled' });
+  assert.equal(client.timeoutMs, 120_000);
+});
+
 test('client accepts a legacy choice text field from a compatible provider', async () => {
   const client = new OpenAiCompatibleClient({ fetchImplementation: async () => ({
     ok: true,
