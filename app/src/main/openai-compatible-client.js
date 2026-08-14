@@ -12,8 +12,16 @@ function extractVisibleText(value) {
   }).join('').trim();
 }
 
+function usesDeepSeekV4(baseUrl, model) {
+  try {
+    return new URL(baseUrl).hostname.toLowerCase() === 'api.deepseek.com' && /^deepseek-v4-(?:flash|pro)$/iu.test(String(model));
+  } catch {
+    return false;
+  }
+}
+
 class OpenAiCompatibleClient {
-  constructor({ fetchImplementation = globalThis.fetch, timeoutMs = 30_000 } = {}) {
+  constructor({ fetchImplementation = globalThis.fetch, timeoutMs = 120_000 } = {}) {
     this.fetchImplementation = fetchImplementation;
     this.timeoutMs = timeoutMs;
   }
@@ -26,13 +34,15 @@ class OpenAiCompatibleClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
+      const requestBody = { model, messages, temperature, stream: false };
+      if (usesDeepSeekV4(baseUrl, model)) requestBody.thinking = { type: 'disabled' };
       const response = await this.fetchImplementation(`${baseUrl.replace(/\/+$/u, '')}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({ model, messages, temperature, stream: false }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal,
       });
       const body = await response.json().catch(() => ({}));
@@ -54,4 +64,4 @@ class OpenAiCompatibleClient {
   }
 }
 
-module.exports = { OpenAiCompatibleClient, extractVisibleText };
+module.exports = { OpenAiCompatibleClient, extractVisibleText, usesDeepSeekV4 };
