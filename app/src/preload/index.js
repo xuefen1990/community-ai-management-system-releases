@@ -80,6 +80,7 @@ const api = {
   recommendDraftReferences: (value) => invoke('recommendDraftReferences', value || {}),
   listDraftBusinessSources: (value) => invoke('listDraftBusinessSources', value || {}),
   generateDraftDocument: (value) => invoke('generateDraftDocument', value),
+  converseDraftDocument: (value) => invoke('converseDraftDocument', value),
   createDraftFromHistory: (value) => invoke('createDraftFromHistory', value),
   getWritingProfile: () => invoke('getWritingProfile'),
   saveWritingProfile: (value) => invoke('saveWritingProfile', value),

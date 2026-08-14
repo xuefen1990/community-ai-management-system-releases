@@ -61,6 +61,7 @@ const INVOKE_CHANNELS = Object.freeze({
   recommendDraftReferences: 'recommend-draft-references',
   listDraftBusinessSources: 'list-draft-business-sources',
   generateDraftDocument: 'generate-draft-document',
+  converseDraftDocument: 'converse-draft-document',
   createDraftFromHistory: 'create-draft-from-history',
   getWritingProfile: 'get-writing-profile',
   saveWritingProfile: 'save-writing-profile',

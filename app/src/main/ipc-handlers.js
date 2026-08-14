@@ -126,6 +126,7 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.recommendDraftReferences, documentResult(async (_event, value) => requireDraftingService().recommend(value || {})));
   handle(INVOKE_CHANNELS.listDraftBusinessSources, documentResult(async (_event, value) => requireDraftingService().listBusinessSources(value || {})));
   handle(INVOKE_CHANNELS.generateDraftDocument, documentResult(async (_event, value) => requireDraftingService().generate(value || {})));
+  handle(INVOKE_CHANNELS.converseDraftDocument, documentResult(async (_event, value) => requireDraftingService().converse(value || {})));
   handle(INVOKE_CHANNELS.createDraftFromHistory, documentResult(async (_event, value) => requireDraftingService().createFromHistory(value || {})));
   handle(INVOKE_CHANNELS.getWritingProfile, documentResult(async () => requireProfileService().get()));
   handle(INVOKE_CHANNELS.saveWritingProfile, documentResult(async (_event, value) => requireProfileService().save(value || {})));

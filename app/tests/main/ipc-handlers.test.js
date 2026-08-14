@@ -20,9 +20,21 @@ function makeHandlers(overrides = {}) {
 
 test('registers all dedicated document drafting channels', () => {
   const { handlers } = makeHandlers();
-  for (const key of ['listDocumentTemplates', 'createDraftDocument', 'listDraftBusinessSources', 'generateDraftDocument', 'getWritingProfile', 'exportDraftDocument']) {
+  for (const key of ['listDocumentTemplates', 'createDraftDocument', 'listDraftBusinessSources', 'generateDraftDocument', 'converseDraftDocument', 'getWritingProfile', 'exportDraftDocument']) {
     assert.equal(handlers.has(INVOKE_CHANNELS[key]), true);
   }
+});
+
+test('conversation channel delegates to the drafting service', async () => {
+  const received = [];
+  const documentDraftingService = {
+    converse: async (value) => { received.push(value); return { action: 'needs_input', assistantMessage: '请补充金额' }; },
+  };
+  const { callbacks } = makeHandlers({ documentDraftingService });
+  const result = await callbacks.get(INVOKE_CHANNELS.converseDraftDocument)({}, { message: '帮我写合同' });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.action, 'needs_input');
+  assert.deepEqual(received, [{ message: '帮我写合同' }]);
 });
 
 test('document channels wrap service results and user-safe errors', async () => {

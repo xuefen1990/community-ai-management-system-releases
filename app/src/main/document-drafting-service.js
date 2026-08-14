@@ -6,6 +6,12 @@ const { getTemplate, listTemplates, validateFields } = require('./document-templ
 const { ALLOWED_BUSINESS_COLLECTIONS, buildDocumentContext, stableJson } = require('./document-context-builder');
 const { canRead, recommendDocuments } = require('./document-recommendation');
 const { updateProfileFromFinal } = require('./writing-profile-service');
+const {
+  buildConversationMessages,
+  defaultTemplateFor,
+  detectDocumentKind,
+  parseConversationResponse,
+} = require('./document-conversation-interpreter');
 
 function cleanText(value) {
   return String(value || '').replaceAll(/\r\n?/gu, '\n').trim();
@@ -55,6 +61,30 @@ function versionFor(database, document) {
   return (database.documentVersions || []).find((version) => version.id === document.currentVersionId) || null;
 }
 
+function provisionalFields(templateId, message, now) {
+  const template = getTemplate(templateId);
+  const normalizedMessage = cleanText(message);
+  const date = now instanceof Date ? now : new Date(now);
+  const period = `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+  const fields = Object.fromEntries(template.fields.map((field) => [field.key, '']));
+  if (template.documentKind === 'report') {
+    fields.title = normalizedMessage ? normalizedMessage.slice(0, 46) : '新建报告';
+    fields.period = period;
+    fields.keyPoints = normalizedMessage || '待补充';
+  } else {
+    fields.title = normalizedMessage ? normalizedMessage.slice(0, 46) : '新建合同';
+    fields.subject = normalizedMessage || '待补充';
+  }
+  for (const key of template.requiredFields) if (!cleanText(fields[key])) fields[key] = '待补充';
+  return fields;
+}
+
+function hasHistoryReferenceIntent(value) {
+  const text = cleanText(value);
+  return /(参考|引用|根据|基于).*(之前|此前|前几天|上次|历史|那份|报告|合同|公文)/u.test(text)
+    || /(之前|此前|前几天|上次|历史|那份).*(报告|合同|公文)/u.test(text);
+}
+
 class DocumentDraftingService {
   constructor({ databaseStore, getCurrentAccount, aiRouter = null, now = () => new Date(), createId = (prefix) => `${prefix}-${crypto.randomUUID()}` }) {
     this.databaseStore = databaseStore;
@@ -97,6 +127,7 @@ class DocumentDraftingService {
       document: structuredClone(document),
       versions: (database.documentVersions || []).filter((version) => version.documentId === documentId).sort((left, right) => right.versionNumber - left.versionNumber),
       references: (database.documentReferences || []).filter((reference) => reference.documentId === documentId),
+      messages: (database.documentDraftMessages || []).filter((message) => message.documentId === documentId),
     };
   }
 
@@ -232,7 +263,7 @@ class DocumentDraftingService {
     const account = await requireAccount(this.getCurrentAccount);
     const database = await this.databaseStore.read();
     const document = documentId ? requireDocument(database, documentId) : null;
-    return recommendDocuments({ database, accountId: account.id, query: document ? { title: document.title, ...document.fieldSnapshot } : query, now: this.now() }).filter((item) => item.documentId !== documentId);
+    return recommendDocuments({ database, accountId: account.id, query: document ? { title: document.title, ...document.fieldSnapshot, ...query } : query, now: this.now() }).filter((item) => item.documentId !== documentId);
   }
 
   async listBusinessSources({ collection, query = '' }) {
@@ -245,6 +276,183 @@ class DocumentDraftingService {
       title: cleanText(record.title || record.name || record.person_name || record.visitorName || record.summary || record.category || record.id),
       summary: cleanText(stableJson(record)).slice(0, 180),
     }));
+  }
+
+  async converse({ documentId = null, message = '', preferredKind = 'auto', confirmedReferences = [] }) {
+    if (!this.aiRouter) throw new Error('AI 拟写服务尚未配置');
+    const account = await requireAccount(this.getCurrentAccount);
+    const userMessage = cleanText(message);
+    if (!documentId && !userMessage) throw new Error('请先描述需要拟写的公文');
+    if (!['auto', 'report', 'contract'].includes(preferredKind)) throw new Error('公文类型偏好无效');
+
+    if (!documentId) {
+      const kind = detectDocumentKind(userMessage, preferredKind);
+      const templateId = defaultTemplateFor(kind, userMessage);
+      const created = await this.createDraft({
+        templateId,
+        fields: provisionalFields(templateId, userMessage, this.now()),
+        visibility: 'shared',
+      });
+      documentId = created.document.id;
+    }
+
+    const prepared = await this.databaseStore.update((database) => {
+      if (!Array.isArray(database.documentDraftMessages)) database.documentDraftMessages = [];
+      const document = requireDocument(database, documentId);
+      requireOwner(document, account.id);
+      if (document.status === 'final') throw new Error('该公文已定稿，请先取消定稿再继续对话');
+      const now = this.now().toISOString();
+      if (userMessage) {
+        database.documentDraftMessages.push({
+          id: this.createId('message'), documentId, role: 'user', messageType: 'text', content: userMessage,
+          versionId: null, referenceCandidates: [], createdAt: now,
+        });
+      }
+      const existingState = document.conversationState && typeof document.conversationState === 'object' ? document.conversationState : {};
+      const references = Array.isArray(confirmedReferences) && confirmedReferences.length
+        ? structuredClone(confirmedReferences)
+        : structuredClone(document.pendingReferences || []);
+      document.pendingReferences = references;
+      document.conversationState = {
+        preferredKind,
+        status: 'thinking',
+        fields: structuredClone(existingState.fields || {}),
+        pendingReferenceQuery: userMessage || existingState.pendingReferenceQuery || '',
+        updatedAt: now,
+      };
+      document.updatedAt = now;
+      return structuredClone(document);
+    });
+    let document = prepared.result;
+    let database = await this.databaseStore.read();
+    let conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
+    const selectedReferences = document.pendingReferences || [];
+
+    if (userMessage && hasHistoryReferenceIntent(userMessage) && selectedReferences.length === 0) {
+      const candidates = recommendDocuments({ database, accountId: account.id, query: userMessage, now: this.now(), limit: 3 })
+        .filter((item) => item.documentId !== documentId);
+      if (candidates.length) {
+        const assistantMessage = '我找到了可能相关的历史公文，请确认要引用哪一份。确认后我再继续拟写。';
+        const outcome = await this.databaseStore.update((freshDatabase) => {
+          const freshDocument = requireDocument(freshDatabase, documentId);
+          const now = this.now().toISOString();
+          freshDocument.conversationState.status = 'awaiting_reference';
+          freshDocument.conversationState.pendingReferenceQuery = userMessage;
+          freshDocument.conversationState.updatedAt = now;
+          freshDatabase.documentDraftMessages.push({
+            id: this.createId('message'), documentId, role: 'assistant', messageType: 'reference_confirmation', content: assistantMessage,
+            versionId: null, referenceCandidates: structuredClone(candidates), createdAt: now,
+          });
+          return structuredClone(freshDocument);
+        });
+        return { action: 'reference_confirmation', document: outcome.result, assistantMessage, referenceCandidates: candidates, messages: [...conversation, { role: 'assistant', messageType: 'reference_confirmation', content: assistantMessage, referenceCandidates: candidates }] };
+      }
+    }
+
+    const profile = (database.writingProfiles || []).find((item) => item.userId === account.id) || null;
+    const template = getTemplate(document.templateId);
+    const context = buildDocumentContext({
+      database,
+      accountId: account.id,
+      template,
+      fields: { conversation: conversation.filter((item) => item.role === 'user').map((item) => item.content).join('\n') },
+      selectedReferences,
+      profile,
+    });
+    const currentVersion = versionFor(database, document);
+    const aiResponse = await this.aiRouter.chat({ messages: buildConversationMessages({
+      preferredKind,
+      conversation,
+      currentFields: document.conversationState?.fields || {},
+      currentContent: document.workingContentText || currentVersion?.contentText || '',
+      referencePrompt: context.prompt,
+    }) });
+    const plan = parseConversationResponse(aiResponse?.content, {
+      fallbackKind: document.documentKind,
+      fallbackTemplateId: document.templateId,
+      currentFields: document.conversationState?.fields || {},
+    });
+
+    if (plan.status !== 'ready') {
+      const outcome = await this.databaseStore.update((freshDatabase) => {
+        const freshDocument = requireDocument(freshDatabase, documentId);
+        requireOwner(freshDocument, account.id);
+        const now = this.now().toISOString();
+        freshDocument.documentKind = plan.documentKind;
+        freshDocument.templateId = plan.templateId;
+        freshDocument.conversationState = {
+          preferredKind,
+          status: 'needs_input',
+          fields: structuredClone(plan.fields),
+          pendingReferenceQuery: '',
+          updatedAt: now,
+        };
+        freshDocument.updatedAt = now;
+        freshDatabase.documentDraftMessages.push({
+          id: this.createId('message'), documentId, role: 'assistant', messageType: 'question', content: plan.assistantMessage,
+          versionId: null, referenceCandidates: [], createdAt: now,
+        });
+        return structuredClone(freshDocument);
+      });
+      database = await this.databaseStore.read();
+      conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
+      return { action: 'needs_input', document: outcome.result, assistantMessage: plan.assistantMessage, summary: plan.fields, messages: conversation };
+    }
+
+    const outcome = await this.databaseStore.update((freshDatabase) => {
+      const freshDocument = requireDocument(freshDatabase, documentId);
+      requireOwner(freshDocument, account.id);
+      if (freshDocument.status === 'final') throw new Error('该公文已定稿，请先取消定稿再重新生成');
+      const now = this.now().toISOString();
+      const versions = freshDatabase.documentVersions.filter((item) => item.documentId === documentId);
+      const versionId = this.createId('version');
+      const referenceIds = [];
+      for (const reference of context.references) {
+        const stored = { id: this.createId('reference'), documentId, documentVersionId: versionId, ...reference, promptText: undefined, createdAt: now };
+        referenceIds.push(stored.id);
+        freshDatabase.documentReferences.push(stored);
+      }
+      const version = {
+        id: versionId, documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
+        contentHtml: textToHtml(plan.documentText), contentText: plan.documentText, changeOrigin: 'ai', changeSummary: '对话式 AI 拟写',
+        referenceIds, aiMode: aiResponse?.provider || null, modelName: aiResponse?.model || null,
+        createdBy: account.id, createdAt: now,
+      };
+      freshDatabase.documentVersions.push(version);
+      freshDocument.documentKind = plan.documentKind;
+      freshDocument.templateId = plan.templateId;
+      freshDocument.title = plan.fields.title;
+      freshDocument.fieldSnapshot = structuredClone(plan.fields);
+      freshDocument.currentVersionId = version.id;
+      freshDocument.workingContentHtml = version.contentHtml;
+      freshDocument.workingContentText = version.contentText;
+      freshDocument.pendingReferences = structuredClone(selectedReferences);
+      freshDocument.conversationState = {
+        preferredKind,
+        status: 'ready',
+        fields: structuredClone(plan.fields),
+        pendingReferenceQuery: '',
+        updatedAt: now,
+      };
+      freshDocument.updatedAt = now;
+      freshDatabase.documentDraftMessages.push({
+        id: this.createId('message'), documentId, role: 'assistant', messageType: 'generated', content: plan.assistantMessage,
+        versionId: version.id, referenceCandidates: [], createdAt: now,
+      });
+      return { document: structuredClone(freshDocument), version: structuredClone(version) };
+    });
+    database = await this.databaseStore.read();
+    conversation = (database.documentDraftMessages || []).filter((item) => item.documentId === documentId);
+    return {
+      action: 'generated',
+      document: outcome.result.document,
+      version: outcome.result.version,
+      assistantMessage: plan.assistantMessage,
+      summary: plan.fields,
+      references: context.references,
+      omitted: context.omitted,
+      messages: conversation,
+    };
   }
 
   async generate({ documentId, selectedReferences = [], instructions = '' }) {

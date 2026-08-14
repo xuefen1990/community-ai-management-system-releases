@@ -28,8 +28,9 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.deepEqual(database.documentVersions, []);
   assert.deepEqual(database.documentReferences, []);
   assert.deepEqual(database.documentTemplates, []);
+  assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);
-  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 2);
+  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 3);
 });
 
 test('older empty databases are normalized for the compatibility renderer', async (t) => {
@@ -40,8 +41,9 @@ test('older empty databases are normalized for the compatibility renderer', asyn
   const database = await store.read();
   assert.deepEqual(database.landParcel, [{ id: 'land-1' }]);
   assert.deepEqual(database.operationLogs, []);
-  assert.equal(database.version, 2);
+  assert.equal(database.version, 3);
   assert.deepEqual(database.documentDrafts, []);
+  assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);
 });
 

@@ -2,7 +2,7 @@
 
 function createEmptyDatabase() {
   return {
-    version: 2,
+    version: 3,
     settings: {
       villageName: '社区名称',
       appSubtitle: '社区AI管理系统',
@@ -21,6 +21,7 @@ function createEmptyDatabase() {
     documentDrafts: [],
     documentVersions: [],
     documentReferences: [],
+    documentDraftMessages: [],
     documentTemplates: [],
     writingProfiles: [],
     operationLogs: [],

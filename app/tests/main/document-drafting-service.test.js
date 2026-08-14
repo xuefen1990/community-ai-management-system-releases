@@ -6,7 +6,7 @@ const test = require('node:test');
 const { createEmptyDatabase } = require('../../src/main/empty-database');
 const { DocumentDraftingService, sanitizeDocumentHtml } = require('../../src/main/document-drafting-service');
 
-function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文' } = {}) {
+function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiResponses = null } = {}) {
   let database = createEmptyDatabase();
   let currentAccountId = accountId;
   let sequence = 0;
@@ -23,7 +23,11 @@ function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文' } = {}) {
   const service = new DocumentDraftingService({
     databaseStore: store,
     getCurrentAccount: async () => currentAccountId ? ({ id: currentAccountId }) : null,
-    aiRouter: { chat: async ({ messages }) => { aiPrompts.push(messages); return { content: aiContent, provider: 'local' }; } },
+    aiRouter: { chat: async ({ messages }) => {
+      aiPrompts.push(messages);
+      const content = Array.isArray(aiResponses) && aiResponses.length ? aiResponses.shift() : aiContent;
+      return { content, provider: 'local', model: 'test-model' };
+    } },
     now: () => new Date('2026-08-13T08:00:00.000Z'),
     createId: (prefix) => `${prefix}-${++sequence}`,
   });
@@ -151,4 +155,68 @@ test('business source listing uses an allowlist and returns compact records', as
 test('document HTML sanitizer keeps formatting but removes scripts, remote resources, and event handlers', () => {
   const sanitized = sanitizeDocumentHtml('<p onclick="steal()">正文<strong style="color:red">重点</strong><img src="https://example.test/a.png"><script>alert(1)</script></p>');
   assert.equal(sanitized, '<p>正文<strong>重点</strong></p>');
+});
+
+test('conversation creates a draft, stores messages, and generates the first version', async () => {
+  const harness = makeHarness({ aiResponses: [JSON.stringify({
+    documentKind: 'report', templateId: 'report-request', status: 'ready', assistantMessage: '已生成请示',
+    fields: { title: '关于拨付过渡房费用的请示', period: '2026年8月', recipient: '上级部门', keyPoints: '申请拨付36000元过渡房费用' },
+    documentText: '关于拨付过渡房费用的请示\n\n现申请拨付相关费用。',
+  })] });
+
+  const result = await harness.service.converse({ message: '写一份请示，申请拨付36000元过渡房费用' });
+
+  assert.equal(result.action, 'generated');
+  assert.equal(result.document.documentKind, 'report');
+  assert.equal(result.version.versionNumber, 2);
+  assert.equal(harness.database.documentDraftMessages.length, 2);
+  assert.equal(harness.database.documentDrafts[0].conversationState.status, 'ready');
+});
+
+test('conversation asks for missing information and generates after the reply', async () => {
+  const harness = makeHarness({ aiResponses: [
+    JSON.stringify({ documentKind: 'contract', templateId: 'contract-service', status: 'needs_input', assistantMessage: '请补充甲乙双方和付款方式', fields: { title: '保洁服务合同', subject: '保洁服务' }, documentText: '' }),
+    JSON.stringify({ documentKind: 'contract', templateId: 'contract-service', status: 'ready', assistantMessage: '合同已生成', fields: { title: '保洁服务合同', partyA: '陆庄社区', partyB: '保洁公司', subject: '保洁服务', amount: '36000元', term: '一年', payment: '按月付款', breach: '违约方承担损失', dispute: '向甲方所在地法院起诉' }, documentText: '保洁服务合同\n\n甲方：陆庄社区\n乙方：保洁公司' }),
+  ] });
+
+  const first = await harness.service.converse({ message: '帮我写一份保洁服务合同' });
+  assert.equal(first.action, 'needs_input');
+  assert.equal(harness.database.documentVersions.length, 1);
+
+  const second = await harness.service.converse({ documentId: first.document.id, message: '甲方陆庄社区，乙方保洁公司，36000元，一年，按月付款，违约方承担损失，争议向甲方所在地法院起诉' });
+  assert.equal(second.action, 'generated');
+  assert.equal(second.version.versionNumber, 2);
+  assert.equal(harness.database.documentDraftMessages.length, 4);
+});
+
+test('history intent returns candidates before sending content to AI', async () => {
+  const harness = makeHarness();
+  const source = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  await harness.service.saveDraft({ documentId: source.document.id, contentText: '过渡房费用历史报告', contentHtml: '<p>过渡房费用历史报告</p>' });
+  await harness.service.saveVersion({ documentId: source.document.id });
+  await harness.service.finalize(source.document.id);
+
+  const result = await harness.service.converse({ message: '参考前几天那份报告，再写一份合同' });
+  assert.equal(result.action, 'reference_confirmation');
+  assert.equal(result.referenceCandidates[0].documentId, source.document.id);
+  assert.equal(harness.aiPrompts.length, 0);
+});
+
+test('manual history search merges the typed query with the current draft', async () => {
+  const harness = makeHarness();
+  const source = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  await harness.service.saveDraft({ documentId: source.document.id, contentText: '专项环境整治历史正文' });
+  await harness.service.saveVersion({ documentId: source.document.id });
+  await harness.service.finalize(source.document.id);
+  const target = await harness.service.createDraft({ templateId: 'report-request', fields: { title: '其他事项请示', period: '2026年', keyPoints: '无关内容' } });
+
+  const results = await harness.service.recommend({ documentId: target.document.id, query: { title: '专项环境整治' } });
+  assert.equal(results[0].documentId, source.document.id);
+});
+
+test('invalid conversation output preserves the empty draft version', async () => {
+  const harness = makeHarness({ aiResponses: ['无法解析的内容'] });
+  await assert.rejects(() => harness.service.converse({ message: '写一份完整的工作报告' }), /无法理解/u);
+  assert.equal(harness.database.documentVersions.length, 1);
+  assert.equal(harness.database.documentVersions[0].contentText, '');
 });
