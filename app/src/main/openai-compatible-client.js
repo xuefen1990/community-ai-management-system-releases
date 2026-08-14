@@ -1,5 +1,17 @@
 'use strict';
 
+function extractVisibleText(value) {
+  if (typeof value === 'string') return value.trim();
+  if (!Array.isArray(value)) return '';
+  return value.map((part) => {
+    if (typeof part === 'string') return part;
+    if (!part || typeof part !== 'object') return '';
+    if (typeof part.text === 'string') return part.text;
+    if (typeof part.content === 'string') return part.content;
+    return '';
+  }).join('').trim();
+}
+
 class OpenAiCompatibleClient {
   constructor({ fetchImplementation = globalThis.fetch, timeoutMs = 30_000 } = {}) {
     this.fetchImplementation = fetchImplementation;
@@ -25,8 +37,10 @@ class OpenAiCompatibleClient {
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error?.message || `在线 AI 请求失败（${response.status}）`);
-      const content = body.choices?.[0]?.message?.content;
-      if (typeof content !== 'string') throw new Error('在线 AI 返回内容格式无效');
+      if (body.error?.message) throw new Error(body.error.message);
+      const choice = body.choices?.[0];
+      const content = extractVisibleText(choice?.message?.content) || extractVisibleText(choice?.text);
+      if (!content) throw new Error('在线 AI 没有返回可用正文，请重试或切换模型');
       return { ok: true, content, usage: body.usage || null, model: body.model || model };
     } catch (error) {
       if (error.name === 'AbortError') throw new Error('在线 AI 请求超时');
@@ -40,4 +54,4 @@ class OpenAiCompatibleClient {
   }
 }
 
-module.exports = { OpenAiCompatibleClient };
+module.exports = { OpenAiCompatibleClient, extractVisibleText };

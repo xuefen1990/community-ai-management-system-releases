@@ -91,11 +91,11 @@ function extractJson(value) {
   const normalized = cleanText(value).replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '');
   const start = normalized.indexOf('{');
   const end = normalized.lastIndexOf('}');
-  if (start < 0 || end <= start) throw new Error('AI 无法理解本次公文需求，请换一种说法后重试');
+  if (start < 0 || end <= start) return null;
   try {
     return JSON.parse(normalized.slice(start, end + 1));
   } catch {
-    throw new Error('AI 无法理解本次公文需求，请换一种说法后重试');
+    return null;
   }
 }
 
@@ -104,7 +104,9 @@ function parseConversationResponse(content, {
   fallbackTemplateId = defaultTemplateFor(fallbackKind),
   currentFields = {},
 } = {}) {
-  const parsed = extractJson(content);
+  const normalizedContent = cleanText(content);
+  if (!normalizedContent) throw new Error('AI 未返回完整公文正文，请重试');
+  const parsed = extractJson(normalizedContent) || { documentText: normalizedContent };
   const documentKind = ['report', 'contract'].includes(parsed.documentKind) ? parsed.documentKind : fallbackKind;
   let templateId = cleanText(parsed.templateId) || fallbackTemplateId;
   let template;
