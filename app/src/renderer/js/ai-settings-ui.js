@@ -1,6 +1,60 @@
 'use strict';
 
+function cleanOnlineAiError(error) {
+  const fallback = '在线 AI 连接失败';
+  const rawMessage = typeof error?.message === 'string' ? error.message.trim() : '';
+  if (!rawMessage) return fallback;
+  return rawMessage
+    .replace(/^Error invoking remote method '[^']+':\s*/u, '')
+    .replace(/^Error:\s*/u, '')
+    .trim() || fallback;
+}
+
+function setOnlineAiTestStatus(statusElement, state, message) {
+  if (!statusElement) return;
+  statusElement.hidden = false;
+  statusElement.dataset.state = state;
+  statusElement.textContent = message;
+}
+
+async function runOnlineAiTest({
+  button,
+  statusElement,
+  saveSettings,
+  testOnlineAi,
+  notify = () => {},
+}) {
+  if (!button || button.disabled) return { ok: false, error: '在线 AI 正在测试中' };
+  const originalText = button.textContent || '测试在线接口';
+  button.disabled = true;
+  button.textContent = '正在测试…';
+  setOnlineAiTestStatus(statusElement, 'testing', '正在连接在线 AI，请稍候…');
+
+  try {
+    await saveSettings();
+    const response = await testOnlineAi();
+    const model = response?.model || '在线模型';
+    const content = String(response?.content || '连接成功').trim();
+    setOnlineAiTestStatus(statusElement, 'success', `连接成功：${model}；接口返回：${content}`);
+    notify(`在线 AI 连接成功（${model}）`, 'success');
+    return { ok: true, response };
+  } catch (error) {
+    const message = cleanOnlineAiError(error);
+    setOnlineAiTestStatus(statusElement, 'error', `连接失败：${message}`);
+    notify(`在线 AI 连接失败：${message}`, 'error');
+    return { ok: false, error: message };
+  } finally {
+    button.disabled = false;
+    button.textContent = originalText;
+  }
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { cleanOnlineAiError, runOnlineAiTest, setOnlineAiTestStatus };
+}
+
 (function installAiSettingsUi() {
+  if (typeof window === 'undefined') return;
   const api = window.api;
   if (!api?.getAiSettings) return;
   let status = { running: false };
@@ -89,7 +143,9 @@
       <div style="display:flex;gap:10px;align-items:center;">
         <input id="communityAiApiKey" type="password" placeholder="API 密钥（已保存时留空即可）" style="flex:1;padding:8px;border:1px solid var(--border-color);border-radius:7px;background:var(--bg-input);color:var(--text-primary);">
         <button id="communityAiImportModel" class="btn btn-outline">📥 导入 GGUF</button><button id="communityAiSave" class="btn btn-primary">保存配置</button><button id="communityAiTestOnline" class="btn btn-outline">测试在线接口</button>
-      </div><p style="margin:10px 0 0;font-size:11px;color:var(--text-secondary);">本地模式不联网；在线模式仅将您主动提交给 AI 的文本发送到所配置的接口。API 密钥由 macOS 安全存储加密。</p>`;
+      </div>
+      <div id="communityAiTestStatus" class="community-ai-test-status" hidden aria-live="polite"></div>
+      <p style="margin:10px 0 0;font-size:11px;color:var(--text-secondary);">本地模式不联网；在线模式仅将您主动提交给 AI 的文本发送到所配置的接口。API 密钥由 macOS 安全存储加密。</p>`;
     cardBody.prepend(panel);
 
     panel.querySelector('#communityAiImportModel').addEventListener('click', async () => {
@@ -101,20 +157,18 @@
     });
     panel.querySelector('#communityAiSave').addEventListener('click', saveSettings);
     panel.querySelector('#communityAiTestOnline').addEventListener('click', async (event) => {
-      event.currentTarget.disabled = true;
-      try {
-        await saveSettings();
-        const response = await api.testOnlineAi();
-        notify(`在线 AI 连接成功：${response.content}`);
-      } catch (error) {
-        notify(error.message || '在线 AI 连接失败', 'error');
-      } finally {
-        event.currentTarget.disabled = false;
-      }
+      const button = event.currentTarget;
+      await runOnlineAiTest({
+        button,
+        statusElement: panel.querySelector('#communityAiTestStatus'),
+        saveSettings: () => saveSettings({ showSuccess: false }),
+        testOnlineAi: () => api.testOnlineAi(),
+        notify,
+      });
     });
   }
 
-  async function saveSettings() {
+  async function saveSettings({ showSuccess = true } = {}) {
     const settings = await api.saveAiSettings({
       mode: document.getElementById('communityAiMode').value,
       localModelPath: document.getElementById('internalModelSelect')?.value || '',
@@ -126,7 +180,7 @@
     });
     document.getElementById('communityAiApiKey').value = '';
     document.getElementById('communityAiApiKey').placeholder = settings.online.hasApiKey ? 'API 密钥已安全保存；留空表示不更改' : 'API 密钥';
-    notify('AI 配置已保存');
+    if (showSuccess) notify('AI 配置已保存');
     return settings;
   }
 

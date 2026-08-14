@@ -4516,6 +4516,31 @@ body.light-theme .toast-success {
 .toast-info {
   border-left-color: var(--primary);
 }
+.community-ai-test-status {
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.community-ai-test-status[data-state="testing"] {
+  border-color: rgba(59, 130, 246, 0.35);
+  background: rgba(59, 130, 246, 0.08);
+  color: #2563eb;
+}
+.community-ai-test-status[data-state="success"] {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.08);
+  color: #047857;
+}
+.community-ai-test-status[data-state="error"] {
+  border-color: rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.08);
+  color: #b91c1c;
+}
 .batch-action-bar {
   position: fixed;
   bottom: 24px;

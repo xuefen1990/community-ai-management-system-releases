@@ -14,5 +14,8 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /自动：本地优先/u);
   assert.match(source, /importLocalModel/u);
   assert.match(source, /chatWithAi/u);
+  assert.match(source, /communityAiTestStatus/u);
+  assert.match(source, /const button = event\.currentTarget/u);
+  assert.doesNotMatch(source, /finally\s*\{\s*event\.currentTarget/u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
 });

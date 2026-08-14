@@ -30,6 +30,9 @@ class OpenAiCompatibleClient {
       return { ok: true, content, usage: body.usage || null, model: body.model || model };
     } catch (error) {
       if (error.name === 'AbortError') throw new Error('在线 AI 请求超时');
+      if (error.name === 'TypeError' && /fetch failed|failed to fetch|network/iu.test(error.message || '')) {
+        throw new Error('无法连接在线 AI 接口，请检查接口地址和网络');
+      }
       throw error;
     } finally {
       clearTimeout(timeout);
