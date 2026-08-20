@@ -25,6 +25,11 @@ function createEmptyDatabase() {
     documentTemplates: [],
     writingProfiles: [],
     operationLogs: [],
+    workItems: [],
+    workEvidence: [],
+    workProgressRecords: [],
+    workResourceEntries: [],
+    workAcceptances: [],
   };
 }
 

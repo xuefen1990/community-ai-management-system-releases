@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 67);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 69);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 3);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -18,12 +18,14 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.testOnlineAi, 'test-online-ai');
   assert.equal(INVOKE_CHANNELS.chatWithAi, 'chat-with-ai');
   assert.equal(INVOKE_CHANNELS.createDraftDocument, 'create-draft-document');
+  assert.equal(INVOKE_CHANNELS.getDraftLayoutDefaults, 'get-draft-layout-defaults');
   assert.equal(INVOKE_CHANNELS.generateDraftDocument, 'generate-draft-document');
   assert.equal(INVOKE_CHANNELS.converseDraftDocument, 'converse-draft-document');
   assert.equal(INVOKE_CHANNELS.reopenDraftDocument, 'reopen-draft-document');
   assert.equal(INVOKE_CHANNELS.listDraftBusinessSources, 'list-draft-business-sources');
   assert.equal(INVOKE_CHANNELS.getWritingProfile, 'get-writing-profile');
   assert.equal(INVOKE_CHANNELS.exportDraftDocument, 'export-draft-document');
+  assert.equal(INVOKE_CHANNELS.importWorkAttachments, 'import-work-attachments');
   assert.equal(EVENT_CHANNELS.onMobileVoiceConfirmSave, 'mobile-voice-confirm-save');
 });
 

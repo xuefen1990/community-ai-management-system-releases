@@ -114,6 +114,7 @@ function registerCompatibilityHandlers({
   };
 
   handle(INVOKE_CHANNELS.listDocumentTemplates, documentResult(async (_event, value = {}) => requireDraftingService().listTemplates(value.documentKind)));
+  handle(INVOKE_CHANNELS.getDraftLayoutDefaults, documentResult(async (_event, value = {}) => requireDraftingService().getLayoutDefaults(value)));
   handle(INVOKE_CHANNELS.listDraftDocuments, documentResult(async (_event, value = {}) => requireDraftingService().listDocuments(value)));
   handle(INVOKE_CHANNELS.getDraftDocument, documentResult(async (_event, value) => requireDraftingService().getDocument(value?.documentId)));
   handle(INVOKE_CHANNELS.createDraftDocument, documentResult(async (_event, value) => requireDraftingService().createDraft(value || {})));
@@ -133,6 +134,41 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.resetWritingProfile, documentResult(async () => requireProfileService().reset()));
   handle(INVOKE_CHANNELS.exportDraftDocument, documentResult(async (_event, value) => requireExportService().export(value || {})));
   handle(INVOKE_CHANNELS.printDraftDocument, documentResult(async (_event, value) => requireExportService().print(value || {})));
+  handle(INVOKE_CHANNELS.importWorkAttachments, async () => {
+    if (!dialog) return { ok: false, error: '当前环境无法选择附件' };
+    const selected = await dialog.showOpenDialog({
+      title: '选择工作管理附件',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '常用文件', extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'mp4', 'mov'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (selected.canceled || !selected.filePaths.length) return { ok: true, data: [] };
+    try {
+      const attachmentDirectory = path.join(app.getPath('userData'), 'work-attachments');
+      await fs.promises.mkdir(attachmentDirectory, { recursive: true });
+      const attachments = await Promise.all(selected.filePaths.map(async (sourcePath) => {
+        const sourceName = path.basename(sourcePath);
+        const extension = path.extname(sourceName).toLowerCase();
+        const targetName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}${extension}`;
+        const targetPath = path.join(attachmentDirectory, targetName);
+        const stats = await fs.promises.stat(sourcePath);
+        await fs.promises.copyFile(sourcePath, targetPath);
+        return {
+          id: targetName,
+          name: sourceName,
+          path: targetPath,
+          size: stats.size,
+          extension,
+          uploadedAt: new Date().toISOString(),
+        };
+      }));
+      return { ok: true, data: attachments };
+    } catch (error) {
+      return { ok: false, error: error?.message || '附件保存失败' };
+    }
+  });
 
   const successChannels = [
     INVOKE_CHANNELS.writePersonnelImport,

@@ -245,4 +245,20 @@ if (typeof module !== 'undefined' && module.exports) {
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);
   else initialize();
+
+  function loadWorkManagementModule() {
+    if (window.WorkManagement || document.querySelector('script[data-work-management-module]')) return;
+    const modelScript = document.createElement('script');
+    modelScript.src = 'js/modules/work-management-model.js';
+    modelScript.dataset.workManagementModule = 'model';
+    modelScript.addEventListener('load', () => {
+      const uiScript = document.createElement('script');
+      uiScript.src = 'js/modules/work-management.js';
+      uiScript.dataset.workManagementModule = 'ui';
+      document.head.appendChild(uiScript);
+    }, { once: true });
+    document.head.appendChild(modelScript);
+  }
+
+  loadWorkManagementModule();
 }());

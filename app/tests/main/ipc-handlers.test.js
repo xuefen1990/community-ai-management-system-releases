@@ -20,9 +20,14 @@ function makeHandlers(overrides = {}) {
 
 test('registers all dedicated document drafting channels', () => {
   const { handlers } = makeHandlers();
-  for (const key of ['listDocumentTemplates', 'createDraftDocument', 'listDraftBusinessSources', 'generateDraftDocument', 'converseDraftDocument', 'getWritingProfile', 'exportDraftDocument']) {
+  for (const key of ['listDocumentTemplates', 'getDraftLayoutDefaults', 'createDraftDocument', 'listDraftBusinessSources', 'generateDraftDocument', 'converseDraftDocument', 'getWritingProfile', 'exportDraftDocument']) {
     assert.equal(handlers.has(INVOKE_CHANNELS[key]), true);
   }
+});
+
+test('registers the work attachment channel', () => {
+  const { handlers } = makeHandlers();
+  assert.equal(handlers.has(INVOKE_CHANNELS.importWorkAttachments), true);
 });
 
 test('direct drafting channel delegates to the compatible drafting service entry point', async () => {

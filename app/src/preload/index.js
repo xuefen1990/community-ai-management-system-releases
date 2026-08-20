@@ -68,6 +68,7 @@ const api = {
   testOnlineAi: () => invoke('testOnlineAi'),
   chatWithAi: (messages) => invoke('chatWithAi', { messages }),
   listDocumentTemplates: (documentKind) => invoke('listDocumentTemplates', { documentKind }),
+  getDraftLayoutDefaults: (value) => invoke('getDraftLayoutDefaults', value || {}),
   listDraftDocuments: (filters) => invoke('listDraftDocuments', filters || {}),
   getDraftDocument: (documentId) => invoke('getDraftDocument', { documentId }),
   createDraftDocument: (value) => invoke('createDraftDocument', value),
@@ -87,6 +88,7 @@ const api = {
   resetWritingProfile: () => invoke('resetWritingProfile'),
   exportDraftDocument: (value) => invoke('exportDraftDocument', value),
   printDraftDocument: (value) => invoke('printDraftDocument', value),
+  importWorkAttachments: () => invoke('importWorkAttachments'),
 };
 
 contextBridge.exposeInMainWorld('api', Object.freeze(api));

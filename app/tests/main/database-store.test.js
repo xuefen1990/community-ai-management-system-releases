@@ -30,6 +30,11 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.deepEqual(database.documentTemplates, []);
   assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);
+  assert.deepEqual(database.workItems, []);
+  assert.deepEqual(database.workEvidence, []);
+  assert.deepEqual(database.workProgressRecords, []);
+  assert.deepEqual(database.workResourceEntries, []);
+  assert.deepEqual(database.workAcceptances, []);
   assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 3);
 });
 
@@ -45,6 +50,7 @@ test('older empty databases are normalized for the compatibility renderer', asyn
   assert.deepEqual(database.documentDrafts, []);
   assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);
+  assert.deepEqual(database.workItems, []);
 });
 
 test('atomic updates serialize concurrent domain mutations', async (t) => {

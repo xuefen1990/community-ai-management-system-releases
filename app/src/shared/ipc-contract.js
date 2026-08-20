@@ -49,6 +49,7 @@ const INVOKE_CHANNELS = Object.freeze({
   testOnlineAi: 'test-online-ai',
   chatWithAi: 'chat-with-ai',
   listDocumentTemplates: 'list-document-templates',
+  getDraftLayoutDefaults: 'get-draft-layout-defaults',
   listDraftDocuments: 'list-draft-documents',
   getDraftDocument: 'get-draft-document',
   createDraftDocument: 'create-draft-document',
@@ -68,6 +69,7 @@ const INVOKE_CHANNELS = Object.freeze({
   resetWritingProfile: 'reset-writing-profile',
   exportDraftDocument: 'export-draft-document',
   printDraftDocument: 'print-draft-document',
+  importWorkAttachments: 'import-work-attachments',
 });
 
 const SEND_CHANNELS = Object.freeze({
