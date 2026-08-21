@@ -20,5 +20,20 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.match(source, /window\.api/u);
   assert.match(source, /loginLocalAccount/u);
   assert.match(source, /activateOfflineLicense/u);
+  assert.match(source, /listLocalAccountEntitlements/u);
+  assert.match(source, /记住登录/u);
+  assert.match(source, /免费体验已结束/u);
+  assert.match(source, /suppressLegacyTrialExperience/u);
+  assert.match(source, /update-ui\.js/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
+});
+
+test('post-login state prevents hidden layers from intercepting clicks', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
+  assert.match(source, /function setAppViewVisibility\(id, visible\)/u);
+  assert.match(source, /view\.style\.pointerEvents = visible \? 'auto' : 'none'/u);
+  assert.match(source, /setAppViewVisibility\('loginView', false\)/u);
+  assert.match(source, /setAppViewVisibility\('dashboardView', true\)/u);
+  assert.match(source, /modal\.style\.pointerEvents = 'none'/u);
+  assert.doesNotMatch(source, /parentElement\?\.parentElement\?\.parentElement/u);
 });

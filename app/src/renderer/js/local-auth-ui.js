@@ -29,12 +29,59 @@
   function formatEntitlement(entitlement) {
     if (entitlement?.type === 'licensed') {
       if (entitlement.plan === 'permanent') return '永久授权';
+      if (entitlement.plan === 'expires') return entitlement.expiresAt ? `授权至 ${entitlement.expiresAt.slice(0, 10)}` : '期限授权';
       const label = entitlement.plan === 'monthly' ? '月度授权' : '年度授权';
       return entitlement.expiresAt ? `${label} · 至 ${entitlement.expiresAt.slice(0, 10)}` : label;
     }
     if (entitlement?.type === 'trial') return `本地试用 · 剩 ${entitlement.remainingDays} 天`;
     if (entitlement?.type === 'expired') return '试用已到期';
     return '未授权';
+  }
+
+  function isPermanent(status) {
+    return status?.authenticated && status.entitlement?.type === 'licensed' && status.entitlement?.plan === 'permanent';
+  }
+
+  function refreshLegacyAuthLabels(status) {
+    const phone = status?.account?.phone || '未登录';
+    const entitlementLabel = formatEntitlement(status?.entitlement);
+    document.querySelectorAll('.admin-name').forEach((element) => { element.textContent = phone; });
+    document.querySelectorAll('.user-status-text').forEach((element) => { element.textContent = entitlementLabel; });
+    const settingsPhone = document.getElementById('settings-phone');
+    if (settingsPhone) settingsPhone.textContent = phone;
+    const settingsExpire = document.getElementById('settings-expire');
+    if (settingsExpire) settingsExpire.textContent = entitlementLabel;
+  }
+
+  function setAppViewVisibility(id, visible) {
+    const view = document.getElementById(id);
+    if (!view) return;
+    view.classList.toggle('hidden', !visible);
+    view.style.pointerEvents = visible ? 'auto' : 'none';
+    view.setAttribute('aria-hidden', String(!visible));
+  }
+
+  function hideLegacyTrialModal(modal) {
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+    modal.style.visibility = 'hidden';
+    modal.style.pointerEvents = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+
+  function suppressLegacyTrialExperience(status) {
+    if (!isPermanent(status)) return;
+    const modal = Array.from(document.querySelectorAll('.modal-overlay,[role="dialog"],[data-legacy-trial-overlay]')).find((candidate) => (
+      /免费体验已结束|免注册体验已结束/u.test(candidate.textContent?.trim() || '')
+    ));
+    if (modal) hideLegacyTrialModal(modal);
+  }
+
+  function keepPermanentAccessVisible(status) {
+    if (!isPermanent(status)) return;
+    suppressLegacyTrialExperience(status);
+    const observer = new MutationObserver(() => suppressLegacyTrialExperience(status));
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
   }
 
   async function enterDashboard(status) {
@@ -44,12 +91,10 @@
       openActivationModal(status);
       return;
     }
-    document.getElementById('loginView')?.classList.add('hidden');
-    document.getElementById('dashboardView')?.classList.remove('hidden');
-    document.querySelectorAll('.admin-name').forEach((element) => { element.textContent = status.account.phone; });
-    document.querySelectorAll('.user-status-text').forEach((element) => {
-      element.textContent = formatEntitlement(status.entitlement);
-    });
+    setAppViewVisibility('loginView', false);
+    setAppViewVisibility('dashboardView', true);
+    refreshLegacyAuthLabels(status);
+    keepPermanentAccessVisible(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
     if (typeof window.renderOverview === 'function') window.renderOverview();
   }
@@ -60,8 +105,9 @@
     try {
       const phone = document.getElementById('login-phone')?.value || '';
       const password = document.getElementById('login-password')?.value || '';
-      const status = await api.loginLocalAccount({ phone, password });
-      if (document.getElementById('remember-me')?.checked) localStorage.setItem('local-auth-phone', phone);
+      const remember = Boolean(document.getElementById('remember-me')?.checked);
+      const status = await api.loginLocalAccount({ phone, password, remember });
+      if (remember) localStorage.setItem('local-auth-phone', phone);
       else localStorage.removeItem('local-auth-phone');
       await enterDashboard(status);
     } catch (error) {
@@ -81,7 +127,7 @@
     }
     setLoading('doRegisterBtn', true, '注册并开启 30 天免费试用');
     try {
-      await enterDashboard(await api.registerLocalAccount({ phone, password }));
+      await enterDashboard(await api.registerLocalAccount({ phone, password, remember: true }));
     } catch (error) {
       setError('reg', error.message || '注册失败');
     } finally {
@@ -92,8 +138,8 @@
   async function logout() {
     await api.logoutLocalAccount();
     currentStatus = null;
-    document.getElementById('dashboardView')?.classList.add('hidden');
-    document.getElementById('loginView')?.classList.remove('hidden');
+    setAppViewVisibility('dashboardView', false);
+    setAppViewVisibility('loginView', true);
     if (typeof window.showPanel === 'function') window.showPanel('login');
     const password = document.getElementById('login-password');
     if (password) password.value = '';
@@ -152,6 +198,89 @@
     modal.style.display = 'flex';
   }
 
+  function closeAccountEntitlementModal() {
+    const modal = document.getElementById('localAccountEntitlementModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+
+  function ensureAccountEntitlementModal() {
+    let modal = document.getElementById('localAccountEntitlementModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'localAccountEntitlementModal';
+    modal.className = 'modal-overlay hidden';
+    modal.style.cssText = 'z-index:100001;display:none;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+      <div class="modal-card" style="width:560px;max-width:92vw;border-radius:14px;overflow:hidden;background:var(--bg-card);">
+        <div class="modal-header" style="padding:18px 22px;border-bottom:1px solid var(--border-color);"><div><h3 style="margin:0 0 4px;font-size:17px;">账号授权管理</h3><p style="margin:0;color:var(--text-secondary);font-size:12px;">为本机注册账号设置永久或到期授权</p></div><button id="closeLocalAccountEntitlements" class="close-modal-btn" style="background:none;border:0;font-size:22px;cursor:pointer;color:var(--text-secondary);">×</button></div>
+        <div class="modal-body" style="padding:20px 22px;display:flex;flex-direction:column;gap:14px;">
+          <div><label for="localEntitlementAccount" style="font-size:12px;font-weight:700;">账号</label><select id="localEntitlementAccount" style="width:100%;margin-top:6px;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-input);color:var(--text-primary);"></select></div>
+          <div><label for="localEntitlementPlan" style="font-size:12px;font-weight:700;">使用期限</label><select id="localEntitlementPlan" style="width:100%;margin-top:6px;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-input);color:var(--text-primary);"><option value="permanent">永久授权</option><option value="expires">指定到期日</option><option value="trial">重置为 30 天试用</option></select></div>
+          <div id="localEntitlementExpiresWrap" style="display:none;"><label for="localEntitlementExpires" style="font-size:12px;font-weight:700;">到期日期</label><input id="localEntitlementExpires" type="date" style="width:100%;margin-top:6px;padding:10px;border:1px solid var(--border-color);border-radius:8px;background:var(--bg-input);color:var(--text-primary);box-sizing:border-box;"></div>
+          <div id="localEntitlementCurrent" style="font-size:12px;color:var(--text-secondary);"></div><div id="localEntitlementError" style="min-height:18px;color:#ef4444;font-size:12px;"></div>
+        </div>
+        <div class="modal-footer" style="padding:14px 22px;border-top:1px solid var(--border-color);display:flex;justify-content:flex-end;gap:10px;"><button id="cancelLocalAccountEntitlements" class="btn btn-outline">取消</button><button id="saveLocalAccountEntitlement" class="btn btn-primary">保存授权</button></div>
+      </div>`;
+    document.body.appendChild(modal);
+    const plan = modal.querySelector('#localEntitlementPlan');
+    plan.addEventListener('change', () => {
+      modal.querySelector('#localEntitlementExpiresWrap').style.display = plan.value === 'expires' ? 'block' : 'none';
+    });
+    modal.querySelector('#closeLocalAccountEntitlements').addEventListener('click', closeAccountEntitlementModal);
+    modal.querySelector('#cancelLocalAccountEntitlements').addEventListener('click', closeAccountEntitlementModal);
+    modal.querySelector('#saveLocalAccountEntitlement').addEventListener('click', async () => {
+      const errorBox = modal.querySelector('#localEntitlementError');
+      const button = modal.querySelector('#saveLocalAccountEntitlement');
+      button.disabled = true;
+      errorBox.textContent = '';
+      try {
+        const accounts = await api.setLocalAccountEntitlement({
+          accountId: modal.querySelector('#localEntitlementAccount').value,
+          plan: plan.value,
+          expiresAt: modal.querySelector('#localEntitlementExpires').value,
+        });
+        populateAccountEntitlements(modal, accounts);
+        currentStatus = await api.getLocalAuthStatus();
+        document.querySelectorAll('.user-status-text').forEach((element) => { element.textContent = formatEntitlement(currentStatus.entitlement); });
+      } catch (error) {
+        errorBox.textContent = error.message || '保存授权失败';
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return modal;
+  }
+
+  function populateAccountEntitlements(modal, accounts) {
+    const select = modal.querySelector('#localEntitlementAccount');
+    const previousValue = select.value;
+    select.innerHTML = accounts.map((account) => `<option value="${account.id}">${account.phone}${account.isOwner ? '（本机主账号）' : ''}</option>`).join('');
+    if (accounts.some((account) => account.id === previousValue)) select.value = previousValue;
+    const describeCurrent = () => {
+      const account = accounts.find((candidate) => candidate.id === select.value);
+      modal.querySelector('#localEntitlementCurrent').textContent = account ? `当前状态：${formatEntitlement(account.entitlement)}` : '';
+    };
+    select.onchange = describeCurrent;
+    describeCurrent();
+  }
+
+  async function openAccountEntitlementModal() {
+    const modal = ensureAccountEntitlementModal();
+    const errorBox = modal.querySelector('#localEntitlementError');
+    errorBox.textContent = '';
+    try {
+      populateAccountEntitlements(modal, await api.listLocalAccountEntitlements());
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+    } catch (error) {
+      errorBox.textContent = error.message || '无法读取账号授权信息';
+      modal.classList.remove('hidden');
+      modal.style.display = 'flex';
+    }
+  }
+
   function bindButton(id, handler) {
     const button = document.getElementById(id);
     if (!button) return;
@@ -168,7 +297,11 @@
     window.submitLogin = submitLogin;
     window.submitRegister = submitRegister;
     window.handleLogout = logout;
-    window.forceSyncToken = async () => openActivationModal(await api.getLocalAuthStatus());
+    window.forceSyncToken = async () => {
+      currentStatus = await api.getLocalAuthStatus();
+      if (currentStatus.account?.isOwner) return openAccountEntitlementModal();
+      return openActivationModal(currentStatus);
+    };
     bindButton('doLoginBtn', submitLogin);
     bindButton('doRegisterBtn', submitRegister);
     bindButton('logoutBtn', logout);
@@ -177,16 +310,23 @@
     const rememberedPhone = localStorage.getItem('local-auth-phone');
     if (rememberedPhone) {
       document.getElementById('login-phone').value = rememberedPhone;
-      document.getElementById('remember-me').checked = true;
     }
+    document.getElementById('remember-me').checked = true;
     const rememberLabel = document.querySelector('label[for="remember-me"]');
-    if (rememberLabel) rememberLabel.textContent = '记住手机号';
+    if (rememberLabel) rememberLabel.textContent = '记住登录';
     const syncButton = document.getElementById('syncTokenBtn');
     if (syncButton) syncButton.title = '查看设备码或输入离线授权码';
 
     currentStatus = await api.getLocalAuthStatus();
+    refreshLegacyAuthLabels(currentStatus);
+    keepPermanentAccessVisible(currentStatus);
     const machineCode = document.getElementById('forgot-machine-id');
     if (machineCode) machineCode.textContent = currentStatus.machineId;
+    if (syncButton && currentStatus.account?.isOwner) {
+      syncButton.title = '管理本机注册账号的使用期限';
+      syncButton.lastChild.textContent = ' 账号授权';
+    }
+    if (currentStatus.authenticated) await enterDashboard(currentStatus);
 
     const privacyLink = document.querySelector('#panel-login a[onclick*="showPrivacyAgreementModal"]');
     if (privacyLink) {
@@ -222,4 +362,11 @@ if (!document.querySelector('script[data-document-drafting-ui]')) {
   documentDraftingScript.src = 'js/document-drafting-ui.js?v=1.0.0';
   documentDraftingScript.dataset.documentDraftingUi = 'true';
   document.head.appendChild(documentDraftingScript);
+}
+
+if (!document.querySelector('script[data-update-ui]')) {
+  const updateScript = document.createElement('script');
+  updateScript.src = 'js/update-ui.js?v=1.0.0';
+  updateScript.dataset.updateUi = 'true';
+  document.head.appendChild(updateScript);
 }
