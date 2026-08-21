@@ -31,7 +31,28 @@ test('readable renderer module builds a direct drafting workspace with one input
   assert.match(source, /listDraftBusinessSources/u);
   assert.match(source, /selectedReferences/u);
   assert.match(source, /导出 Word/u);
+  assert.match(source, /documentInlineFont/u);
+  assert.match(source, /documentInlineSize/u);
+  assert.match(source, /documentLayoutPreset/u);
+  assert.match(source, /documentAddressee/u);
+  assert.match(source, /documentSignatureUnit/u);
+  assert.match(source, /getDraftLayoutDefaults/u);
+  assert.match(source, /layout: currentLayout\(\)/u);
+  assert.match(source, /documentEditorViewport/u);
+  assert.match(source, /documentEditorStage/u);
+  assert.match(source, /documentPreviewZoomMode/u);
+  assert.match(source, /updateEditorPreview/u);
+  assert.match(source, /clearInlineOverrides/u);
+  assert.match(source, />打印预览</u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
+});
+
+test('document preview styling keeps the workspace fixed and the A4 canvas independently scrollable', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(source, /\.document-conversation-grid\s*\{[^}]*height:\s*calc\(100vh\s*-\s*\d+px\)/su);
+  assert.match(source, /\.document-chat-panel\s*\{[^}]*overflow-y:\s*auto/su);
+  assert.match(source, /\.document-editor-viewport\s*\{[^}]*overflow:\s*auto/su);
+  assert.match(source, /\.document-editor\s*\{[^}]*width:\s*210mm[^}]*min-height:\s*297mm/su);
 });
 
 test('document module is loaded through the readable local auth adapter', async () => {

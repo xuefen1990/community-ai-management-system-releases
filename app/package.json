@@ -1,6 +1,6 @@
 {
   "name": "community-ai-management-system",
-  "version": "0.1.0",
+  "version": "0.1.8",
   "description": "社区AI管理系统 Apple 芯片 Mac 版",
   "main": "src/main/index.js",
   "author": "社区AI管理系统",
@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "echarts": "6.1.0",
+    "electron-updater": "^6.6.2",
     "node-llama-cpp": "3.19.1",
     "xlsx": "0.18.5"
   },

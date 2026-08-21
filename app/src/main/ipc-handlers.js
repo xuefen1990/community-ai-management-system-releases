@@ -22,6 +22,7 @@ function registerCompatibilityHandlers({
   documentDraftingService,
   writingProfileService,
   documentExportService,
+  updateService,
 }) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
@@ -62,6 +63,13 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
     handle(INVOKE_CHANNELS.activateOfflineLicense, async (_event, code) => authService.activate(code));
+    handle(INVOKE_CHANNELS.listLocalAccountEntitlements, async () => authService.listAccountEntitlements());
+    handle(INVOKE_CHANNELS.setLocalAccountEntitlement, async (_event, value) => authService.setAccountEntitlement(value));
+  }
+  if (updateService) {
+    handle(INVOKE_CHANNELS.checkForAppUpdate, async () => updateService.check());
+    handle(INVOKE_CHANNELS.downloadAppUpdate, async () => updateService.download());
+    handle(INVOKE_CHANNELS.installAppUpdate, async () => updateService.install());
   }
   if (modelCatalog && dialog) {
     handle(INVOKE_CHANNELS.importLocalModel, async () => {

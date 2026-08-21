@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 
 import { chmod, cp, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 const [, , templateAppArgument, projectAppArgument] = process.argv;
+
+function copyApplicationTemplate(sourcePath, destinationPath) {
+  const result = spawnSync('cp', ['-R', sourcePath, destinationPath], { encoding: 'utf8' });
+  if (result.status !== 0) {
+    throw new Error(`无法复制应用模板：${result.stderr || result.stdout || 'cp 执行失败'}`);
+  }
+}
 
 async function makeTreeWritable(targetPath) {
   let stats;
@@ -38,17 +46,18 @@ if (!templateAppArgument || !projectAppArgument) {
   const preservedAsar = path.join(resourcesDirectory, 'app.asar.original');
   const runtimeSource = path.join(resourcesDirectory, 'app');
   const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
+  const packageManifest = JSON.parse(await readFile(path.join(projectApp, 'package.json'), 'utf8'));
+  const appVersion = packageManifest.version;
   const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
   const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI管理系统');
 
   await makeTreeWritable(runtimeRoot);
   await rm(runtimeRoot, { recursive: true, force: true });
   await mkdir(runtimeRoot, { recursive: true });
-  await cp(templateApp, runtimeApp, {
-    recursive: true,
-    preserveTimestamps: true,
-    verbatimSymlinks: true,
-  });
+  // Node 的 cp 在此机器上会保留模板的 root 所有权，随后构建无法修改副本。
+  // 使用系统 cp 生成当前用户可写的运行副本。
+  copyApplicationTemplate(templateApp, runtimeApp);
+  await makeTreeWritable(runtimeApp);
   await rename(bundledAsar, preservedAsar);
   await mkdir(runtimeSource, { recursive: true });
   await cp(path.join(projectApp, 'package.json'), path.join(runtimeSource, 'package.json'));
@@ -58,6 +67,32 @@ if (!templateAppArgument || !projectAppArgument) {
     recursive: true,
     preserveTimestamps: true,
   });
+  await makeTreeWritable(path.join(runtimeSource, 'node_modules'));
+  const updateRuntimeDependencies = [
+    'electron-updater',
+    'builder-util-runtime',
+    'fs-extra',
+    'js-yaml',
+    'lazy-val',
+    'lodash.escaperegexp',
+    'lodash.isequal',
+    'semver',
+    'tiny-typed-emitter',
+    'graceful-fs',
+    'jsonfile',
+    'universalify',
+    'argparse',
+    'debug',
+    'ms',
+    'sax',
+  ];
+  for (const dependency of updateRuntimeDependencies) {
+    await cp(
+      path.join(projectApp, 'node_modules', dependency),
+      path.join(runtimeSource, 'node_modules', dependency),
+      { recursive: true, preserveTimestamps: true, verbatimSymlinks: true },
+    );
+  }
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
   await rename(originalExecutable, runtimeExecutable);
 
@@ -98,6 +133,8 @@ if (!templateAppArgument || !projectAppArgument) {
     .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI管理系统</string>')
     .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management</string>')
     .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>CFBundleShortVersionString<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleShortVersionString</key>\n\t<string>${appVersion}</string>`)
+    .replace(/<key>CFBundleVersion<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleVersion</key>\n\t<string>${appVersion}</string>`)
     .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI管理系统</string>');
   await writeFile(infoPlistPath, infoPlist, 'utf8');
   await makeTreeWritable(runtimeApp);

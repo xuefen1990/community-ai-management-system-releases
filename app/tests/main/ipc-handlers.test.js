@@ -30,6 +30,24 @@ test('registers the work attachment channel', () => {
   assert.equal(handlers.has(INVOKE_CHANNELS.importWorkAttachments), true);
 });
 
+test('registers local account entitlement management channels', () => {
+  const authService = {
+    register: async () => ({}), login: async () => ({}), logout: async () => ({}), getStatus: async () => ({}), activate: async () => ({}),
+    listAccountEntitlements: async () => [], setAccountEntitlement: async () => [],
+  };
+  const { handlers } = makeHandlers({ authService });
+  assert.equal(handlers.has(INVOKE_CHANNELS.listLocalAccountEntitlements), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.setLocalAccountEntitlement), true);
+});
+
+test('registers application update channels', () => {
+  const updateService = { check: async () => ({}), download: async () => ({}), install: async () => ({}) };
+  const { handlers } = makeHandlers({ updateService });
+  assert.equal(handlers.has(INVOKE_CHANNELS.checkForAppUpdate), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.downloadAppUpdate), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.installAppUpdate), true);
+});
+
 test('direct drafting channel delegates to the compatible drafting service entry point', async () => {
   const received = [];
   const documentDraftingService = {

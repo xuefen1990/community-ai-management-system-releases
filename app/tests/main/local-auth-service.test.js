@@ -91,3 +91,71 @@ test('valid offline activation replaces trial entitlement', async (t) => {
   assert.equal(status.entitlement.type, 'licensed');
   assert.equal(status.entitlement.plan, 'permanent');
 });
+
+test('single legacy account becomes the permanent local owner and restores its session', async (t) => {
+  const { service } = await makeService(t);
+  await service.register({ phone: '13800138000', password: 'secret88', remember: false });
+  const legacyState = await service.store.read();
+  legacyState.version = 1;
+  delete legacyState.accounts[0].entitlement;
+  legacyState.rememberedAccountId = null;
+  await service.store.write(legacyState);
+  service.sessionAccountId = null;
+  const status = await service.getStatus();
+  assert.equal(status.account.isOwner, true);
+  assert.equal(status.entitlement.type, 'licensed');
+  assert.equal(status.entitlement.plan, 'permanent');
+});
+
+test('remembered account session is restored by a new service instance', async (t) => {
+  const { service } = await makeService(t);
+  await service.register({ phone: '13800138000', password: 'secret88', remember: true });
+  const restoredService = new LocalAuthService({
+    store: service.store,
+    machineId: 'machine-test-001',
+    now: () => new Date('2026-08-13T00:00:00.000Z'),
+  });
+
+  assert.equal((await restoredService.getStatus()).authenticated, true);
+  await restoredService.logout();
+  assert.equal((await new LocalAuthService({
+    store: service.store,
+    machineId: 'machine-test-001',
+    now: () => new Date('2026-08-13T00:00:00.000Z'),
+  }).getStatus()).authenticated, false);
+});
+
+test('local owner can grant permanent and custom expiry access to another account', async (t) => {
+  const { clock, service } = await makeService(t);
+  await service.register({ phone: '13800138000', password: 'secret88', remember: false });
+  const state = await service.store.read();
+  state.version = 1;
+  delete state.accounts[0].entitlement;
+  await service.store.write(state);
+  await service.logout();
+  await service.login({ phone: '13800138000', password: 'secret88' });
+  await service.register({ phone: '13900139000', password: 'secret88', remember: false });
+  const otherAccountId = (await service.getStatus()).account.id;
+  await service.login({ phone: '13800138000', password: 'secret88' });
+
+  let accounts = await service.setAccountEntitlement({ accountId: otherAccountId, plan: 'permanent' });
+  assert.equal(accounts.find((account) => account.id === otherAccountId).entitlement.plan, 'permanent');
+  clock.now = new Date('2026-08-14T00:00:00.000Z');
+  accounts = await service.setAccountEntitlement({
+    accountId: otherAccountId,
+    plan: 'expires',
+    expiresAt: '2026-09-01T00:00:00.000Z',
+  });
+  assert.equal(accounts.find((account) => account.id === otherAccountId).entitlement.expiresAt, '2026-09-01T00:00:00.000Z');
+});
+
+test('non-owner cannot change local account entitlement', async (t) => {
+  const { service } = await makeService(t);
+  await service.register({ phone: '13800138000', password: 'secret88', remember: false });
+  const firstAccountId = (await service.getStatus()).account.id;
+  await service.register({ phone: '13900139000', password: 'secret88', remember: false });
+  await assert.rejects(
+    () => service.setAccountEntitlement({ accountId: firstAccountId, plan: 'permanent' }),
+    /只有本机主账号/u,
+  );
+});

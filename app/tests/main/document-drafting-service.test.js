@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const { createEmptyDatabase } = require('../../src/main/empty-database');
-const { DocumentDraftingService, sanitizeDocumentHtml } = require('../../src/main/document-drafting-service');
+const { DocumentDraftingService, sanitizeDocumentHtml, structuredDocumentHtml } = require('../../src/main/document-drafting-service');
 
 function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiResponses = null } = {}) {
   let database = createEmptyDatabase();
@@ -45,6 +45,23 @@ test('creating a draft stores owner, template snapshot, visibility, and first ve
   assert.equal(result.document.visibility, 'shared');
   assert.equal(result.document.currentVersionId, result.version.id);
   assert.equal(harness.database.documentVersions.length, 1);
+  assert.equal(result.document.layout.bodyFont, 'fangsong');
+  assert.equal(result.version.layoutSnapshot.signatureUnit, '陆庄社区居民委员会');
+});
+
+test('new documents inherit the previous saved layout without copying content', async () => {
+  const harness = makeHarness();
+  const first = await harness.service.createDraft({ templateId: 'report-request', fields: { title: '费用请示', period: '2026年', keyPoints: '申请费用' } });
+  const customLayout = { ...first.document.layout, bodyFont: 'kaiti', bodySize: 14, lineSpacing: 32, addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会', margins: { top: 20, right: 21, bottom: 22, left: 23 } };
+  await harness.service.saveDraft({ documentId: first.document.id, contentHtml: '<p>上一份正文</p>', layout: customLayout });
+  await harness.service.saveVersion({ documentId: first.document.id, layout: customLayout });
+
+  const next = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  assert.equal(next.document.layout.bodyFont, 'kaiti');
+  assert.equal(next.document.layout.bodySize, 14);
+  assert.deepEqual(next.document.layout.margins, customLayout.margins);
+  assert.equal(next.document.workingContentText, '');
+  assert.equal(next.version.contentText, '');
 });
 
 test('saving versions preserves older content and increments numbers', async () => {
@@ -56,6 +73,19 @@ test('saving versions preserves older content and increments numbers', async () 
   assert.equal(version.versionNumber, 2);
   assert.equal(harness.database.documentVersions[0].contentText, '');
   assert.equal(harness.database.documentVersions[1].contentText, '人工编辑一');
+});
+
+test('restoring a version restores its saved document layout', async () => {
+  const harness = makeHarness();
+  const created = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  const version = await harness.service.saveVersion({ documentId: created.document.id, contentText: '楷体版本', layout: { ...created.document.layout, bodyFont: 'kaiti', bodySize: 14 } });
+  await harness.service.saveVersion({ documentId: created.document.id, contentText: '宋体版本', layout: { ...created.document.layout, bodyFont: 'songti', bodySize: 16 } });
+
+  const restored = await harness.service.restoreVersion({ documentId: created.document.id, versionId: version.id });
+  const reopened = await harness.service.getDocument(created.document.id);
+  assert.equal(restored.layoutSnapshot.bodyFont, 'kaiti');
+  assert.equal(reopened.document.layout.bodyFont, 'kaiti');
+  assert.equal(reopened.document.workingContentText, '楷体版本');
 });
 
 test('only owner may edit, finalize, archive, or read private documents', async () => {
@@ -121,7 +151,8 @@ test('AI generation sends only selected context and creates references and a ver
   assert.match(prompt, /历史环境整治正文/u);
   assert.equal(generated.version.versionNumber, 2);
   assert.equal(harness.database.documentReferences.length, 1);
-  assert.equal(harness.database.documentVersions.at(-1).contentText, 'AI 生成正文');
+  assert.equal(harness.database.documentVersions.at(-1).contentText, '清运服务合同\nAI 生成正文');
+  assert.match(harness.database.documentVersions.at(-1).contentHtml, /data-doc-role="title"/u);
 });
 
 test('empty AI output does not create a new version', async () => {
@@ -155,6 +186,23 @@ test('business source listing uses an allowlist and returns compact records', as
 test('document HTML sanitizer keeps formatting but removes scripts, remote resources, and event handlers', () => {
   const sanitized = sanitizeDocumentHtml('<p onclick="steal()">正文<strong style="color:red">重点</strong><img src="https://example.test/a.png"><script>alert(1)</script></p>');
   assert.equal(sanitized, '<p>正文<strong>重点</strong></p>');
+});
+
+test('document HTML sanitizer preserves only approved local document formatting', () => {
+  const sanitized = sanitizeDocumentHtml('<h1 data-doc-role="title" style="color:red">标题</h1><p data-doc-align="right"><span data-doc-font="kaiti" data-doc-size="14" onclick="bad()">落款</span><span data-doc-font="remote" data-doc-size="100">坏格式</span></p>');
+  assert.equal(sanitized, '<h1 data-doc-role="title">标题</h1><p data-doc-align="right"><span data-doc-font="kaiti" data-doc-size="14">落款</span><span>坏格式</span></p>');
+});
+
+test('report generation applies the reference addressee and signature structure once', () => {
+  const html = structuredDocumentHtml({
+    documentKind: 'report', title: '关于申请费用的请示',
+    documentText: '关于申请费用的请示\n\n晓店街道办事处：\n\n现申请拨付有关费用。\n\n妥否，请批示。\n\n陆庄社区居民委员会\n\n2026年8月14日',
+    layout: { preset: 'request' }, fields: {}, now: new Date('2026-08-14T08:00:00.000Z'),
+  });
+  assert.equal((html.match(/data-doc-role="title"/gu) || []).length, 1);
+  assert.equal((html.match(/陆庄社区居民委员会/gu) || []).length, 1);
+  assert.match(html, /data-doc-role="addressee">晓店街道办事处：/u);
+  assert.match(html, /data-doc-role="date">2026年8月14日/u);
 });
 
 test('direct drafting creates a draft and generates the first version without storing chat messages', async () => {

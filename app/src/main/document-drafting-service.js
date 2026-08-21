@@ -21,24 +21,158 @@ function escapeHtml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
 
+const DOCUMENT_LAYOUT_PRESETS = Object.freeze({
+  request: Object.freeze({
+    preset: 'request', paper: 'A4', titleFont: 'heiti', titleSize: 22, titleBold: true,
+    bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2,
+    margins: Object.freeze({ top: 30, right: 26, bottom: 35, left: 28 }),
+    addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会',
+  }),
+  report: Object.freeze({
+    preset: 'report', paper: 'A4', titleFont: 'songti', titleSize: 24, titleBold: true,
+    bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2,
+    margins: Object.freeze({ top: 25.4, right: 31.75, bottom: 25.4, left: 31.75 }),
+    addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会',
+  }),
+});
+
+const DOCUMENT_FONT_KEYS = new Set(['fangsong', 'songti', 'heiti', 'kaiti']);
+
+function clampNumber(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Number.isFinite(number) ? Math.min(maximum, Math.max(minimum, number)) : fallback;
+}
+
+function presetForTemplate(templateId = '') {
+  return String(templateId).includes('request') ? 'request' : 'report';
+}
+
+function normalizeDocumentLayout(value, fallbackPreset = 'report') {
+  const requestedPreset = value?.preset;
+  const presetName = Object.hasOwn(DOCUMENT_LAYOUT_PRESETS, requestedPreset) ? requestedPreset : fallbackPreset;
+  const preset = DOCUMENT_LAYOUT_PRESETS[presetName] || DOCUMENT_LAYOUT_PRESETS.report;
+  const margins = value?.margins && typeof value.margins === 'object' ? value.margins : {};
+  const font = (candidate, fallback) => DOCUMENT_FONT_KEYS.has(candidate) ? candidate : fallback;
+  return {
+    preset: presetName,
+    paper: 'A4',
+    titleFont: font(value?.titleFont, preset.titleFont),
+    titleSize: clampNumber(value?.titleSize, preset.titleSize, 9, 42),
+    titleBold: value?.titleBold === undefined ? preset.titleBold : Boolean(value.titleBold),
+    bodyFont: font(value?.bodyFont, preset.bodyFont),
+    bodySize: clampNumber(value?.bodySize, preset.bodySize, 9, 42),
+    lineSpacing: clampNumber(value?.lineSpacing, preset.lineSpacing, 12, 72),
+    firstLineChars: clampNumber(value?.firstLineChars, preset.firstLineChars, 0, 4),
+    margins: {
+      top: clampNumber(margins.top, preset.margins.top, 10, 50),
+      right: clampNumber(margins.right, preset.margins.right, 10, 50),
+      bottom: clampNumber(margins.bottom, preset.margins.bottom, 10, 50),
+      left: clampNumber(margins.left, preset.margins.left, 10, 50),
+    },
+    addressee: cleanText(value?.addressee) || preset.addressee,
+    signatureUnit: cleanText(value?.signatureUnit) || preset.signatureUnit,
+  };
+}
+
+function latestLayoutFor(database, accountId, fallbackPreset) {
+  const latest = (database.documentDrafts || [])
+    .filter((item) => item.ownerUserId === accountId && item.layout)
+    .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
+  return normalizeDocumentLayout(latest?.layout, fallbackPreset);
+}
+
 function textToHtml(value) {
   return cleanText(value).split(/\n{2,}/u).map((paragraph) => `<p>${escapeHtml(paragraph).replaceAll('\n', '<br>')}</p>`).join('');
 }
 
 function sanitizeDocumentHtml(value) {
-  const allowedTags = new Set(['p', 'br', 'b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote']);
+  const allowedTags = new Set(['p', 'div', 'br', 'b', 'strong', 'i', 'em', 'u', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'blockquote', 'span']);
+  const allowedRoles = new Set(['title', 'addressee', 'body', 'closing', 'signature', 'date']);
+  const allowedAlignments = new Set(['left', 'center', 'right', 'justify']);
   return String(value || '')
     .replaceAll(/<(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\/\1>/giu, '')
     .replaceAll(/<\/?([a-z][a-z0-9]*)\b[^>]*>/giu, (tag, name) => {
       const normalized = name.toLowerCase();
       if (!allowedTags.has(normalized)) return '';
       if (normalized === 'br') return '<br>';
-      return tag.startsWith('</') ? `</${normalized}>` : `<${normalized}>`;
+      const outputTag = normalized === 'div' ? 'p' : normalized;
+      if (tag.startsWith('</')) return `</${outputTag}>`;
+      const attributes = [];
+      const attributeValue = (attribute) => {
+        const match = tag.match(new RegExp(`\\b${attribute}\\s*=\\s*(["'])(.*?)\\1`, 'iu'));
+        return match?.[2] || '';
+      };
+      const role = attributeValue('data-doc-role');
+      const alignment = attributeValue('data-doc-align');
+      const font = attributeValue('data-doc-font');
+      const size = Number(attributeValue('data-doc-size'));
+      if (allowedRoles.has(role)) attributes.push(`data-doc-role="${role}"`);
+      if (allowedAlignments.has(alignment)) attributes.push(`data-doc-align="${alignment}"`);
+      if (DOCUMENT_FONT_KEYS.has(font)) attributes.push(`data-doc-font="${font}"`);
+      if (Number.isFinite(size) && size >= 9 && size <= 42) attributes.push(`data-doc-size="${size}"`);
+      return `<${outputTag}${attributes.length ? ` ${attributes.join(' ')}` : ''}>`;
     });
 }
 
 function documentTextFromHtml(value) {
-  return cleanText(String(value || '').replaceAll(/<br\s*\/?\s*>/giu, '\n').replaceAll(/<\/p\s*>/giu, '\n').replaceAll(/<[^>]+>/gu, '').replaceAll('&nbsp;', ' ').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
+  return cleanText(String(value || '').replaceAll(/<br\s*\/?\s*>/giu, '\n').replaceAll(/<\/(p|h[1-4]|li|blockquote)\s*>/giu, '\n').replaceAll(/<[^>]+>/gu, '').replaceAll('&nbsp;', ' ').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&amp;', '&'));
+}
+
+function comparableText(value) {
+  return cleanText(value).replaceAll(/[\s：:，,。！？!?、（）()《》]/gu, '');
+}
+
+function dateText(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function structuredDocumentHtml({ documentKind, title, documentText, layout, fields = {}, now = new Date() }) {
+  const normalizedLayout = normalizeDocumentLayout(layout, presetForTemplate(fields.templateId));
+  const paragraphs = cleanText(documentText).split(/\n{2,}/u).map(cleanText).filter(Boolean);
+  if (paragraphs.length) {
+    const firstLines = paragraphs[0].split('\n').map(cleanText).filter(Boolean);
+    if (firstLines.length && comparableText(firstLines[0]) === comparableText(title)) {
+      firstLines.shift();
+      if (firstLines.length) paragraphs[0] = firstLines.join('\n');
+      else paragraphs.shift();
+    }
+  }
+  if (documentKind !== 'report') {
+    return `<h1 data-doc-role="title">${escapeHtml(title)}</h1>${paragraphs.map((paragraph) => `<p data-doc-role="body">${escapeHtml(paragraph).replaceAll('\n', '<br>')}</p>`).join('')}`;
+  }
+
+  const explicitRecipient = cleanText(fields.recipient);
+  if (explicitRecipient && !/(待补充|请补充)/u.test(explicitRecipient)) normalizedLayout.addressee = explicitRecipient.replace(/[：:]$/u, '');
+  if (paragraphs[0]) {
+    const firstLines = paragraphs[0].split('\n').map(cleanText).filter(Boolean);
+    if (firstLines[0] && /^[^\n]{1,40}[：:]$/u.test(firstLines[0])) {
+      firstLines.shift();
+      if (firstLines.length) paragraphs[0] = firstLines.join('\n');
+      else paragraphs.shift();
+    }
+  }
+  while (paragraphs.at(-1)) {
+    const tailLines = paragraphs.at(-1).split('\n').map(cleanText).filter(Boolean);
+    const originalLength = tailLines.length;
+    if (tailLines.at(-1) && /^\d{4}年\d{1,2}月\d{1,2}日$/u.test(tailLines.at(-1))) tailLines.pop();
+    if (tailLines.at(-1) && tailLines.at(-1).length <= 40 && /(社区|居民委员会|村民委员会|公司|办事处|人民政府)$/u.test(tailLines.at(-1))) tailLines.pop();
+    if (tailLines.length === originalLength) break;
+    if (tailLines.length) paragraphs[paragraphs.length - 1] = tailLines.join('\n');
+    else paragraphs.pop();
+  }
+
+  const body = paragraphs.map((paragraph, index) => {
+    const role = index === paragraphs.length - 1 && /^(妥否|恳请|以上|特此)/u.test(paragraph) ? 'closing' : 'body';
+    return `<p data-doc-role="${role}">${escapeHtml(paragraph).replaceAll('\n', '<br>')}</p>`;
+  }).join('');
+  return [
+    `<h1 data-doc-role="title">${escapeHtml(title)}</h1>`,
+    `<p data-doc-role="addressee">${escapeHtml(normalizedLayout.addressee)}：</p>`,
+    body,
+    `<p data-doc-role="signature">${escapeHtml(normalizedLayout.signatureUnit)}</p>`,
+    `<p data-doc-role="date">${escapeHtml(dateText(now))}</p>`,
+  ].join('');
 }
 
 async function requireAccount(getCurrentAccount) {
@@ -92,6 +226,12 @@ class DocumentDraftingService {
     return listTemplates(documentKind);
   }
 
+  async getLayoutDefaults({ templateId = 'report-work' } = {}) {
+    const account = await requireAccount(this.getCurrentAccount);
+    const database = await this.databaseStore.read();
+    return latestLayoutFor(database, account.id, presetForTemplate(templateId));
+  }
+
   async listDocuments(filters = {}) {
     const account = await requireAccount(this.getCurrentAccount);
     const database = await this.databaseStore.read();
@@ -109,7 +249,8 @@ class DocumentDraftingService {
         if (!`${document.title} ${version?.contentText || ''}`.toLowerCase().includes(query)) return false;
       }
       return true;
-    }).sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
+    }).sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))
+      .map((document) => ({ ...structuredClone(document), layout: normalizeDocumentLayout(document.layout, presetForTemplate(document.templateId)) }));
   }
 
   async getDocument(documentId) {
@@ -117,40 +258,48 @@ class DocumentDraftingService {
     const database = await this.databaseStore.read();
     const document = requireDocument(database, documentId);
     if (!canRead(document, account.id)) throw new Error('无权查看该公文');
+    const documentLayout = normalizeDocumentLayout(document.layout, presetForTemplate(document.templateId));
     return {
-      document: structuredClone(document),
-      versions: (database.documentVersions || []).filter((version) => version.documentId === documentId).sort((left, right) => right.versionNumber - left.versionNumber),
+      document: { ...structuredClone(document), layout: documentLayout },
+      versions: (database.documentVersions || []).filter((version) => version.documentId === documentId).sort((left, right) => right.versionNumber - left.versionNumber).map((version) => ({
+        ...structuredClone(version),
+        layoutSnapshot: normalizeDocumentLayout(version.layoutSnapshot || documentLayout, presetForTemplate(document.templateId)),
+      })),
       references: (database.documentReferences || []).filter((reference) => reference.documentId === documentId),
       messages: (database.documentDraftMessages || []).filter((message) => message.documentId === documentId),
     };
   }
 
-  async createDraft({ templateId, fields = {}, visibility = 'shared', customTypeName = '', pendingReferences = [] }) {
+  async createDraft({ templateId, fields = {}, visibility = 'shared', customTypeName = '', pendingReferences = [], layout = null }) {
     const account = await requireAccount(this.getCurrentAccount);
     const validation = validateFields(templateId, fields);
     if (!['shared', 'private'].includes(visibility)) throw new Error('公文可见范围无效');
     if (!validation.valid) throw new Error(`请填写必填字段：${validation.missing.join('、')}`);
     if (validation.template.isCustom && !cleanText(customTypeName)) throw new Error('请输入自定义公文类型');
-    const now = this.now().toISOString();
-    const documentId = this.createId('document');
-    const versionId = this.createId('version');
-    const document = {
-      id: documentId, documentKind: validation.template.documentKind, templateId,
-      customTypeName: cleanText(customTypeName), title: validation.fields.title,
-      status: 'draft', visibility, archivedAt: null, ownerUserId: account.id,
-      fieldSnapshot: validation.fields, currentVersionId: versionId,
-      workingContentHtml: '', workingContentText: '', pendingReferences: structuredClone(pendingReferences),
-      createdAt: now, updatedAt: now, finalizedAt: null,
-    };
-    const version = { id: versionId, documentId, versionNumber: 1, contentHtml: '', contentText: '', changeOrigin: 'human', changeSummary: '创建草稿', referenceIds: [], aiMode: null, modelName: null, createdBy: account.id, createdAt: now };
-    await this.databaseStore.update((database) => {
+    const outcome = await this.databaseStore.update((database) => {
+      const now = this.now().toISOString();
+      const documentId = this.createId('document');
+      const versionId = this.createId('version');
+      const documentLayout = layout
+        ? normalizeDocumentLayout(layout, presetForTemplate(templateId))
+        : latestLayoutFor(database, account.id, presetForTemplate(templateId));
+      const document = {
+        id: documentId, documentKind: validation.template.documentKind, templateId,
+        customTypeName: cleanText(customTypeName), title: validation.fields.title,
+        status: 'draft', visibility, archivedAt: null, ownerUserId: account.id,
+        fieldSnapshot: validation.fields, currentVersionId: versionId, layout: documentLayout,
+        workingContentHtml: '', workingContentText: '', pendingReferences: structuredClone(pendingReferences),
+        createdAt: now, updatedAt: now, finalizedAt: null,
+      };
+      const version = { id: versionId, documentId, versionNumber: 1, contentHtml: '', contentText: '', layoutSnapshot: structuredClone(documentLayout), changeOrigin: 'human', changeSummary: '创建草稿', referenceIds: [], aiMode: null, modelName: null, createdBy: account.id, createdAt: now };
       database.documentDrafts.push(document);
       database.documentVersions.push(version);
+      return { document: structuredClone(document), version: structuredClone(version) };
     });
-    return { document: structuredClone(document), version: structuredClone(version) };
+    return outcome.result;
   }
 
-  async saveDraft({ documentId, title, fields, visibility, contentHtml, contentText }) {
+  async saveDraft({ documentId, title, fields, visibility, contentHtml, contentText, layout }) {
     const account = await requireAccount(this.getCurrentAccount);
     const outcome = await this.databaseStore.update((database) => {
       const document = requireDocument(database, documentId);
@@ -169,13 +318,15 @@ class DocumentDraftingService {
       if (contentHtml !== undefined) document.workingContentHtml = sanitizeDocumentHtml(contentHtml);
       if (contentText !== undefined) document.workingContentText = cleanText(contentText);
       else if (contentHtml !== undefined) document.workingContentText = documentTextFromHtml(document.workingContentHtml);
+      if (layout !== undefined) document.layout = normalizeDocumentLayout(layout, presetForTemplate(document.templateId));
+      else if (!document.layout) document.layout = normalizeDocumentLayout(null, presetForTemplate(document.templateId));
       document.updatedAt = this.now().toISOString();
       return structuredClone(document);
     });
     return outcome.result;
   }
 
-  async saveVersion({ documentId, contentHtml, contentText, changeOrigin = 'human', changeSummary = '保存版本', aiMode = null, modelName = null, referenceIds = [] }) {
+  async saveVersion({ documentId, contentHtml, contentText, layout, changeOrigin = 'human', changeSummary = '保存版本', aiMode = null, modelName = null, referenceIds = [] }) {
     const account = await requireAccount(this.getCurrentAccount);
     const outcome = await this.databaseStore.update((database) => {
       const document = requireDocument(database, documentId);
@@ -184,16 +335,18 @@ class DocumentDraftingService {
       const versions = database.documentVersions.filter((item) => item.documentId === documentId);
       const normalizedHtml = sanitizeDocumentHtml(contentHtml === undefined ? document.workingContentHtml : contentHtml);
       const normalizedText = cleanText(contentText === undefined ? (document.workingContentText || documentTextFromHtml(normalizedHtml)) : contentText);
+      const normalizedLayout = normalizeDocumentLayout(layout === undefined ? document.layout : layout, presetForTemplate(document.templateId));
       const now = this.now().toISOString();
       const version = {
         id: this.createId('version'), documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
-        contentHtml: normalizedHtml, contentText: normalizedText, changeOrigin, changeSummary: cleanText(changeSummary),
+        contentHtml: normalizedHtml, contentText: normalizedText, layoutSnapshot: normalizedLayout, changeOrigin, changeSummary: cleanText(changeSummary),
         referenceIds: [...referenceIds], aiMode, modelName, createdBy: account.id, createdAt: now,
       };
       database.documentVersions.push(version);
       document.currentVersionId = version.id;
       document.workingContentHtml = normalizedHtml;
       document.workingContentText = normalizedText;
+      document.layout = structuredClone(normalizedLayout);
       document.updatedAt = now;
       return structuredClone(version);
     });
@@ -207,7 +360,7 @@ class DocumentDraftingService {
     requireOwner(document, account.id);
     const source = database.documentVersions.find((version) => version.id === versionId && version.documentId === documentId);
     if (!source) throw new Error('要恢复的版本不存在');
-    return this.saveVersion({ documentId, contentHtml: source.contentHtml, contentText: source.contentText, changeOrigin: 'human', changeSummary: `恢复版本 ${source.versionNumber}`, referenceIds: source.referenceIds });
+    return this.saveVersion({ documentId, contentHtml: source.contentHtml, contentText: source.contentText, layout: source.layoutSnapshot, changeOrigin: 'human', changeSummary: `恢复版本 ${source.versionNumber}`, referenceIds: source.referenceIds });
   }
 
   async finalize(documentId) {
@@ -272,7 +425,7 @@ class DocumentDraftingService {
     }));
   }
 
-  async converse({ documentId = null, message = '', preferredKind = 'auto', confirmedReferences = [] }) {
+  async converse({ documentId = null, message = '', preferredKind = 'auto', confirmedReferences = [], layout = null }) {
     if (!this.aiRouter) throw new Error('AI 拟写服务尚未配置');
     const account = await requireAccount(this.getCurrentAccount);
     const userMessage = cleanText(message);
@@ -286,6 +439,7 @@ class DocumentDraftingService {
         templateId,
         fields: provisionalFields(templateId, userMessage, this.now()),
         visibility: 'shared',
+        layout,
       });
       documentId = created.document.id;
     }
@@ -301,6 +455,7 @@ class DocumentDraftingService {
         ? structuredClone(confirmedReferences)
         : structuredClone(document.pendingReferences || []);
       document.pendingReferences = references;
+      document.layout = normalizeDocumentLayout(layout || document.layout, presetForTemplate(document.templateId));
       document.conversationState = {
         preferredKind,
         status: 'thinking',
@@ -346,6 +501,18 @@ class DocumentDraftingService {
       const now = this.now().toISOString();
       const versions = freshDatabase.documentVersions.filter((item) => item.documentId === documentId);
       const versionId = this.createId('version');
+      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(plan.templateId));
+      const explicitRecipient = cleanText(plan.fields.recipient);
+      if (explicitRecipient && !/(待补充|请补充)/u.test(explicitRecipient)) documentLayout.addressee = explicitRecipient.replace(/[：:]$/u, '');
+      const contentHtml = sanitizeDocumentHtml(structuredDocumentHtml({
+        documentKind: plan.documentKind,
+        title: plan.fields.title,
+        documentText: plan.documentText,
+        layout: documentLayout,
+        fields: { ...plan.fields, templateId: plan.templateId },
+        now,
+      }));
+      const contentText = documentTextFromHtml(contentHtml);
       const referenceIds = [];
       for (const reference of context.references) {
         const stored = { id: this.createId('reference'), documentId, documentVersionId: versionId, ...reference, promptText: undefined, createdAt: now };
@@ -354,7 +521,7 @@ class DocumentDraftingService {
       }
       const version = {
         id: versionId, documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
-        contentHtml: textToHtml(plan.documentText), contentText: plan.documentText, changeOrigin: 'ai', changeSummary: 'AI 直接拟写',
+        contentHtml, contentText, layoutSnapshot: structuredClone(documentLayout), changeOrigin: 'ai', changeSummary: 'AI 直接拟写',
         referenceIds, aiMode: aiResponse?.provider || null, modelName: aiResponse?.model || null,
         createdBy: account.id, createdAt: now,
       };
@@ -364,6 +531,7 @@ class DocumentDraftingService {
       freshDocument.title = plan.fields.title;
       freshDocument.fieldSnapshot = structuredClone(plan.fields);
       freshDocument.currentVersionId = version.id;
+      freshDocument.layout = structuredClone(documentLayout);
       freshDocument.workingContentHtml = version.contentHtml;
       freshDocument.workingContentText = version.contentText;
       freshDocument.pendingReferences = structuredClone(selectedReferences);
@@ -412,6 +580,16 @@ class DocumentDraftingService {
       const now = this.now().toISOString();
       const versions = freshDatabase.documentVersions.filter((item) => item.documentId === documentId);
       const versionId = this.createId('version');
+      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(freshDocument.templateId));
+      const contentHtml = sanitizeDocumentHtml(structuredDocumentHtml({
+        documentKind: freshDocument.documentKind,
+        title: freshDocument.title,
+        documentText: contentText,
+        layout: documentLayout,
+        fields: { ...freshDocument.fieldSnapshot, templateId: freshDocument.templateId },
+        now,
+      }));
+      const formattedText = documentTextFromHtml(contentHtml);
       const referenceIds = [];
       for (const reference of context.references) {
         const stored = { id: this.createId('reference'), documentId, documentVersionId: versionId, ...reference, promptText: undefined, createdAt: now };
@@ -420,7 +598,7 @@ class DocumentDraftingService {
       }
       const version = {
         id: versionId, documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
-        contentHtml: textToHtml(contentText), contentText, changeOrigin: 'ai', changeSummary: 'AI 拟写',
+        contentHtml, contentText: formattedText, layoutSnapshot: structuredClone(documentLayout), changeOrigin: 'ai', changeSummary: 'AI 拟写',
         referenceIds, aiMode: response.provider || null, modelName: response.model || null,
         createdBy: account.id, createdAt: now,
       };
@@ -428,6 +606,7 @@ class DocumentDraftingService {
       freshDocument.currentVersionId = version.id;
       freshDocument.workingContentHtml = version.contentHtml;
       freshDocument.workingContentText = version.contentText;
+      freshDocument.layout = structuredClone(documentLayout);
       freshDocument.pendingReferences = structuredClone(selectedReferences);
       freshDocument.updatedAt = now;
       return structuredClone(version);
@@ -451,4 +630,12 @@ class DocumentDraftingService {
   }
 }
 
-module.exports = { DocumentDraftingService, documentTextFromHtml, sanitizeDocumentHtml, textToHtml };
+module.exports = {
+  DOCUMENT_LAYOUT_PRESETS,
+  DocumentDraftingService,
+  documentTextFromHtml,
+  normalizeDocumentLayout,
+  sanitizeDocumentHtml,
+  structuredDocumentHtml,
+  textToHtml,
+};

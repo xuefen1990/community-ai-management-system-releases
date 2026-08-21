@@ -43,6 +43,11 @@ const INVOKE_CHANNELS = Object.freeze({
   logoutLocalAccount: 'logout-local-account',
   getLocalAuthStatus: 'get-local-auth-status',
   activateOfflineLicense: 'activate-offline-license',
+  listLocalAccountEntitlements: 'list-local-account-entitlements',
+  setLocalAccountEntitlement: 'set-local-account-entitlement',
+  checkForAppUpdate: 'check-for-app-update',
+  downloadAppUpdate: 'download-app-update',
+  installAppUpdate: 'install-app-update',
   importLocalModel: 'import-local-model',
   getAiSettings: 'get-ai-settings',
   saveAiSettings: 'save-ai-settings',
@@ -80,6 +85,7 @@ const EVENT_CHANNELS = Object.freeze({
   onMobileFileUploaded: 'mobile-file-uploaded',
   onMobileVoiceParseRequest: 'mobile-voice-parse-request',
   onMobileVoiceConfirmSave: 'mobile-voice-confirm-save',
+  onAppUpdateStatus: 'app-update-status',
 });
 
 module.exports = { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS };

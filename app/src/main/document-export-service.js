@@ -1,8 +1,17 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 
-const { sanitizeDocumentHtml, textToHtml } = require('./document-drafting-service');
+const {
+  documentTextFromHtml,
+  normalizeDocumentLayout,
+  sanitizeDocumentHtml,
+  textToHtml,
+} = require('./document-drafting-service');
 
 function safeFilename(value) {
   const cleaned = String(value || '').replaceAll(/[\\/:*?"<>|.]+/gu, '-').replaceAll(/\s+/gu, ' ').replaceAll(/^-+|-+$/gu, '').trim();
@@ -84,17 +93,107 @@ function createStoredZip(entries) {
   return Buffer.concat([...locals, ...centrals, end]);
 }
 
-function paragraphXml(text, { title = false } = {}) {
-  const lines = String(text || '').split('\n');
-  const runs = lines.map((line, index) => `${index ? '<w:br/>' : ''}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`).join('');
-  const properties = title ? '<w:pPr><w:pStyle w:val="Title"/><w:jc w:val="center"/></w:pPr>' : '<w:pPr><w:spacing w:line="420" w:lineRule="auto" w:after="160"/><w:ind w:firstLine="480"/></w:pPr>';
-  return `<w:p>${properties}<w:r><w:rPr><w:rFonts w:eastAsia="宋体"/><w:sz w:val="32"/></w:rPr>${runs}</w:r></w:p>`;
+const FONT_NAMES = Object.freeze({ fangsong: '仿宋', songti: '宋体', heiti: '黑体', kaiti: '楷体' });
+
+function decodeHtml(value) {
+  return String(value || '').replaceAll('&nbsp;', ' ').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&apos;', "'").replaceAll('&amp;', '&');
 }
 
-function createDocxBuffer({ title, contentText }) {
-  const body = String(contentText || '').split(/\n{2,}/u).map((paragraph) => paragraphXml(paragraph)).join('');
-  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphXml(title, { title: true })}${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"/></w:sectPr></w:body></w:document>`;
-  const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style><w:style w:type="paragraph" w:styleId="Title"><w:name w:val="Title"/><w:rPr><w:b/><w:sz w:val="44"/><w:rFonts w:eastAsia="黑体"/></w:rPr></w:style></w:styles>';
+function attributeValue(source, name) {
+  const match = String(source || '').match(new RegExp(`\\b${name}\\s*=\\s*(["'])(.*?)\\1`, 'iu'));
+  return match?.[2] || '';
+}
+
+function comparableText(value) {
+  return String(value || '').replaceAll(/[\s：:，,。！？!?、（）()《》]/gu, '');
+}
+
+function inlineRuns(innerHtml) {
+  const runs = [];
+  const stack = [{ bold: false, italic: false, underline: false, font: null, size: null }];
+  for (const token of String(innerHtml || '').match(/<[^>]+>|[^<]+/gu) || []) {
+    if (token.startsWith('</')) {
+      if (stack.length > 1) stack.pop();
+      continue;
+    }
+    if (token.startsWith('<')) {
+      if (/^<br\b/iu.test(token)) {
+        runs.push({ ...stack.at(-1), text: '\n' });
+        continue;
+      }
+      const next = { ...stack.at(-1) };
+      if (/^<(b|strong)\b/iu.test(token)) next.bold = true;
+      if (/^<(i|em)\b/iu.test(token)) next.italic = true;
+      if (/^<u\b/iu.test(token)) next.underline = true;
+      if (/^<span\b/iu.test(token)) {
+        next.font = attributeValue(token, 'data-doc-font') || next.font;
+        const size = Number(attributeValue(token, 'data-doc-size'));
+        if (Number.isFinite(size)) next.size = size;
+      }
+      stack.push(next);
+      continue;
+    }
+    const text = decodeHtml(token);
+    if (text) runs.push({ ...stack.at(-1), text });
+  }
+  return runs;
+}
+
+function documentBlocks({ title, contentHtml, contentText }) {
+  const html = sanitizeDocumentHtml(contentHtml || textToHtml(contentText));
+  const blocks = [];
+  const matcher = /<(h[1-4]|p|li|blockquote)\b([^>]*)>([\s\S]*?)<\/\1>/giu;
+  let match;
+  while ((match = matcher.exec(html))) {
+    const role = attributeValue(match[2], 'data-doc-role');
+    const align = attributeValue(match[2], 'data-doc-align');
+    const runs = inlineRuns(match[3]);
+    blocks.push({ tag: match[1].toLowerCase(), role, align, runs, text: runs.map((run) => run.text).join('') });
+  }
+  if (!blocks.length) {
+    for (const paragraph of String(contentText || '').split(/\n{2,}/u).filter(Boolean)) blocks.push({ tag: 'p', role: '', align: '', runs: [{ text: paragraph }], text: paragraph });
+  }
+  const first = blocks[0];
+  if (!first || (first.role !== 'title' && comparableText(first.text) !== comparableText(title))) {
+    blocks.unshift({ tag: 'h1', role: 'title', align: 'center', runs: [{ text: title }], text: title });
+  } else first.role = 'title';
+  return blocks;
+}
+
+function runXml(run, block, layout) {
+  const isTitle = block.role === 'title';
+  const fontKey = run.font || (isTitle ? layout.titleFont : layout.bodyFont);
+  const size = run.size || (isTitle ? layout.titleSize : layout.bodySize);
+  const properties = [
+    `<w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:eastAsia="${xmlEscape(FONT_NAMES[fontKey] || FONT_NAMES.fangsong)}"/>`,
+    `<w:sz w:val="${Math.round(size * 2)}"/><w:szCs w:val="${Math.round(size * 2)}"/>`,
+    (run.bold || (isTitle && layout.titleBold)) ? '<w:b/><w:bCs/>' : '',
+    run.italic ? '<w:i/><w:iCs/>' : '',
+    run.underline ? '<w:u w:val="single"/>' : '',
+  ].join('');
+  const text = String(run.text || '').split('\n').map((line, index) => `${index ? '<w:br/>' : ''}<w:t xml:space="preserve">${xmlEscape(line)}</w:t>`).join('');
+  return `<w:r><w:rPr>${properties}</w:rPr>${text}</w:r>`;
+}
+
+function paragraphXml(block, layout) {
+  const role = block.role || 'body';
+  const line = Math.round(layout.lineSpacing * 20);
+  const alignment = block.align || (role === 'title' ? 'center' : ['signature', 'date'].includes(role) ? 'right' : 'left');
+  const shouldIndent = ['body', 'closing'].includes(role) && block.tag !== 'li';
+  const spacing = role === 'title'
+    ? `<w:spacing w:line="${line}" w:lineRule="exact" w:after="${line}"/>`
+    : `<w:spacing w:line="${line}" w:lineRule="exact" w:before="${role === 'signature' ? line * 2 : 0}" w:after="0"/>`;
+  const indent = shouldIndent ? `<w:ind w:firstLine="${Math.round(layout.bodySize * layout.firstLineChars * 20)}"/>` : '';
+  return `<w:p><w:pPr>${spacing}${indent}<w:jc w:val="${alignment}"/></w:pPr>${block.runs.map((run) => runXml(run, block, layout)).join('')}</w:p>`;
+}
+
+function createDocxBuffer({ title, contentHtml = '', contentText = '', layout = null }) {
+  const normalizedLayout = normalizeDocumentLayout(layout);
+  const body = documentBlocks({ title, contentHtml, contentText }).map((block) => paragraphXml(block, normalizedLayout)).join('');
+  const twips = (millimeters) => Math.round(millimeters * 56.692913);
+  const margins = normalizedLayout.margins;
+  const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="${twips(margins.top)}" w:right="${twips(margins.right)}" w:bottom="${twips(margins.bottom)}" w:left="${twips(margins.left)}"/></w:sectPr></w:body></w:document>`;
+  const stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
   return createStoredZip([
     { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
     { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
@@ -104,16 +203,34 @@ function createDocxBuffer({ title, contentText }) {
   ]);
 }
 
-function printableHtml({ title, contentHtml, contentText }) {
-  const body = sanitizeDocumentHtml(contentHtml || textToHtml(contentText));
-  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:25mm 22mm}body{font-family:"Songti SC","STSong",serif;color:#111;font-size:16px;line-height:1.8}h1{text-align:center;font-family:"Heiti SC","STHeiti",sans-serif;font-size:26px;margin:0 0 28px}p{margin:0 0 12px;text-indent:2em}ul,ol{margin:0 0 12px 2em}</style></head><body><h1>${xmlEscape(title)}</h1>${body}</body></html>`;
+function fontCss(fontKey) {
+  const families = {
+    fangsong: '"FangSong_GB2312","FangSong","STFangsong","仿宋","Songti SC",serif',
+    songti: '"Songti SC","STSong","宋体",serif',
+    heiti: '"Heiti SC","STHeiti","黑体",sans-serif',
+    kaiti: '"Kaiti SC","STKaiti","楷体",serif',
+  };
+  return families[fontKey] || families.fangsong;
+}
+
+function printableHtml({ title, contentHtml, contentText, layout }) {
+  const normalizedLayout = normalizeDocumentLayout(layout);
+  let body = sanitizeDocumentHtml(contentHtml || textToHtml(contentText));
+  const plain = documentTextFromHtml(body).split('\n')[0] || '';
+  if (!/<h1\b[^>]*data-doc-role="title"/iu.test(body) && comparableText(plain) !== comparableText(title)) body = `<h1 data-doc-role="title">${xmlEscape(title)}</h1>${body}`;
+  const margins = normalizedLayout.margins;
+  const fontRules = Object.keys(FONT_NAMES).map((key) => `[data-doc-font="${key}"]{font-family:${fontCss(key)}}`).join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm}body{margin:0;color:#111;font-family:${fontCss(normalizedLayout.bodyFont)};font-size:${normalizedLayout.bodySize}pt;line-height:${normalizedLayout.lineSpacing}pt}h1[data-doc-role="title"]{margin:0 0 ${normalizedLayout.lineSpacing}pt;text-align:center;font-family:${fontCss(normalizedLayout.titleFont)};font-size:${normalizedLayout.titleSize}pt;line-height:${normalizedLayout.lineSpacing}pt;font-weight:${normalizedLayout.titleBold ? 700 : 400}}p{margin:0;text-indent:${normalizedLayout.firstLineChars}em}p[data-doc-role="addressee"],p[data-doc-role="signature"],p[data-doc-role="date"]{text-indent:0}p[data-doc-role="signature"]{margin-top:${normalizedLayout.lineSpacing * 2}pt;text-align:right}p[data-doc-role="date"]{text-align:right}[data-doc-align="left"]{text-align:left}[data-doc-align="center"]{text-align:center}[data-doc-align="right"]{text-align:right}[data-doc-align="justify"]{text-align:justify}${fontRules}[data-doc-size]{line-height:inherit}${[9,10.5,12,14,15,16,18,22,24,26,28,36,42].map((size) => `[data-doc-size="${size}"]{font-size:${size}pt}`).join('')}ul,ol{margin:0;padding-left:2em}</style></head><body>${body}</body></html>`;
 }
 
 class DocumentExportService {
-  constructor({ documentDraftingService, dialog, BrowserWindow = null }) {
+  constructor({ documentDraftingService, dialog, BrowserWindow = null, temporaryDirectory = os.tmpdir(), createId = crypto.randomUUID }) {
     this.documentDraftingService = documentDraftingService;
     this.dialog = dialog;
     this.BrowserWindow = BrowserWindow;
+    this.temporaryDirectory = temporaryDirectory;
+    this.createId = createId;
+    this.previewWindows = new Set();
   }
 
   async selectedVersion({ documentId, versionId }) {
@@ -135,35 +252,68 @@ class DocumentExportService {
     });
     if (selection.canceled || !selection.filePath) return { ok: false, canceled: true };
     if (format === 'docx') {
-      await fs.writeFile(selection.filePath, createDocxBuffer({ title: document.title, contentText: version.contentText }));
+      await fs.writeFile(selection.filePath, createDocxBuffer({ title: document.title, contentHtml: version.contentHtml, contentText: version.contentText, layout: version.layoutSnapshot || document.layout }));
     } else {
-      const window = await this.createPrintWindow({ title: document.title, version });
-      try {
-        const buffer = await window.webContents.printToPDF({ printBackground: true, pageSize: 'A4' });
-        await fs.writeFile(selection.filePath, buffer);
-      } finally {
-        window.destroy();
-      }
+      const buffer = await this.createPdfBuffer({ document, version });
+      await fs.writeFile(selection.filePath, buffer);
     }
     return { ok: true, path: selection.filePath, format, versionNumber: version.versionNumber };
   }
 
-  async createPrintWindow({ title, version }) {
+  async createPrintWindow({ document, version }) {
     if (!this.BrowserWindow) throw new Error('打印服务不可用');
     const window = new this.BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
-    const html = printableHtml({ title, contentHtml: version.contentHtml, contentText: version.contentText });
+    const html = printableHtml({ title: document.title, contentHtml: version.contentHtml, contentText: version.contentText, layout: version.layoutSnapshot || document.layout });
     await window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
     return window;
   }
 
-  async print(value) {
-    const { document, version } = await this.selectedVersion(value);
-    const window = await this.createPrintWindow({ title: document.title, version });
+  async createPdfBuffer({ document, version }) {
+    const window = await this.createPrintWindow({ document, version });
     try {
-      await new Promise((resolve, reject) => window.webContents.print({ printBackground: true }, (success, reason) => success ? resolve() : reject(new Error(reason || '打印失败'))));
-      return { ok: true };
+      return await window.webContents.printToPDF({ printBackground: true, pageSize: 'A4', preferCSSPageSize: true });
     } finally {
       window.destroy();
+    }
+  }
+
+  async print(value) {
+    const { document, version } = await this.selectedVersion(value);
+    if (!this.BrowserWindow) throw new Error('打印服务不可用');
+    const buffer = await this.createPdfBuffer({ document, version });
+    await fs.mkdir(this.temporaryDirectory, { recursive: true });
+    const previewPath = path.join(this.temporaryDirectory, `community-ai-print-preview-${process.pid}-${this.createId()}.pdf`);
+    await fs.writeFile(previewPath, buffer, { mode: 0o600 });
+    const previewWindow = new this.BrowserWindow({
+      width: 1100,
+      height: 820,
+      minWidth: 720,
+      minHeight: 560,
+      show: false,
+      title: `打印预览 - ${document.title}`,
+      autoHideMenuBar: true,
+      backgroundColor: '#e5e7eb',
+      webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, plugins: true },
+    });
+    let cleaned = false;
+    const cleanup = async () => {
+      if (cleaned) return;
+      cleaned = true;
+      await fs.rm(previewPath, { force: true }).catch(() => {});
+    };
+    this.previewWindows.add(previewWindow);
+    previewWindow.once('closed', () => {
+      this.previewWindows.delete(previewWindow);
+      void cleanup();
+    });
+    try {
+      await previewWindow.loadURL(pathToFileURL(previewPath).href);
+      previewWindow.show();
+      return { ok: true, preview: true };
+    } catch (error) {
+      previewWindow.destroy();
+      await cleanup();
+      throw error;
     }
   }
 }

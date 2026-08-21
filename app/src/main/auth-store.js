@@ -5,10 +5,11 @@ const path = require('node:path');
 
 function createEmptyAuthState() {
   return {
-    version: 1,
+    version: 2,
     accounts: [],
     activation: null,
     lastSeenAt: null,
+    rememberedAccountId: null,
   };
 }
 

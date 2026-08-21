@@ -8,6 +8,9 @@
     view: 'workspace',
     preferredKind: 'auto',
     current: null,
+    layout: null,
+    savedSelectionRange: null,
+    preview: { mode: 'page', scale: 1, resizeObserver: null, mutationObserver: null, frame: null },
     selectedReferences: new Map(),
     autosaveTimer: null,
   };
@@ -18,8 +21,225 @@
     landParcel: '土地记录', certificates: '证明记录', documents: '电子档案',
   };
 
+  const DOCUMENT_LAYOUT_PRESETS = {
+    request: { preset: 'request', paper: 'A4', titleFont: 'heiti', titleSize: 22, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 30, right: 26, bottom: 35, left: 28 }, addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会' },
+    report: { preset: 'report', paper: 'A4', titleFont: 'songti', titleSize: 24, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 25.4, right: 31.75, bottom: 25.4, left: 31.75 }, addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会' },
+  };
+
+  const DOCUMENT_FONT_FAMILIES = {
+    fangsong: '"FangSong_GB2312", "FangSong", "STFangsong", "仿宋", "Songti SC", serif',
+    songti: '"Songti SC", "STSong", "宋体", serif',
+    heiti: '"Heiti SC", "STHeiti", "黑体", sans-serif',
+    kaiti: '"Kaiti SC", "STKaiti", "楷体", serif',
+  };
+
+  const A4_ASPECT_RATIO = 297 / 210;
+
   function escapeHtml(value) {
     return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  }
+
+  function cloneLayout(layout) {
+    return JSON.parse(JSON.stringify(layout || DOCUMENT_LAYOUT_PRESETS.report));
+  }
+
+  function layoutPreset(name, current = null) {
+    const preset = cloneLayout(DOCUMENT_LAYOUT_PRESETS[name] || DOCUMENT_LAYOUT_PRESETS.report);
+    if (current) {
+      preset.addressee = current.addressee || preset.addressee;
+      preset.signatureUnit = current.signatureUnit || preset.signatureUnit;
+    }
+    return preset;
+  }
+
+  function currentTitle() {
+    return document.querySelector('#documentEditor [data-doc-role="title"]')?.innerText.trim()
+      || state.current?.document?.title
+      || '';
+  }
+
+  function currentLayout() {
+    return cloneLayout(state.layout || DOCUMENT_LAYOUT_PRESETS.report);
+  }
+
+  function inferMarginPreset(layout) {
+    const margins = layout.margins || {};
+    const close = (left, right) => Math.abs(Number(left) - Number(right)) < 0.1;
+    const reference = DOCUMENT_LAYOUT_PRESETS[layout.preset]?.margins || DOCUMENT_LAYOUT_PRESETS.report.margins;
+    if (Object.keys(reference).every((key) => close(margins[key], reference[key]))) return 'reference';
+    if (['top', 'right', 'bottom', 'left'].every((key) => close(margins[key], 25))) return 'standard';
+    if (['top', 'right', 'bottom', 'left'].every((key) => close(margins[key], 20))) return 'compact';
+    return 'custom';
+  }
+
+  function updateEditorLayout() {
+    const editor = document.getElementById('documentEditor');
+    if (!editor || !state.layout) return;
+    const layout = state.layout;
+    editor.style.setProperty('--document-body-font', DOCUMENT_FONT_FAMILIES[layout.bodyFont] || DOCUMENT_FONT_FAMILIES.fangsong);
+    editor.style.setProperty('--document-body-size', `${layout.bodySize}pt`);
+    editor.style.setProperty('--document-line-spacing', `${layout.lineSpacing}pt`);
+    editor.style.setProperty('--document-signature-spacing', `${layout.lineSpacing * 2}pt`);
+    editor.style.setProperty('--document-title-font', DOCUMENT_FONT_FAMILIES[layout.titleFont] || DOCUMENT_FONT_FAMILIES.heiti);
+    editor.style.setProperty('--document-title-size', `${layout.titleSize}pt`);
+    editor.style.setProperty('--document-title-weight', layout.titleBold ? '700' : '400');
+    editor.style.setProperty('--document-first-indent', `${layout.firstLineChars}em`);
+    editor.style.padding = `${layout.margins.top}mm ${layout.margins.right}mm ${layout.margins.bottom}mm ${layout.margins.left}mm`;
+    scheduleEditorPreviewUpdate();
+  }
+
+  function clampPreviewScale(value) {
+    return Math.min(1.25, Math.max(0.35, Number(value) || 1));
+  }
+
+  function updateEditorPreview() {
+    const editor = document.getElementById('documentEditor');
+    const viewport = document.getElementById('documentEditorViewport');
+    const stage = document.getElementById('documentEditorStage');
+    if (!editor || !viewport || !stage || !editor.offsetWidth) return;
+    const paperWidth = editor.offsetWidth;
+    const paperHeight = paperWidth * A4_ASPECT_RATIO;
+    const availableWidth = Math.max(1, viewport.clientWidth - 30);
+    const availableHeight = Math.max(1, viewport.clientHeight - 30);
+    if (state.preview.mode === 'page') state.preview.scale = clampPreviewScale(Math.min(availableWidth / paperWidth, availableHeight / paperHeight));
+    else if (state.preview.mode === 'width') state.preview.scale = clampPreviewScale(availableWidth / paperWidth);
+    else if (state.preview.mode === 'actual') state.preview.scale = 1;
+    const contentHeight = Math.max(paperHeight, editor.scrollHeight);
+    editor.style.transform = `scale(${state.preview.scale})`;
+    stage.style.width = `${Math.ceil(paperWidth * state.preview.scale)}px`;
+    stage.style.height = `${Math.ceil(contentHeight * state.preview.scale)}px`;
+    const percentage = Math.round(state.preview.scale * 100);
+    const value = document.getElementById('documentPreviewZoomValue');
+    if (value) value.textContent = `${percentage}%`;
+    const modeSelect = document.getElementById('documentPreviewZoomMode');
+    if (modeSelect) modeSelect.value = state.preview.mode;
+  }
+
+  function scheduleEditorPreviewUpdate() {
+    if (state.preview.frame) window.cancelAnimationFrame?.(state.preview.frame);
+    const run = () => {
+      state.preview.frame = null;
+      updateEditorPreview();
+    };
+    state.preview.frame = window.requestAnimationFrame ? window.requestAnimationFrame(run) : window.setTimeout(run, 0);
+  }
+
+  function setPreviewMode(mode) {
+    if (!['page', 'width', 'actual', 'manual'].includes(mode)) return;
+    state.preview.mode = mode;
+    scheduleEditorPreviewUpdate();
+  }
+
+  function adjustPreviewScale(change) {
+    state.preview.mode = 'manual';
+    state.preview.scale = clampPreviewScale(state.preview.scale + change);
+    scheduleEditorPreviewUpdate();
+  }
+
+  function applyLayoutToUi(layout) {
+    state.layout = cloneLayout(layout || DOCUMENT_LAYOUT_PRESETS.report);
+    const setValue = (id, value) => { const element = document.getElementById(id); if (element) element.value = String(value); };
+    setValue('documentLayoutPreset', state.layout.preset);
+    setValue('documentAddressee', state.layout.addressee);
+    setValue('documentSignatureUnit', state.layout.signatureUnit);
+    setValue('documentInlineFont', state.layout.bodyFont);
+    setValue('documentInlineSize', state.layout.bodySize);
+    setValue('documentLineSpacing', state.layout.lineSpacing);
+    const marginPreset = inferMarginPreset(state.layout);
+    const marginSelect = document.getElementById('documentMarginPreset');
+    if (marginSelect) {
+      if (marginPreset === 'custom' && !marginSelect.querySelector('option[value="custom"]')) marginSelect.insertAdjacentHTML('beforeend', '<option value="custom">自定义设置</option>');
+      marginSelect.value = marginPreset;
+    }
+    updateEditorLayout();
+  }
+
+  function syncIdentityFieldsToEditor() {
+    const editor = document.getElementById('documentEditor');
+    const addressee = editor?.querySelector('[data-doc-role="addressee"]');
+    const signature = editor?.querySelector('[data-doc-role="signature"]');
+    if (addressee) addressee.textContent = `${state.layout.addressee}：`;
+    if (signature) signature.textContent = state.layout.signatureUnit;
+  }
+
+  function syncIdentityFieldsFromEditor() {
+    const editor = document.getElementById('documentEditor');
+    const addressee = editor?.querySelector('[data-doc-role="addressee"]')?.innerText.trim().replace(/[：:]$/u, '');
+    const signature = editor?.querySelector('[data-doc-role="signature"]')?.innerText.trim();
+    if (addressee) state.layout.addressee = addressee;
+    if (signature) state.layout.signatureUnit = signature;
+    const addresseeInput = document.getElementById('documentAddressee');
+    const signatureInput = document.getElementById('documentSignatureUnit');
+    if (addresseeInput && addressee) addresseeInput.value = addressee;
+    if (signatureInput && signature) signatureInput.value = signature;
+  }
+
+  function selectedRangeInsideEditor() {
+    const selection = window.getSelection?.();
+    const editor = document.getElementById('documentEditor');
+    const rangeIsUsable = (range) => Boolean(range?.commonAncestorContainer?.isConnected && editor?.contains(range.commonAncestorContainer));
+    if (selection && selection.rangeCount && !selection.isCollapsed) {
+      const range = selection.getRangeAt(0);
+      if (rangeIsUsable(range)) return range;
+    }
+    return rangeIsUsable(state.savedSelectionRange) && !state.savedSelectionRange.collapsed ? state.savedSelectionRange : null;
+  }
+
+  function clearInlineOverrides(attribute) {
+    const editor = document.getElementById('documentEditor');
+    if (!editor) return;
+    editor.querySelectorAll(`[${attribute}]`).forEach((element) => element.removeAttribute(attribute));
+    editor.querySelectorAll('span:not([data-doc-font]):not([data-doc-size])').forEach((span) => span.replaceWith(...span.childNodes));
+    editor.normalize();
+  }
+
+  function applyInlineFormat(attribute, value) {
+    const range = selectedRangeInsideEditor();
+    if (!range) {
+      state.savedSelectionRange = null;
+      clearInlineOverrides(attribute);
+      if (attribute === 'data-doc-font') {
+        state.layout.bodyFont = value;
+        state.layout.titleFont = value;
+      } else {
+        state.layout.bodySize = Number(value);
+        state.layout.titleSize = Number(value);
+      }
+      applyLayoutToUi(state.layout);
+      queueAutosave();
+      return;
+    }
+    const span = document.createElement('span');
+    span.setAttribute(attribute, String(value));
+    try {
+      range.surroundContents(span);
+    } catch {
+      span.append(range.extractContents());
+      range.insertNode(span);
+    }
+    span.querySelectorAll(`[${attribute}]`).forEach((element) => element.removeAttribute(attribute));
+    span.querySelectorAll('span:not([data-doc-font]):not([data-doc-size])').forEach((element) => element.replaceWith(...element.childNodes));
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(span);
+    selection.addRange(nextRange);
+    state.savedSelectionRange = nextRange.cloneRange();
+    scheduleEditorPreviewUpdate();
+    queueAutosave();
+  }
+
+  function applyParagraphAlignment(alignment) {
+    const selection = window.getSelection?.();
+    let node = selection?.anchorNode;
+    if (node?.nodeType === Node.TEXT_NODE) node = node.parentElement;
+    const editor = document.getElementById('documentEditor');
+    const block = node?.closest?.('p,h1,h2,h3,h4,li,blockquote');
+    if (block && editor.contains(block)) {
+      block.dataset.docAlign = alignment;
+      queueAutosave();
+    }
+    editor.focus();
   }
 
   function sectionMarkup() {
@@ -61,11 +281,12 @@
             </details>
           </aside>
           <main class="document-editor-panel">
-            <div class="document-editor-toolbar"><div><button type="button" data-editor-command="bold"><b>B</b></button><button type="button" data-editor-command="insertUnorderedList">• 列表</button><button type="button" data-editor-command="justifyLeft">左对齐</button><button type="button" data-editor-command="justifyCenter">居中</button></div><span id="documentAutosaveStatus">等待描述</span></div>
+            <div class="document-editor-toolbar"><div class="document-format-toolbar"><select id="documentInlineFont" aria-label="字体"><option value="fangsong">仿宋</option><option value="songti">宋体</option><option value="heiti">黑体</option><option value="kaiti">楷体</option></select><select id="documentInlineSize" aria-label="字号"><option value="22">二号</option><option value="18">小二</option><option value="16">三号</option><option value="15">小三</option><option value="14">四号</option><option value="12">小四</option></select><button type="button" data-editor-command="bold"><b>B</b></button><button type="button" data-editor-command="insertUnorderedList">• 列表</button><button type="button" data-editor-align="left">左对齐</button><button type="button" data-editor-align="center">居中</button><button type="button" data-editor-align="right">右对齐</button><button type="button" id="documentFormatToggle">版式设置</button></div><div class="document-editor-meta"><div class="document-preview-toolbar" aria-label="A4 预览缩放"><select id="documentPreviewZoomMode" aria-label="预览比例"><option value="page">适合页面</option><option value="width">适合宽度</option><option value="actual">100%</option><option value="manual" hidden>自定义</option></select><button type="button" id="documentPreviewZoomOut" title="缩小预览">−</button><span id="documentPreviewZoomValue">100%</span><button type="button" id="documentPreviewZoomIn" title="放大预览">＋</button></div><span id="documentAutosaveStatus">等待描述</span></div></div>
+            <div id="documentFormatPanel" class="document-format-panel hidden"><label>参考版式<select id="documentLayoutPreset"><option value="request">请示版（样稿一）</option><option value="report">报告版（样稿二）</option></select></label><label>抬头<input id="documentAddressee" value="晓店街道办事处"></label><label>落款单位<input id="documentSignatureUnit" value="陆庄社区居民委员会"></label><label>正文行距<select id="documentLineSpacing"><option value="28.95">固定 29 磅</option><option value="24">固定 24 磅</option><option value="32">固定 32 磅</option><option value="36">固定 36 磅</option></select></label><label>页边距<select id="documentMarginPreset"><option value="reference">参考样稿</option><option value="standard">标准</option><option value="compact">紧凑</option></select></label><button type="button" class="btn btn-outline" id="documentRestoreLayoutBtn">恢复样稿版式</button><small>无选区时字体字号作用于全文；选中文字后只调整选中内容。</small></div>
             <div id="documentContractWarning" class="document-contract-warning hidden">合同由 AI 辅助生成，请重点核对主体、金额、期限、付款、违约责任和争议解决条款。</div>
-            <div id="documentEditor" class="document-editor" contenteditable="true" data-placeholder="在左侧描述需求后，生成的公文会出现在这里"></div>
+            <div id="documentEditorViewport" class="document-editor-viewport"><div id="documentEditorStage" class="document-editor-stage"><div id="documentEditor" class="document-editor" contenteditable="true" data-placeholder="在左侧描述需求后，生成的公文会出现在这里"></div></div></div>
             <div id="documentSourceSummary" class="document-source-summary hidden"></div>
-            <div class="document-editor-footer"><div><button class="btn btn-outline" id="documentCopyBtn">复制</button><button class="btn btn-outline" id="documentSaveVersionBtn">保存新版本</button><button class="btn btn-outline" id="documentVersionsBtn">版本记录</button><button class="btn btn-outline" id="documentPrintBtn">打印</button><button class="btn btn-outline" id="documentExportWordBtn">导出 Word</button><button class="btn btn-outline" id="documentExportPdfBtn">导出 PDF</button></div><button class="btn btn-primary" id="documentFinalizeBtn">标记定稿</button></div>
+            <div class="document-editor-footer"><div><button class="btn btn-outline" id="documentCopyBtn">复制</button><button class="btn btn-outline" id="documentSaveVersionBtn">保存新版本</button><button class="btn btn-outline" id="documentVersionsBtn">版本记录</button><button class="btn btn-outline" id="documentPrintBtn">打印预览</button><button class="btn btn-outline" id="documentExportWordBtn">导出 Word</button><button class="btn btn-outline" id="documentExportPdfBtn">导出 PDF</button></div><button class="btn btn-primary" id="documentFinalizeBtn">标记定稿</button></div>
           </main>
         </div>
       </div>
@@ -114,6 +335,7 @@
     document.getElementById('documentFinalizeBtn').textContent = isFinal ? '取消定稿后编辑' : '标记定稿';
     document.getElementById('documentConversationSendBtn').disabled = Boolean(isFinal);
     document.getElementById('documentSaveVersionBtn').disabled = Boolean(isFinal);
+    document.querySelectorAll('#documentFormatPanel input, #documentFormatPanel select, #documentFormatPanel button, .document-format-toolbar select, .document-format-toolbar button').forEach((control) => { control.disabled = Boolean(isFinal); });
     document.getElementById('documentConversationLabel').textContent = documentValue?.workingContentText ? '补充修改要求' : '描述需要拟写的内容';
     document.getElementById('documentConversationInput').placeholder = documentValue?.workingContentText
       ? '例如：语气更正式，增加分期付款依据，并结合右侧当前正文重新生成全文……'
@@ -148,9 +370,11 @@
         clearTimeout(state.autosaveTimer);
         state.current.document = await callApi('saveDraftDocument', {
           documentId: state.current.document.id,
+          title: currentTitle(),
           visibility: document.getElementById('documentVisibility').value,
           contentHtml: document.getElementById('documentEditor').innerHTML,
           contentText: document.getElementById('documentEditor').innerText,
+          layout: currentLayout(),
         });
       }
       const result = await callApi('converseDraftDocument', {
@@ -158,6 +382,7 @@
         message,
         preferredKind: state.preferredKind,
         confirmedReferences: [...state.selectedReferences.values()],
+        layout: currentLayout(),
       });
       const versions = state.current?.versions || [];
       state.current = {
@@ -167,7 +392,9 @@
       };
       if (result.version) {
         input.value = '';
+        state.savedSelectionRange = null;
         document.getElementById('documentEditor').innerHTML = result.version.contentHtml;
+        applyLayoutToUi(result.document.layout || result.version.layoutSnapshot || state.layout);
         document.getElementById('documentAutosaveStatus').textContent = `AI 已生成 · 版本 ${result.version.versionNumber}`;
         showSourceSummary(result);
         showMessage(versions.length ? '已根据补充要求重新生成全文，上一版本已保留' : '公文已生成，右侧正文可以直接修改');
@@ -208,9 +435,11 @@
     try {
       state.current.document = await callApi('saveDraftDocument', {
         documentId: state.current.document.id,
+        title: currentTitle(),
         visibility: document.getElementById('documentVisibility').value,
         contentHtml: document.getElementById('documentEditor').innerHTML,
         contentText: document.getElementById('documentEditor').innerText,
+        layout: currentLayout(),
       });
       document.getElementById('documentAutosaveStatus').textContent = '已自动保存';
     } catch (error) {
@@ -229,7 +458,7 @@
   async function saveVersion() {
     if (!state.current?.document) throw new Error('请先生成公文');
     await saveEditorDraft();
-    const version = await callApi('saveDraftVersion', { documentId: state.current.document.id, contentHtml: document.getElementById('documentEditor').innerHTML, contentText: document.getElementById('documentEditor').innerText, changeOrigin: 'human', changeSummary: '人工保存版本' });
+    const version = await callApi('saveDraftVersion', { documentId: state.current.document.id, contentHtml: document.getElementById('documentEditor').innerHTML, contentText: document.getElementById('documentEditor').innerText, layout: currentLayout(), changeOrigin: 'human', changeSummary: '人工保存版本' });
     state.current.document.currentVersionId = version.id;
     state.current.versions = [version, ...(state.current.versions || [])];
     document.getElementById('documentAutosaveStatus').textContent = `已保存版本 ${version.versionNumber}`;
@@ -268,7 +497,8 @@
   async function printCurrent() {
     if (!state.current?.document) throw new Error('请先生成公文');
     if (state.current.document.status !== 'final') await saveVersion();
-    await callApi('printDraftDocument', { documentId: state.current.document.id, versionId: state.current.document.currentVersionId });
+    const result = await callApi('printDraftDocument', { documentId: state.current.document.id, versionId: state.current.document.currentVersionId });
+    if (result?.preview) showMessage('已打开真实 A4 打印预览，可在预览窗口中继续打印');
   }
 
   function showVersions() {
@@ -300,16 +530,19 @@
     document.getElementById('documentWorkspaceView').classList.toggle('hidden', view !== 'workspace');
     document.getElementById('documentHistoryView').classList.toggle('hidden', view !== 'history');
     if (view === 'history') return loadHistory();
+    scheduleEditorPreviewUpdate();
     return Promise.resolve();
   }
 
   async function openDocument(documentId) {
     state.current = await callApi('getDraftDocument', documentId);
+    state.savedSelectionRange = null;
     state.preferredKind = state.current.document.documentKind;
     state.selectedReferences.clear();
     for (const reference of state.current.document.pendingReferences || []) state.selectedReferences.set(referenceKey(reference), reference);
     const currentVersion = state.current.versions.find((version) => version.id === state.current.document.currentVersionId);
     document.getElementById('documentEditor').innerHTML = state.current.document.workingContentHtml || currentVersion?.contentHtml || '';
+    applyLayoutToUi(state.current.document.layout || currentVersion?.layoutSnapshot || DOCUMENT_LAYOUT_PRESETS.report);
     document.getElementById('documentVisibility').value = state.current.document.visibility;
     updateReferenceCount();
     updateDraftStatus();
@@ -334,19 +567,26 @@
     }
   }
 
-  function resetDraft() {
+  async function resetDraft() {
     state.current = null;
     state.preferredKind = 'auto';
+    state.savedSelectionRange = null;
+    state.preview.mode = 'page';
     state.selectedReferences.clear();
     document.getElementById('documentConversationInput').value = '';
     document.getElementById('documentEditor').innerHTML = '';
     document.getElementById('documentSourceSummary').classList.add('hidden');
     document.getElementById('documentRecommendedReferences').innerHTML = '';
     document.getElementById('documentBusinessReferences').innerHTML = '';
+    try {
+      applyLayoutToUi(await callApi('getDraftLayoutDefaults', { templateId: 'report-request' }));
+    } catch {
+      applyLayoutToUi(DOCUMENT_LAYOUT_PRESETS.request);
+    }
     updateReferenceCount();
     updateDraftStatus();
     document.getElementById('documentAutosaveStatus').textContent = '等待描述';
-    return switchView('workspace');
+    await switchView('workspace');
   }
 
   async function openProfile() {
@@ -433,8 +673,50 @@
     });
     document.getElementById('documentHistoryList').addEventListener('click', (event) => handleHistoryAction(event).catch((error) => showMessage(error.message, 'error')));
     document.getElementById('documentVersionsList').addEventListener('click', (event) => { const button = event.target.closest('[data-restore-version-id]'); if (button) restoreVersion(button.dataset.restoreVersionId).catch((error) => showMessage(error.message, 'error')); });
-    document.getElementById('documentEditor').addEventListener('input', queueAutosave);
+    document.getElementById('documentEditor').addEventListener('input', () => { syncIdentityFieldsFromEditor(); scheduleEditorPreviewUpdate(); queueAutosave(); });
     document.querySelectorAll('[data-editor-command]').forEach((button) => button.addEventListener('click', () => { document.execCommand(button.dataset.editorCommand, false); document.getElementById('documentEditor').focus(); queueAutosave(); }));
+    document.querySelectorAll('[data-editor-align]').forEach((button) => button.addEventListener('click', () => applyParagraphAlignment(button.dataset.editorAlign)));
+    document.addEventListener('selectionchange', () => {
+      const selection = window.getSelection?.();
+      const editor = document.getElementById('documentEditor');
+      if (selection?.rangeCount && editor.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+        state.savedSelectionRange = selection.isCollapsed ? null : selection.getRangeAt(0).cloneRange();
+      }
+    });
+    document.addEventListener('pointerdown', (event) => {
+      const editor = document.getElementById('documentEditor');
+      if (editor.contains(event.target) || event.target.closest?.('#documentInlineFont, #documentInlineSize')) return;
+      state.savedSelectionRange = null;
+    });
+    bind('documentFormatToggle', 'click', () => document.getElementById('documentFormatPanel').classList.toggle('hidden'));
+    bind('documentInlineFont', 'change', (event) => applyInlineFormat('data-doc-font', event.target.value));
+    bind('documentInlineSize', 'change', (event) => applyInlineFormat('data-doc-size', event.target.value));
+    bind('documentPreviewZoomMode', 'change', (event) => setPreviewMode(event.target.value));
+    bind('documentPreviewZoomOut', 'click', () => adjustPreviewScale(-0.1));
+    bind('documentPreviewZoomIn', 'click', () => adjustPreviewScale(0.1));
+    bind('documentLayoutPreset', 'change', (event) => { applyLayoutToUi(layoutPreset(event.target.value, state.layout)); syncIdentityFieldsToEditor(); queueAutosave(); });
+    bind('documentRestoreLayoutBtn', 'click', () => { applyLayoutToUi(layoutPreset(document.getElementById('documentLayoutPreset').value, state.layout)); syncIdentityFieldsToEditor(); queueAutosave(); showMessage('已恢复参考样稿版式'); });
+    bind('documentAddressee', 'input', (event) => { state.layout.addressee = event.target.value.trim() || DOCUMENT_LAYOUT_PRESETS[state.layout.preset].addressee; syncIdentityFieldsToEditor(); queueAutosave(); });
+    bind('documentSignatureUnit', 'input', (event) => { state.layout.signatureUnit = event.target.value.trim() || DOCUMENT_LAYOUT_PRESETS[state.layout.preset].signatureUnit; syncIdentityFieldsToEditor(); queueAutosave(); });
+    bind('documentLineSpacing', 'change', (event) => { state.layout.lineSpacing = Number(event.target.value); applyLayoutToUi(state.layout); queueAutosave(); });
+    bind('documentMarginPreset', 'change', (event) => {
+      if (event.target.value === 'reference') state.layout.margins = cloneLayout(DOCUMENT_LAYOUT_PRESETS[state.layout.preset].margins);
+      else if (event.target.value === 'standard') state.layout.margins = { top: 25, right: 25, bottom: 25, left: 25 };
+      else if (event.target.value === 'compact') state.layout.margins = { top: 20, right: 20, bottom: 20, left: 20 };
+      applyLayoutToUi(state.layout);
+      queueAutosave();
+    });
+    const previewViewport = document.getElementById('documentEditorViewport');
+    const editor = document.getElementById('documentEditor');
+    if (typeof ResizeObserver === 'function') {
+      state.preview.resizeObserver = new ResizeObserver(scheduleEditorPreviewUpdate);
+      state.preview.resizeObserver.observe(previewViewport);
+      state.preview.resizeObserver.observe(editor);
+    } else window.addEventListener('resize', scheduleEditorPreviewUpdate);
+    if (typeof MutationObserver === 'function') {
+      state.preview.mutationObserver = new MutationObserver(scheduleEditorPreviewUpdate);
+      state.preview.mutationObserver.observe(editor, { childList: true, subtree: true, characterData: true });
+    }
     bindReferenceLists();
     await resetDraft();
   }

@@ -10,11 +10,18 @@ files:
 mac:
   category: public.app-category.utilities
   icon: build/icon.icns
-  identity: null
   target:
-    - target: dmg
+    - target: pkg
       arch:
         - arm64
-dmg:
-  title: 社区AI管理系统 ${version}
-  artifactName: 社区AI管理系统-${version}-${arch}.${ext}
+    - target: zip
+      arch:
+        - arm64
+pkg:
+  installLocation: /Applications
+  artifactName: community-ai-management-system-${version}-${arch}.${ext}
+publish:
+  provider: github
+  owner: xuefen1990
+  repo: community-ai-management-system-releases
+  releaseType: release

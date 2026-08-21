@@ -3,6 +3,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require('electron');
+const { autoUpdater } = require('electron-updater');
 
 const { registerCompatibilityHandlers } = require('./ipc-handlers');
 const { AuthStore } = require('./auth-store');
@@ -18,6 +19,7 @@ const { JsonDatabaseStore } = require('./database-store');
 const { DocumentDraftingService } = require('./document-drafting-service');
 const { WritingProfileService } = require('./writing-profile-service');
 const { DocumentExportService } = require('./document-export-service');
+const { UpdateService } = require('./update-service');
 const { createWindowOptions } = require('./window-config');
 const { SEND_CHANNELS } = require('../shared/ipc-contract');
 
@@ -55,6 +57,12 @@ app.whenReady().then(() => {
   const documentDraftingService = new DocumentDraftingService({ databaseStore, getCurrentAccount, aiRouter });
   const writingProfileService = new WritingProfileService({ databaseStore, getCurrentAccount });
   const documentExportService = new DocumentExportService({ documentDraftingService, dialog, BrowserWindow });
+  const updateService = new UpdateService({
+    updater: autoUpdater,
+    isPackaged: () => app.isPackaged,
+    isInApplicationsFolder: () => typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(),
+    sendStatus: (status) => mainWindow?.webContents.send('app-update-status', status),
+  });
   registerCompatibilityHandlers({
     app,
     ipcMain,
@@ -71,9 +79,13 @@ app.whenReady().then(() => {
     documentDraftingService,
     writingProfileService,
     documentExportService,
+    updateService,
   });
   ipcMain.on(SEND_CHANNELS.startWindowDrag, () => {});
   createMainWindow();
+  mainWindow.webContents.once('did-finish-load', () => {
+    setTimeout(() => updateService.check(), 1000);
+  });
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createMainWindow();
