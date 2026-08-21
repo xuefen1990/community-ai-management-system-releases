@@ -5,6 +5,8 @@
   if (!api?.loginLocalAccount) return;
 
   let currentStatus = null;
+  let activeApplicationView = 'login';
+  let legacyTrialObserver = null;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -38,10 +40,6 @@
     return '未授权';
   }
 
-  function isPermanent(status) {
-    return status?.authenticated && status.entitlement?.type === 'licensed' && status.entitlement?.plan === 'permanent';
-  }
-
   function refreshLegacyAuthLabels(status) {
     const phone = status?.account?.phone || '未登录';
     const entitlementLabel = formatEntitlement(status?.entitlement);
@@ -58,26 +56,55 @@
     modal.style.display = 'none';
     modal.style.visibility = 'hidden';
     modal.setAttribute('aria-hidden', 'true');
+    modal.style.pointerEvents = 'none';
   }
 
-  function suppressLegacyTrialExperience(status) {
-    if (!isPermanent(status)) return;
-    if (document.body.style.filter !== 'none') document.body.style.filter = 'none';
-    const dashboard = document.getElementById('dashboardView');
-    if (dashboard && dashboard.style.filter !== 'none') dashboard.style.setProperty('filter', 'none', 'important');
-    const trialTitle = Array.from(document.querySelectorAll('h1,h2,h3,h4,strong,p,span,div')).find((element) => (
-      /免费体验已结束|免注册体验已结束/u.test(element.textContent?.trim() || '')
-    ));
-    if (!trialTitle) return;
-    const modal = trialTitle.closest('.modal-overlay,[role="dialog"]') || trialTitle.parentElement?.parentElement?.parentElement;
-    if (modal) hideLegacyTrialModal(modal);
+  function forceLoginPanel() {
+    document.querySelectorAll('#loginCard .auth-panel').forEach((panel) => {
+      const isLoginPanel = panel.id === 'panel-login';
+      panel.classList.toggle('hidden', !isLoginPanel);
+      panel.setAttribute('aria-hidden', String(!isLoginPanel));
+    });
   }
 
-  function keepPermanentAccessVisible(status) {
-    if (!isPermanent(status)) return;
-    suppressLegacyTrialExperience(status);
-    const observer = new MutationObserver(() => suppressLegacyTrialExperience(status));
-    observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['class', 'style'] });
+  function clearLegacyTrialExperience() {
+    document.querySelectorAll('body, .app-wrapper, #loginView, #dashboardView').forEach((element) => {
+      if (element?.style.filter !== 'none') element.style.setProperty('filter', 'none', 'important');
+    });
+
+    const trialTitles = Array.from(document.querySelectorAll('h1,h2,h3,h4,strong,p,span,div'))
+      .filter((element) => /免费体验已结束|免注册体验已结束/u.test(element.textContent?.trim() || ''))
+      .sort((left, right) => left.textContent.length - right.textContent.length);
+
+    trialTitles.forEach((trialTitle) => {
+      const modal = trialTitle.closest('.modal-overlay,[role="dialog"]')
+        || trialTitle.closest('.modal-card')?.parentElement
+        || trialTitle.parentElement?.parentElement?.parentElement;
+      if (modal && !modal.contains(document.getElementById('loginView')) && !modal.contains(document.getElementById('dashboardView'))) {
+        hideLegacyTrialModal(modal);
+      }
+    });
+  }
+
+  function maintainLocalAuthenticationView() {
+    clearLegacyTrialExperience();
+    if (activeApplicationView === 'login') {
+      document.getElementById('dashboardView')?.classList.add('hidden');
+      document.getElementById('loginView')?.classList.remove('hidden');
+      forceLoginPanel();
+    }
+  }
+
+  function startLegacyTrialGuard() {
+    if (legacyTrialObserver) return;
+    legacyTrialObserver = new MutationObserver(maintainLocalAuthenticationView);
+    legacyTrialObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style'],
+    });
+    maintainLocalAuthenticationView();
   }
 
   async function enterDashboard(status) {
@@ -87,12 +114,14 @@
       openActivationModal(status);
       return;
     }
+    activeApplicationView = 'dashboard';
+    clearLegacyTrialExperience();
     document.getElementById('loginView')?.classList.add('hidden');
     document.getElementById('dashboardView')?.classList.remove('hidden');
     refreshLegacyAuthLabels(status);
-    keepPermanentAccessVisible(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
     if (typeof window.renderOverview === 'function') window.renderOverview();
+    clearLegacyTrialExperience();
   }
 
   async function submitLogin() {
@@ -132,16 +161,17 @@
   async function logout() {
     await api.logoutLocalAccount();
     currentStatus = null;
-    document.getElementById('dashboardView')?.classList.add('hidden');
-    document.getElementById('loginView')?.classList.remove('hidden');
-    if (typeof window.showPanel === 'function') window.showPanel('login');
+    showLoginScreen();
     await hydrateLoginPrefill();
   }
 
   function showLoginScreen() {
+    activeApplicationView = 'login';
+    clearLegacyTrialExperience();
     document.getElementById('dashboardView')?.classList.add('hidden');
     document.getElementById('loginView')?.classList.remove('hidden');
-    if (typeof window.showPanel === 'function') window.showPanel('login');
+    forceLoginPanel();
+    queueMicrotask(maintainLocalAuthenticationView);
   }
 
   async function hydrateLoginPrefill() {
@@ -364,6 +394,7 @@
     bindButton('syncTokenBtn', window.forceSyncToken);
     configureLoginActions();
     showLoginScreen();
+    startLegacyTrialGuard();
     await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';
@@ -372,7 +403,6 @@
 
     currentStatus = await api.getLocalAuthStatus();
     refreshLegacyAuthLabels(currentStatus);
-    keepPermanentAccessVisible(currentStatus);
     const machineCode = document.getElementById('forgot-machine-id');
     if (machineCode) machineCode.textContent = currentStatus.machineId;
     if (syncButton && currentStatus.account?.isOwner) {
