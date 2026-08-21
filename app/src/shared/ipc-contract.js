@@ -42,6 +42,7 @@ const INVOKE_CHANNELS = Object.freeze({
   loginLocalAccount: 'login-local-account',
   logoutLocalAccount: 'logout-local-account',
   getLocalAuthStatus: 'get-local-auth-status',
+  getStartupEntitlement: 'get-startup-entitlement',
   getLoginPrefill: 'get-login-prefill',
   clearLoginPrefill: 'clear-login-prefill',
   activateOfflineLicense: 'activate-offline-license',

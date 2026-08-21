@@ -61,6 +61,7 @@ const api = {
   loginLocalAccount: (value) => invoke('loginLocalAccount', value),
   logoutLocalAccount: () => invoke('logoutLocalAccount'),
   getLocalAuthStatus: () => invoke('getLocalAuthStatus'),
+  getStartupEntitlement: () => invoke('getStartupEntitlement'),
   getLoginPrefill: () => invoke('getLoginPrefill'),
   clearLoginPrefill: () => invoke('clearLoginPrefill'),
   activateOfflineLicense: (code) => invoke('activateOfflineLicense', code),

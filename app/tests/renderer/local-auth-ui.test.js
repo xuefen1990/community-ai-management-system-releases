@@ -22,11 +22,12 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.match(source, /activateOfflineLicense/u);
   assert.match(source, /listLocalAccountEntitlements/u);
   assert.match(source, /getLoginPrefill/u);
+  assert.match(source, /getStartupEntitlement/u);
   assert.match(source, /clearLoginPrefill/u);
   assert.match(source, /记住登录/u);
   assert.match(source, /免费体验已结束/u);
-  assert.match(source, /clearLegacyTrialExperience/u);
-  assert.match(source, /startLegacyTrialGuard/u);
+  assert.match(source, /removeLegacyTrialArtifacts/u);
+  assert.match(source, /installShortLivedTrialRemoval/u);
   assert.match(source, /update-ui\.js/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });
@@ -42,6 +43,7 @@ test('startup remains on the login screen with compact manual login actions', as
   assert.match(source, /切换账号/u);
   assert.match(source, /forceLoginPanel\(\)/u);
   assert.doesNotMatch(source, /window\.showPanel/u);
+  assert.doesNotMatch(source, /attributeFilter:\s*\['class', 'style'\]/u);
   assert.doesNotMatch(source, /if \(currentStatus\.authenticated\) await enterDashboard\(currentStatus\)/u);
   assert.match(style, /\.login-action-row\s*\{/u);
   assert.match(style, /grid-template-columns:\s*minmax\(108px, 0\.8fr\) minmax\(0, 1\.35fr\)/u);
@@ -53,9 +55,8 @@ test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {
   assert.match(source, /getElementById\('dashboardView'\)\?\.classList\.remove\('hidden'\)/u);
   assert.match(source, /await window\.loadDatabase\(\)/u);
   assert.match(source, /window\.renderOverview\(\)/u);
-  assert.match(source, /clearLegacyTrialExperience\(\);/u);
-  assert.match(source, /activeApplicationView = 'dashboard'/u);
-  assert.match(source, /trialTitle\.parentElement\?\.parentElement\?\.parentElement/u);
+  assert.match(source, /removeLegacyTrialArtifacts\(\);/u);
+  assert.match(source, /title\.parentElement\?\.parentElement\?\.parentElement/u);
   assert.doesNotMatch(source, /function setAppViewVisibility\(id, visible\)/u);
 });
 

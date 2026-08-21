@@ -144,6 +144,27 @@ test('remembered account prefills the login form but does not restore a session'
   });
 });
 
+test('startup entitlement identifies a remembered licensed account without restoring its session', async (t) => {
+  const { service, rememberedLoginStore } = await makeService(t);
+  await service.register({ phone: '13800138000', password: 'secret88', remember: true });
+  const state = await service.store.read();
+  state.accounts[0].entitlement = { plan: 'permanent', startedAt: '2026-08-13T00:00:00.000Z' };
+  await service.store.write(state);
+  const restoredService = new LocalAuthService({
+    store: service.store,
+    rememberedLoginStore,
+    machineId: 'machine-test-001',
+    now: () => new Date('2026-08-13T00:00:00.000Z'),
+  });
+
+  const summary = await restoredService.getStartupEntitlement();
+  assert.equal((await restoredService.getStatus()).authenticated, false);
+  assert.deepEqual(summary.account, { phone: '13800138000' });
+  assert.equal(summary.hasPreviousAccount, true);
+  assert.equal(summary.entitlement.type, 'licensed');
+  assert.equal(summary.entitlement.plan, 'permanent');
+});
+
 test('local owner can grant permanent and custom expiry access to another account', async (t) => {
   const { clock, service } = await makeService(t);
   await service.register({ phone: '13800138000', password: 'secret88', remember: false });

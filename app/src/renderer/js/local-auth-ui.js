@@ -5,8 +5,7 @@
   if (!api?.loginLocalAccount) return;
 
   let currentStatus = null;
-  let activeApplicationView = 'login';
-  let legacyTrialObserver = null;
+  let startupTrialGuardTimer = null;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -51,14 +50,6 @@
     if (settingsExpire) settingsExpire.textContent = entitlementLabel;
   }
 
-  function hideLegacyTrialModal(modal) {
-    modal.classList.add('hidden');
-    modal.style.display = 'none';
-    modal.style.visibility = 'hidden';
-    modal.setAttribute('aria-hidden', 'true');
-    modal.style.pointerEvents = 'none';
-  }
-
   function forceLoginPanel() {
     document.querySelectorAll('#loginCard .auth-panel').forEach((panel) => {
       const isLoginPanel = panel.id === 'panel-login';
@@ -67,44 +58,71 @@
     });
   }
 
-  function clearLegacyTrialExperience() {
-    document.querySelectorAll('body, .app-wrapper, #loginView, #dashboardView').forEach((element) => {
-      if (element?.style.filter !== 'none') element.style.setProperty('filter', 'none', 'important');
-    });
+  function isLegacyTrialTitle(element) {
+    return /免费体验已结束|免注册体验已结束/u.test(element?.textContent?.trim() || '');
+  }
 
-    const trialTitles = Array.from(document.querySelectorAll('h1,h2,h3,h4,strong,p,span,div'))
-      .filter((element) => /免费体验已结束|免注册体验已结束/u.test(element.textContent?.trim() || ''))
-      .sort((left, right) => left.textContent.length - right.textContent.length);
-
-    trialTitles.forEach((trialTitle) => {
-      const modal = trialTitle.closest('.modal-overlay,[role="dialog"]')
-        || trialTitle.closest('.modal-card')?.parentElement
-        || trialTitle.parentElement?.parentElement?.parentElement;
+  function removeLegacyTrialArtifacts(root = document) {
+    const titles = [];
+    if (root.nodeType === Node.ELEMENT_NODE && isLegacyTrialTitle(root)) titles.push(root);
+    if (typeof root.querySelectorAll === 'function') {
+      root.querySelectorAll('h1,h2,h3,h4,strong,p,span,div').forEach((element) => {
+        if (isLegacyTrialTitle(element)) titles.push(element);
+      });
+    }
+    let removed = false;
+    titles.sort((left, right) => left.textContent.length - right.textContent.length).forEach((title) => {
+      const modal = title.closest('.modal-overlay,[role="dialog"]')
+        || title.closest('.modal-card')?.parentElement
+        || title.parentElement?.parentElement?.parentElement;
       if (modal && !modal.contains(document.getElementById('loginView')) && !modal.contains(document.getElementById('dashboardView'))) {
-        hideLegacyTrialModal(modal);
+        modal.remove();
+        removed = true;
       }
     });
+    return removed;
   }
 
-  function maintainLocalAuthenticationView() {
-    clearLegacyTrialExperience();
-    if (activeApplicationView === 'login') {
-      document.getElementById('dashboardView')?.classList.add('hidden');
-      document.getElementById('loginView')?.classList.remove('hidden');
-      forceLoginPanel();
-    }
+  function hasPurchasedStartupAccess(summary) {
+    return summary?.entitlement?.type === 'licensed';
   }
 
-  function startLegacyTrialGuard() {
-    if (legacyTrialObserver) return;
-    legacyTrialObserver = new MutationObserver(maintainLocalAuthenticationView);
-    legacyTrialObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'style'],
+  function installShortLivedTrialRemoval() {
+    const observeTarget = document.body || document.documentElement;
+    if (!observeTarget || typeof MutationObserver !== 'function') return;
+    let observer = null;
+    const stop = () => {
+      observer?.disconnect();
+      observer = null;
+      if (startupTrialGuardTimer) window.clearTimeout(startupTrialGuardTimer);
+      startupTrialGuardTimer = null;
+    };
+    const removeIfLegacyTrial = (node) => {
+      const candidate = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      return candidate && removeLegacyTrialArtifacts(candidate);
+    };
+    observer = new MutationObserver((records) => {
+      const removed = records.some((record) => {
+        if (record.type === 'characterData') return removeIfLegacyTrial(record.target);
+        return Array.from(record.addedNodes).some(removeIfLegacyTrial);
+      });
+      if (removed) stop();
     });
-    maintainLocalAuthenticationView();
+    observer.observe(observeTarget, { childList: true, subtree: true, characterData: true });
+    if (removeLegacyTrialArtifacts()) {
+      stop();
+      return;
+    }
+    startupTrialGuardTimer = window.setTimeout(stop, 2500);
+  }
+
+  async function prepareAuthorizedStartup() {
+    try {
+      const startupSummary = await api.getStartupEntitlement();
+      if (hasPurchasedStartupAccess(startupSummary)) installShortLivedTrialRemoval();
+    } catch {
+      // The login screen remains usable if the optional startup summary is unavailable.
+    }
   }
 
   async function enterDashboard(status) {
@@ -114,14 +132,13 @@
       openActivationModal(status);
       return;
     }
-    activeApplicationView = 'dashboard';
-    clearLegacyTrialExperience();
+    removeLegacyTrialArtifacts();
     document.getElementById('loginView')?.classList.add('hidden');
     document.getElementById('dashboardView')?.classList.remove('hidden');
     refreshLegacyAuthLabels(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
     if (typeof window.renderOverview === 'function') window.renderOverview();
-    clearLegacyTrialExperience();
+    removeLegacyTrialArtifacts();
   }
 
   async function submitLogin() {
@@ -166,12 +183,9 @@
   }
 
   function showLoginScreen() {
-    activeApplicationView = 'login';
-    clearLegacyTrialExperience();
     document.getElementById('dashboardView')?.classList.add('hidden');
     document.getElementById('loginView')?.classList.remove('hidden');
     forceLoginPanel();
-    queueMicrotask(maintainLocalAuthenticationView);
   }
 
   async function hydrateLoginPrefill() {
@@ -394,7 +408,6 @@
     bindButton('syncTokenBtn', window.forceSyncToken);
     configureLoginActions();
     showLoginScreen();
-    startLegacyTrialGuard();
     await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';
@@ -433,6 +446,7 @@
     }, true);
   }
 
+  prepareAuthorizedStartup();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);
   else initialize();
 }());

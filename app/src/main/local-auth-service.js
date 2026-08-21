@@ -173,6 +173,23 @@ class LocalAuthService {
     };
   }
 
+  async getStartupEntitlement() {
+    const state = await this.store.read();
+    let changed = false;
+    if (Number(state.version || 1) < AUTH_STATE_VERSION && state.accounts.length === 1) {
+      changed = this.migrateLegacyAccount(state, state.accounts[0]);
+    }
+    const account = state.accounts.find((candidate) => candidate.id === state.rememberedAccountId)
+      || state.accounts.find((candidate) => candidate.phone === state.lastLoginPhone)
+      || null;
+    if (changed) await this.store.write(state);
+    return {
+      hasPreviousAccount: Boolean(account),
+      account: account ? { phone: account.phone } : null,
+      entitlement: account ? await this.getEntitlement(state, account) : { type: 'none' },
+    };
+  }
+
   async getEntitlement(state, account) {
     if (!account) return { type: 'none' };
     const accountEntitlement = this.getAccountEntitlement(account);
