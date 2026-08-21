@@ -33,3 +33,26 @@ test('远程注册写入后端并在本地只保留会话资料', async () => {
   assert.equal(state.remoteAccount.id, 'user-1');
   assert.equal(Object.hasOwn(state, 'token'), false);
 });
+
+test('账号服务器地址可保存、切换并执行健康检查', async () => {
+  let state = { version: 2, accounts: [], remoteAccount: { id: 'old-user' }, lastLoginPhone: '13900139000', rememberedAccountId: 'old-user', remoteServerUrl: '' };
+  let cleared = 0;
+  const service = new RemoteAuthService({
+    baseUrl: 'http://127.0.0.1:3000',
+    machineId: 'mac-test-002',
+    store: { read: async () => structuredClone(state), write: async value => { state = structuredClone(value); } },
+    rememberedLoginStore: { clear: async () => { cleared += 1; } },
+    fetchImpl: async url => {
+      assert.equal(url, 'http://192.168.1.9:3000/api/health');
+      return response(200, { status: 'ok', service: 'community-ai-backend', version: '1.0.0' });
+    },
+  });
+
+  const saved = await service.setServerConfig({ baseUrl: 'http://192.168.1.9:3000/' });
+  assert.deepEqual(saved, { baseUrl: 'http://192.168.1.9:3000', configured: true });
+  assert.equal(state.remoteServerUrl, 'http://192.168.1.9:3000');
+  assert.equal(state.remoteAccount, null);
+  assert.equal(state.lastLoginPhone, '');
+  assert.equal(cleared, 1);
+  assert.deepEqual(await service.checkServerConnection(), { ok: true, baseUrl: 'http://192.168.1.9:3000', service: 'community-ai-backend', version: '1.0.0' });
+});

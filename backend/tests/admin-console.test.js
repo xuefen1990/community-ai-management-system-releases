@@ -81,6 +81,14 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   const userLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13900139000', password: 'new-secret88' } });
   assert.equal(userLogin.status, 200);
 
+  const expiresAt = '2026-12-31T23:59:59.000Z';
+  const entitlementUpdate = await request(url, `/auth/users/${registered.body.user.id}/entitlement`, { token: adminToken, method: 'PUT', body: { planType: 'expires', planExpiresAt: expiresAt, isActive: true } });
+  assert.equal(entitlementUpdate.status, 200);
+  const entitlement = await request(url, '/auth/entitlement', { token: userLogin.body.token });
+  assert.equal(entitlement.status, 200);
+  assert.equal(entitlement.body.plan, 'expires');
+  assert.equal(entitlement.body.expiresAt, expiresAt);
+
   const provider = await request(url, '/ai/providers', { token: adminToken, method: 'POST', body: { name: '测试模型', providerType: 'openai-compatible', baseUrl: 'https://example.com/v1', apiKey: 'secret-api-key', defaultModel: 'demo-chat', availableModels: ['demo-chat'] } });
   assert.equal(provider.status, 201);
   assert.equal(Object.hasOwn(provider.body.provider, 'apiKey'), false);

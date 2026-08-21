@@ -57,9 +57,10 @@ app.use('/admin', express.static(path.join(__dirname, 'admin')));
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-const server = app.listen(config.port, () => {
+const server = app.listen(config.port, config.host, () => {
   logger.info(`后端服务已启动`, {
     port: config.port,
+    host: config.host,
     env: config.nodeEnv,
     pid: process.pid,
   });
@@ -68,6 +69,7 @@ const server = app.listen(config.port, () => {
   console.log('  村居AI管理系统 - 后端服务');
   console.log('========================================');
   console.log(`  端口:    ${config.port}`);
+  console.log(`  地址:    ${config.host}`);
   console.log(`  环境:    ${config.nodeEnv}`);
   console.log(`  健康检查: http://localhost:${config.port}/api/health`);
   console.log(`  API 基础: http://localhost:${config.port}/api`);

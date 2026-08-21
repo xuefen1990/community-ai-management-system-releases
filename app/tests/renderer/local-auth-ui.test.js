@@ -24,6 +24,10 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.match(source, /getLoginPrefill/u);
   assert.match(source, /getStartupEntitlement/u);
   assert.match(source, /clearLoginPrefill/u);
+  assert.match(source, /getRemoteServerConfig/u);
+  assert.match(source, /setRemoteServerConfig/u);
+  assert.match(source, /checkRemoteServerConnection/u);
+  assert.match(source, /账号服务器设置/u);
   assert.match(source, /记住登录/u);
   assert.match(source, /免费体验已结束/u);
   assert.match(source, /removeLegacyTrialArtifacts/u);
@@ -47,6 +51,7 @@ test('startup remains on the login screen with compact manual login actions', as
   assert.doesNotMatch(source, /if \(currentStatus\.authenticated\) await enterDashboard\(currentStatus\)/u);
   assert.match(style, /\.login-action-row\s*\{/u);
   assert.match(style, /grid-template-columns:\s*minmax\(108px, 0\.8fr\) minmax\(0, 1\.35fr\)/u);
+  assert.match(style, /\.remote-server-entry\s*\{/u);
 });
 
 test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {

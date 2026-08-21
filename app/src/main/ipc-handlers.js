@@ -68,6 +68,9 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.activateOfflineLicense, async (_event, code) => authService.activate(code));
     handle(INVOKE_CHANNELS.listLocalAccountEntitlements, async () => authService.listAccountEntitlements());
     handle(INVOKE_CHANNELS.setLocalAccountEntitlement, async (_event, value) => authService.setAccountEntitlement(value));
+    handle(INVOKE_CHANNELS.getRemoteServerConfig, async () => authService.getServerConfig());
+    handle(INVOKE_CHANNELS.setRemoteServerConfig, async (_event, value) => authService.setServerConfig(value || {}));
+    handle(INVOKE_CHANNELS.checkRemoteServerConnection, async (_event, value) => authService.checkServerConnection(value || {}));
   }
   if (updateService) {
     handle(INVOKE_CHANNELS.checkForAppUpdate, async () => updateService.check());

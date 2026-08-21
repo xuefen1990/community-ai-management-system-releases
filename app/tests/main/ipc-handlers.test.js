@@ -35,6 +35,7 @@ test('registers local account entitlement management channels', () => {
     register: async () => ({}), login: async () => ({}), logout: async () => ({}), getStatus: async () => ({}), getLoginPrefill: async () => ({}), clearLoginPrefill: async () => ({}), activate: async () => ({}),
     getStartupEntitlement: async () => ({}),
     listAccountEntitlements: async () => [], setAccountEntitlement: async () => [],
+    getServerConfig: async () => ({}), setServerConfig: async () => ({}), checkServerConnection: async () => ({}),
   };
   const { handlers } = makeHandlers({ authService });
   assert.equal(handlers.has(INVOKE_CHANNELS.listLocalAccountEntitlements), true);
@@ -42,6 +43,9 @@ test('registers local account entitlement management channels', () => {
   assert.equal(handlers.has(INVOKE_CHANNELS.getLoginPrefill), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.getStartupEntitlement), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.clearLoginPrefill), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.getRemoteServerConfig), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.setRemoteServerConfig), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.checkRemoteServerConnection), true);
 });
 
 test('registers application update channels', () => {

@@ -806,6 +806,87 @@ body.light-theme .custom-confirm__confirm--danger:active {
   line-height: 1.4;
   text-align: center;
 }
+.remote-server-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 9px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.remote-server-entry span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.remote-server-settings-btn {
+  flex: 0 0 auto;
+  border: 0;
+  padding: 3px 0;
+  color: var(--primary);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.remote-server-modal-card {
+  width: 480px;
+  max-width: 92vw;
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--bg-card);
+}
+.remote-server-modal-header,
+.remote-server-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 17px 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+.remote-server-modal-header h3 {
+  margin: 0 0 4px;
+  font-size: 17px;
+}
+.remote-server-modal-header p,
+.remote-server-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.remote-server-modal-body {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.remote-server-modal-body input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-primary);
+  background: var(--bg-input);
+}
+.remote-server-modal-footer {
+  justify-content: flex-end;
+  gap: 9px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 0;
+}
+.remote-server-message {
+  min-height: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.remote-server-message.is-success { color: var(--primary); }
+.remote-server-message.is-error { color: var(--danger); }
 #panel-login > .auth-switch-links {
   margin-top: 10px !important;
 }

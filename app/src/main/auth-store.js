@@ -11,6 +11,7 @@ function createEmptyAuthState() {
     lastSeenAt: null,
     rememberedAccountId: null,
     lastLoginPhone: '',
+    remoteServerUrl: '',
   };
 }
 

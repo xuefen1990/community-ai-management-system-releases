@@ -243,6 +243,115 @@
     loginButton.classList.add('login-primary-action');
     loginButton.parentElement.insertBefore(actionRow, loginButton);
     actionRow.append(switchButton, loginButton);
+    configureRemoteServerEntry(actionRow);
+  }
+
+  function setRemoteServerSummary(config) {
+    const summary = document.getElementById('remoteServerSummary');
+    if (!summary) return;
+    summary.textContent = config?.configured
+      ? `账号服务器：${config.baseUrl}`
+      : `账号服务器：${config?.baseUrl || '尚未设置（将使用本机默认地址）'}`;
+  }
+
+  async function refreshRemoteServerSummary() {
+    if (!api.getRemoteServerConfig) return;
+    try {
+      setRemoteServerSummary(await api.getRemoteServerConfig());
+    } catch {
+      setRemoteServerSummary({ baseUrl: '暂时无法读取' });
+    }
+  }
+
+  function closeRemoteServerModal() {
+    const modal = document.getElementById('remoteServerModal');
+    if (!modal) return;
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+  }
+
+  function ensureRemoteServerModal() {
+    let modal = document.getElementById('remoteServerModal');
+    if (modal) return modal;
+    modal = document.createElement('div');
+    modal.id = 'remoteServerModal';
+    modal.className = 'modal-overlay hidden';
+    modal.style.cssText = 'z-index:100003;display:none;align-items:center;justify-content:center;';
+    modal.innerHTML = `
+      <div class="modal-card remote-server-modal-card">
+        <div class="modal-header remote-server-modal-header"><div><h3>账号服务器设置</h3><p>请填写局域网内运行账号服务的电脑地址。</p></div><button id="closeRemoteServerModal" class="close-modal-btn" type="button">×</button></div>
+        <div class="modal-body remote-server-modal-body"><label for="remoteServerUrl">服务器地址</label><input id="remoteServerUrl" type="url" placeholder="http://192.168.x.x:3000" autocomplete="url"><p class="remote-server-note">仅在可信局域网中使用 HTTP；公网部署请使用 HTTPS。</p><div id="remoteServerMessage" class="remote-server-message"></div></div>
+        <div class="modal-footer remote-server-modal-footer"><button id="testRemoteServer" class="btn btn-outline" type="button">测试连接</button><button id="saveRemoteServer" class="btn btn-primary" type="button">保存并使用</button></div>
+      </div>`;
+    document.body.appendChild(modal);
+    const message = () => modal.querySelector('#remoteServerMessage');
+    const serverUrl = () => modal.querySelector('#remoteServerUrl').value.trim();
+    modal.querySelector('#closeRemoteServerModal').addEventListener('click', closeRemoteServerModal);
+    modal.querySelector('#testRemoteServer').addEventListener('click', async () => {
+      const button = modal.querySelector('#testRemoteServer');
+      button.disabled = true;
+      message().textContent = '正在检查连接…';
+      message().className = 'remote-server-message';
+      try {
+        const result = await api.checkRemoteServerConnection({ baseUrl: serverUrl() });
+        message().textContent = `连接成功 · ${result.baseUrl}${result.version ? ` · 服务版本 ${result.version}` : ''}`;
+        message().className = 'remote-server-message is-success';
+      } catch (error) {
+        message().textContent = error.message || '无法连接账号服务器';
+        message().className = 'remote-server-message is-error';
+      } finally {
+        button.disabled = false;
+      }
+    });
+    modal.querySelector('#saveRemoteServer').addEventListener('click', async () => {
+      const button = modal.querySelector('#saveRemoteServer');
+      button.disabled = true;
+      message().textContent = '';
+      try {
+        const config = await api.setRemoteServerConfig({ baseUrl: serverUrl() });
+        setRemoteServerSummary(config);
+        setLoginHint('账号服务器已更新，请使用该服务器上的账号手动登录');
+        closeRemoteServerModal();
+      } catch (error) {
+        message().textContent = error.message || '无法保存账号服务器地址';
+        message().className = 'remote-server-message is-error';
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return modal;
+  }
+
+  async function openRemoteServerModal() {
+    const modal = ensureRemoteServerModal();
+    const input = modal.querySelector('#remoteServerUrl');
+    const message = modal.querySelector('#remoteServerMessage');
+    message.textContent = '';
+    message.className = 'remote-server-message';
+    try {
+      input.value = (await api.getRemoteServerConfig()).baseUrl || '';
+    } catch {
+      input.value = '';
+    }
+    modal.classList.remove('hidden');
+    modal.style.display = 'flex';
+    input.focus();
+  }
+
+  function configureRemoteServerEntry(actionRow) {
+    if (!api.getRemoteServerConfig || document.getElementById('remoteServerEntry')) return;
+    const entry = document.createElement('div');
+    entry.id = 'remoteServerEntry';
+    entry.className = 'remote-server-entry';
+    const summary = document.createElement('span');
+    summary.id = 'remoteServerSummary';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'remote-server-settings-btn';
+    button.textContent = '设置';
+    button.addEventListener('click', openRemoteServerModal);
+    entry.append(summary, button);
+    actionRow.after(entry);
   }
 
   function closeActivationModal() {
@@ -435,6 +544,7 @@
     configureCompactSidebarFooter();
     configureLoginActions();
     showLoginScreen();
+    await refreshRemoteServerSummary();
     await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';
