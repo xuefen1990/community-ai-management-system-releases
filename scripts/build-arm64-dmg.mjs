@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import crypto from 'node:crypto';
-import { chmod, cp, lstat, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { chmod, cp, lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
@@ -11,15 +11,13 @@ const appProject = path.join(projectRoot, 'app');
 const templateApp = '/Applications/村务通管理系统.app';
 const runtimeApp = path.join(appProject, '.runtime', '社区AI管理系统.app');
 const releaseDirectory = path.join(appProject, 'release');
-const packageRootDirectory = path.join(appProject, '.pkg-root');
-const packagedApplicationPath = path.join(packageRootDirectory, 'Applications', path.basename(runtimeApp));
-const componentPropertiesPath = path.join(projectRoot, 'scripts', 'community-ai-component.plist');
+const stagingDirectory = path.join(appProject, '.dmg-root');
 const packageManifest = JSON.parse(await readFile(path.join(appProject, 'package.json'), 'utf8'));
 const version = packageManifest.version;
-const installerArtifactName = `community-ai-management-system-${version}-arm64.pkg`;
+const installerArtifactName = `社区AI管理系统-${version}-arm64.dmg`;
 const outputPath = path.join(releaseDirectory, installerArtifactName);
-const zipOutputPath = path.join(releaseDirectory, `社区AI管理系统-${version}-arm64.zip`);
 const updateArtifactName = `community-ai-management-system-${version}-arm64.zip`;
+const zipOutputPath = path.join(releaseDirectory, updateArtifactName);
 const updateManifestPath = path.join(releaseDirectory, 'latest-mac.yml');
 const embeddedUpdaterConfigPath = path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml');
 const embeddedUpdaterConfig = [
@@ -63,35 +61,32 @@ function run(command, argumentsList) {
 
 await requirePath(templateApp, '原版 ARM64 应用模板');
 await requirePath(path.join(projectRoot, 'source-original', 'app-asar', 'node_modules'), '已提取的运行依赖');
-await requirePath(componentPropertiesPath, '安装包组件规则');
-
 run(process.execPath, [path.join(projectRoot, 'scripts', 'prepare-local-runtime.mjs'), templateApp, appProject]);
 await writeFile(embeddedUpdaterConfigPath, embeddedUpdaterConfig, 'utf8');
 run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', runtimeApp]);
 
+await mkdir(releaseDirectory, { recursive: true });
 await rm(outputPath, { force: true });
 await rm(zipOutputPath, { force: true });
-await rm(packageRootDirectory, { recursive: true, force: true });
-await mkdir(path.dirname(packagedApplicationPath), { recursive: true });
+await rm(stagingDirectory, { recursive: true, force: true });
+await mkdir(stagingDirectory, { recursive: true });
 // Electron Framework 内包含相对符号链接。必须原样复制；否则 Node 会将其
-// 解析成构建目录的绝对路径，安装后的应用将失去有效签名并无法启动。
-await cp(runtimeApp, packagedApplicationPath, {
+// 解析成构建目录的绝对路径，复制到“应用程序”后将失去有效签名并无法启动。
+const stagedApplicationPath = path.join(stagingDirectory, path.basename(runtimeApp));
+await cp(runtimeApp, stagedApplicationPath, {
   recursive: true,
   preserveTimestamps: true,
   verbatimSymlinks: true,
 });
-run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', packagedApplicationPath]);
-run('pkgbuild', [
-  '--root', packageRootDirectory,
-  '--install-location', '/',
-  '--component-plist', componentPropertiesPath,
-  '--identifier', 'com.community.ai.management',
-  '--version', version,
-  outputPath,
-]);
-await rm(packageRootDirectory, { recursive: true, force: true });
+await symlink('/Applications', path.join(stagingDirectory, 'Applications'));
+run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', stagedApplicationPath]);
+try {
+  run('hdiutil', ['create', '-volname', '社区AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
+} finally {
+  await rm(stagingDirectory, { recursive: true, force: true });
+}
 
 run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', runtimeApp, zipOutputPath]);
 
@@ -109,6 +104,5 @@ const updateManifest = [
   `releaseDate: ${new Date().toISOString()}`,
   '',
 ].join('\n');
-await mkdir(releaseDirectory, { recursive: true });
 await writeFile(updateManifestPath, updateManifest, 'utf8');
 console.log(JSON.stringify({ outputPath, sha256: installerDigest, zipOutputPath, updateManifestPath }, null, 2));
