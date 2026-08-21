@@ -418,8 +418,6 @@ body.light-theme .custom-confirm__confirm--danger:active {
   bottom: 0;
   display: flex;
   overflow: hidden;
-  -webkit-app-region: no-drag !important;
-  pointer-events: auto;
 }
 .login-view {
   position: absolute;
@@ -796,8 +794,6 @@ body.light-theme .custom-confirm__confirm--danger:active {
   display: flex;
   z-index: 100;
   animation: fadeIn 0.4s ease-out;
-  -webkit-app-region: no-drag !important;
-  pointer-events: auto;
 }
 @keyframes fadeIn {
   from { opacity: 0; }
@@ -811,8 +807,6 @@ body.light-theme .custom-confirm__confirm--danger:active {
   display: flex;
   flex-direction: column;
   height: 100%;
-  -webkit-app-region: no-drag !important;
-  pointer-events: auto;
 }
 .sidebar-header {
   padding: 26px 20px 22px;
@@ -834,8 +828,6 @@ body.light-theme .custom-confirm__confirm--danger:active {
   flex: 1;
   padding: 14px 12px;
   overflow-y: auto;
-  -webkit-app-region: no-drag !important;
-  pointer-events: auto;
 }
 .menu-item {
   width: 100%;
@@ -995,8 +987,6 @@ body.light-theme .custom-confirm__confirm--danger:active {
   padding: 12px 18px 16px 18px;
   overflow-y: auto;
   position: relative;
-  -webkit-app-region: no-drag !important;
-  pointer-events: auto;
 }
 .detail-panel,
 .main-table-card,

@@ -5,7 +5,6 @@
   if (!api?.loginLocalAccount) return;
 
   let currentStatus = null;
-  let legacyDashboardInitialized = false;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -54,94 +53,24 @@
     if (settingsExpire) settingsExpire.textContent = entitlementLabel;
   }
 
-  function setAppViewVisibility(id, visible) {
-    const view = document.getElementById(id);
-    if (!view) return;
-    view.classList.toggle('hidden', !visible);
-    view.style.pointerEvents = visible ? 'auto' : 'none';
-    view.setAttribute('aria-hidden', String(!visible));
-  }
-
-  async function initializeLegacyDashboard(status) {
-    if (legacyDashboardInitialized || typeof window.enterApp !== 'function') return;
-    legacyDashboardInitialized = true;
-    try {
-      await window.enterApp(status.account?.phone || '本机管理员', formatEntitlement(status.entitlement));
-    } catch (error) {
-      legacyDashboardInitialized = false;
-      console.error('兼容界面初始化失败：', error);
-    }
-  }
-
-  function showDashboardTab(target) {
-    const tab = document.getElementById(target);
-    if (!tab) return false;
-    document.querySelectorAll('.tab-content').forEach((panel) => {
-      panel.classList.toggle('hidden', panel !== tab);
-    });
-    document.querySelectorAll('.menu-item[data-target]').forEach((item) => {
-      item.classList.toggle('active', item.dataset.target === target);
-    });
-    return true;
-  }
-
-  function bindDashboardNavigation() {
-    if (window.__localDashboardNavigationBound) return;
-    window.__localDashboardNavigationBound = true;
-
-    window.addEventListener('click', (event) => {
-      const item = event.target instanceof Element ? event.target.closest('.menu-item[data-target]') : null;
-      const target = item?.dataset.target;
-      if (!target) return;
-      showDashboardTab(target);
-    }, true);
-
-    document.querySelectorAll('.menu-item[data-target]').forEach((item) => {
-      item.addEventListener('click', () => {
-        const target = item.dataset.target;
-        if (!target) return;
-        try {
-          if (typeof window.switchTab === 'function') {
-            window.switchTab(target);
-          }
-        } catch (error) {
-          console.error('菜单切换失败，已使用兼容切换：', error);
-        }
-        showDashboardTab(target);
-      }, true);
-    });
-  }
-
   function hideLegacyTrialModal(modal) {
     modal.classList.add('hidden');
     modal.style.display = 'none';
     modal.style.visibility = 'hidden';
-    modal.style.pointerEvents = 'none';
     modal.setAttribute('aria-hidden', 'true');
-  }
-
-  function isVisuallyHidden(element) {
-    const style = window.getComputedStyle(element);
-    return element.classList.contains('hidden')
-      || element.getAttribute('aria-hidden') === 'true'
-      || style.display === 'none'
-      || style.visibility === 'hidden'
-      || Number.parseFloat(style.opacity || '1') === 0;
-  }
-
-  function repairInactiveInteractionLayers() {
-    document.querySelectorAll('.modal-overlay, #globalCustomConfirmModal, .document-profile-panel, .ai-copilot-drawer').forEach((layer) => {
-      if (isVisuallyHidden(layer)) layer.style.pointerEvents = 'none';
-    });
   }
 
   function suppressLegacyTrialExperience(status) {
     if (!isPermanent(status)) return;
-    const modal = Array.from(document.querySelectorAll('.modal-overlay,#globalCustomConfirmModal,[role="dialog"],[data-legacy-trial-overlay]')).find((candidate) => (
-      /免费体验已结束|免注册体验已结束|体验期限|登录或注册|免费解锁|注册体验超过/u.test(candidate.textContent?.trim() || '')
+    if (document.body.style.filter !== 'none') document.body.style.filter = 'none';
+    const dashboard = document.getElementById('dashboardView');
+    if (dashboard && dashboard.style.filter !== 'none') dashboard.style.setProperty('filter', 'none', 'important');
+    const trialTitle = Array.from(document.querySelectorAll('h1,h2,h3,h4,strong,p,span,div')).find((element) => (
+      /免费体验已结束|免注册体验已结束/u.test(element.textContent?.trim() || '')
     ));
+    if (!trialTitle) return;
+    const modal = trialTitle.closest('.modal-overlay,[role="dialog"]') || trialTitle.parentElement?.parentElement?.parentElement;
     if (modal) hideLegacyTrialModal(modal);
-    repairInactiveInteractionLayers();
   }
 
   function keepPermanentAccessVisible(status) {
@@ -158,11 +87,8 @@
       openActivationModal(status);
       return;
     }
-    await initializeLegacyDashboard(status);
-    bindDashboardNavigation();
-    setAppViewVisibility('loginView', false);
-    setAppViewVisibility('dashboardView', true);
-    document.body.classList.add('logged-in');
+    document.getElementById('loginView')?.classList.add('hidden');
+    document.getElementById('dashboardView')?.classList.remove('hidden');
     refreshLegacyAuthLabels(status);
     keepPermanentAccessVisible(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
@@ -208,10 +134,8 @@
   async function logout() {
     await api.logoutLocalAccount();
     currentStatus = null;
-    legacyDashboardInitialized = false;
-    setAppViewVisibility('dashboardView', false);
-    setAppViewVisibility('loginView', true);
-    document.body.classList.remove('logged-in');
+    document.getElementById('dashboardView')?.classList.add('hidden');
+    document.getElementById('loginView')?.classList.remove('hidden');
     if (typeof window.showPanel === 'function') window.showPanel('login');
     const password = document.getElementById('login-password');
     if (password) password.value = '';
