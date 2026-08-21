@@ -767,6 +767,51 @@ body.light-theme .custom-confirm__confirm--danger:active {
 .login-btn:hover .btn-arrow {
   transform: translateX(4px);
 }
+.login-action-row {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.8fr) minmax(0, 1.35fr);
+  gap: 9px;
+  align-items: stretch;
+  margin-top: 2px;
+}
+.login-action-row .login-btn,
+.switch-account-btn {
+  min-height: 40px;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+.login-action-row .login-btn {
+  width: auto;
+  box-shadow: 0 4px 12px var(--primary-glow);
+}
+.switch-account-btn {
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.switch-account-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--bg-input-focus);
+}
+.login-memory-hint {
+  margin-top: 8px;
+  min-height: 15px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+}
+#panel-login > .auth-switch-links {
+  margin-top: 10px !important;
+}
+#panel-login > .auth-switch-links + div {
+  margin-top: 6px !important;
+}
 .login-footer {
   margin-top: 30px;
   text-align: center;

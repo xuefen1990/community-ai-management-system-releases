@@ -10,6 +10,7 @@ function createEmptyAuthState() {
     activation: null,
     lastSeenAt: null,
     rememberedAccountId: null,
+    lastLoginPhone: '',
   };
 }
 

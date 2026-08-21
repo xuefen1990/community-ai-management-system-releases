@@ -7,6 +7,7 @@ const { autoUpdater } = require('electron-updater');
 
 const { registerCompatibilityHandlers } = require('./ipc-handlers');
 const { AuthStore } = require('./auth-store');
+const { RememberedLoginStore } = require('./remembered-login-store');
 const { LocalAuthService } = require('./local-auth-service');
 const { createMachineId } = require('./machine-id');
 const { verifyOfflineLicense } = require('./license-codec');
@@ -40,6 +41,7 @@ app.whenReady().then(() => {
   const publicKey = fs.readFileSync(path.join(__dirname, 'license-public-key.pem'), 'utf8');
   const authService = new LocalAuthService({
     store: new AuthStore({ userDataPath: app.getPath('userData') }),
+    rememberedLoginStore: new RememberedLoginStore({ userDataPath: app.getPath('userData'), safeStorage }),
     machineId,
     verifyActivation: (code, boundMachineId, now) => verifyOfflineLicense(code, {
       publicKey,

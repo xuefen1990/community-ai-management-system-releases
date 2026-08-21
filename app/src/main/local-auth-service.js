@@ -33,11 +33,12 @@ async function passwordMatches(password, passwordRecord) {
 }
 
 class LocalAuthService {
-  constructor({ store, machineId, now = () => new Date(), verifyActivation = null }) {
+  constructor({ store, machineId, now = () => new Date(), verifyActivation = null, rememberedLoginStore = null }) {
     this.store = store;
     this.machineId = machineId;
     this.now = now;
     this.verifyActivation = verifyActivation;
+    this.rememberedLoginStore = rememberedLoginStore;
     this.sessionAccountId = null;
   }
 
@@ -64,7 +65,9 @@ class LocalAuthService {
     state.accounts.push(account);
     state.lastSeenAt = createdAt;
     state.rememberedAccountId = remember ? account.id : null;
+    state.lastLoginPhone = normalizedPhone;
     await this.store.write(state);
+    await this.updateRememberedLogin({ phone: normalizedPhone, password, remember });
     this.sessionAccountId = account.id;
     return this.getStatus();
   }
@@ -79,17 +82,44 @@ class LocalAuthService {
     this.migrateLegacyAccount(state, account);
     this.sessionAccountId = account.id;
     state.rememberedAccountId = remember ? account.id : null;
+    state.lastLoginPhone = normalizedPhone;
     await this.recordClock(state);
+    await this.updateRememberedLogin({ phone: normalizedPhone, password, remember });
     return this.getStatus();
+  }
+
+  async updateRememberedLogin({ phone, password, remember }) {
+    try {
+      if (remember) return await this.rememberedLoginStore?.save({ phone, password });
+      return await this.rememberedLoginStore?.clear();
+    } catch {
+      return { saved: false, warning: '无法保存登录密码，请下次手动输入' };
+    }
   }
 
   async logout() {
     this.sessionAccountId = null;
+    return { ok: true };
+  }
+
+  async getLoginPrefill() {
     const state = await this.store.read();
-    if (state.rememberedAccountId) {
-      state.rememberedAccountId = null;
-      await this.store.write(state);
-    }
+    const saved = await this.rememberedLoginStore?.load() || { phone: '', password: '', warning: '' };
+    const phone = state.lastLoginPhone || saved.phone || '';
+    return {
+      phone,
+      password: saved.phone === phone ? saved.password : '',
+      remembered: Boolean(saved.phone === phone && saved.password),
+      warning: saved.warning || '',
+    };
+  }
+
+  async clearLoginPrefill() {
+    const state = await this.store.read();
+    state.rememberedAccountId = null;
+    state.lastLoginPhone = '';
+    await this.store.write(state);
+    await this.rememberedLoginStore?.clear();
     return { ok: true };
   }
 
@@ -117,22 +147,17 @@ class LocalAuthService {
 
   async getStatus() {
     const state = await this.store.read();
-    if (!this.sessionAccountId && Number(state.version || 1) < AUTH_STATE_VERSION && state.accounts.length === 1) {
+    let changed = false;
+    if (Number(state.version || 1) < AUTH_STATE_VERSION && state.accounts.length === 1) {
       const legacyAccount = state.accounts[0];
-      if (this.migrateLegacyAccount(state, legacyAccount)) {
-        this.sessionAccountId = legacyAccount.id;
-        state.rememberedAccountId = legacyAccount.id;
-        await this.store.write(state);
-      }
-    }
-    if (!this.sessionAccountId && state.rememberedAccountId) {
-      this.sessionAccountId = state.rememberedAccountId;
+      changed = this.migrateLegacyAccount(state, legacyAccount);
     }
     const account = state.accounts.find((candidate) => candidate.id === this.sessionAccountId) || null;
-    if (!account && state.rememberedAccountId) {
+    if (!state.accounts.some((candidate) => candidate.id === state.rememberedAccountId) && state.rememberedAccountId) {
       state.rememberedAccountId = null;
-      await this.store.write(state);
+      changed = true;
     }
+    if (changed) await this.store.write(state);
     const entitlement = await this.getEntitlement(state, account);
     return {
       ok: true,

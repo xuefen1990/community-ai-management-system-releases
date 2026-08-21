@@ -62,6 +62,8 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
+    handle(INVOKE_CHANNELS.getLoginPrefill, async () => authService.getLoginPrefill());
+    handle(INVOKE_CHANNELS.clearLoginPrefill, async () => authService.clearLoginPrefill());
     handle(INVOKE_CHANNELS.activateOfflineLicense, async (_event, code) => authService.activate(code));
     handle(INVOKE_CHANNELS.listLocalAccountEntitlements, async () => authService.listAccountEntitlements());
     handle(INVOKE_CHANNELS.setLocalAccountEntitlement, async (_event, value) => authService.setAccountEntitlement(value));

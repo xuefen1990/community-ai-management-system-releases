@@ -6,13 +6,15 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 74);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 76);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 4);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
   assert.equal(INVOKE_CHANNELS.writeDb, 'write-db');
   assert.equal(INVOKE_CHANNELS.scanLocalModels, 'scan-local-models');
   assert.equal(INVOKE_CHANNELS.registerLocalAccount, 'register-local-account');
+  assert.equal(INVOKE_CHANNELS.getLoginPrefill, 'get-login-prefill');
+  assert.equal(INVOKE_CHANNELS.clearLoginPrefill, 'clear-login-prefill');
   assert.equal(INVOKE_CHANNELS.activateOfflineLicense, 'activate-offline-license');
   assert.equal(INVOKE_CHANNELS.listLocalAccountEntitlements, 'list-local-account-entitlements');
   assert.equal(INVOKE_CHANNELS.setLocalAccountEntitlement, 'set-local-account-entitlement');

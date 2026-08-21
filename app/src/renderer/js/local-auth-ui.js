@@ -103,8 +103,6 @@
       const password = document.getElementById('login-password')?.value || '';
       const remember = Boolean(document.getElementById('remember-me')?.checked);
       const status = await api.loginLocalAccount({ phone, password, remember });
-      if (remember) localStorage.setItem('local-auth-phone', phone);
-      else localStorage.removeItem('local-auth-phone');
       await enterDashboard(status);
     } catch (error) {
       setError('login', error.message || '登录失败');
@@ -137,8 +135,70 @@
     document.getElementById('dashboardView')?.classList.add('hidden');
     document.getElementById('loginView')?.classList.remove('hidden');
     if (typeof window.showPanel === 'function') window.showPanel('login');
+    await hydrateLoginPrefill();
+  }
+
+  function showLoginScreen() {
+    document.getElementById('dashboardView')?.classList.add('hidden');
+    document.getElementById('loginView')?.classList.remove('hidden');
+    if (typeof window.showPanel === 'function') window.showPanel('login');
+  }
+
+  async function hydrateLoginPrefill() {
+    const phone = document.getElementById('login-phone');
     const password = document.getElementById('login-password');
+    const remember = document.getElementById('remember-me');
+    try {
+      const prefill = await api.getLoginPrefill();
+      if (phone) phone.value = prefill.phone || '';
+      if (password) password.value = prefill.password || '';
+      if (remember) remember.checked = true;
+      setLoginHint(prefill.warning || '密码已隐藏，确认后请手动登录');
+    } catch {
+      if (remember) remember.checked = true;
+      setLoginHint('无法读取已保存密码，请手动输入密码登录');
+    }
+  }
+
+  function setLoginHint(message) {
+    let hint = document.getElementById('loginMemoryHint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'loginMemoryHint';
+      hint.className = 'login-memory-hint';
+      document.querySelector('#panel-login .login-form')?.appendChild(hint);
+    }
+    if (hint) hint.textContent = message;
+  }
+
+  async function switchAccount() {
+    await api.clearLoginPrefill();
+    const phone = document.getElementById('login-phone');
+    const password = document.getElementById('login-password');
+    const remember = document.getElementById('remember-me');
+    if (phone) phone.value = '';
     if (password) password.value = '';
+    if (remember) remember.checked = true;
+    setError('login');
+    setLoginHint('已清除已保存登录信息，请输入其他账号');
+    phone?.focus();
+  }
+
+  function configureLoginActions() {
+    const loginButton = document.getElementById('doLoginBtn');
+    if (!loginButton || loginButton.parentElement?.classList.contains('login-action-row')) return;
+    const actionRow = document.createElement('div');
+    actionRow.className = 'login-action-row';
+    const switchButton = document.createElement('button');
+    switchButton.type = 'button';
+    switchButton.id = 'switchAccountBtn';
+    switchButton.className = 'switch-account-btn';
+    switchButton.textContent = '切换账号';
+    switchButton.addEventListener('click', switchAccount);
+    loginButton.querySelector('span').textContent = '登录进入工作台';
+    loginButton.classList.add('login-primary-action');
+    loginButton.parentElement.insertBefore(actionRow, loginButton);
+    actionRow.append(switchButton, loginButton);
   }
 
   function closeActivationModal() {
@@ -302,12 +362,9 @@
     bindButton('doRegisterBtn', submitRegister);
     bindButton('logoutBtn', logout);
     bindButton('syncTokenBtn', window.forceSyncToken);
-
-    const rememberedPhone = localStorage.getItem('local-auth-phone');
-    if (rememberedPhone) {
-      document.getElementById('login-phone').value = rememberedPhone;
-    }
-    document.getElementById('remember-me').checked = true;
+    configureLoginActions();
+    showLoginScreen();
+    await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';
     const syncButton = document.getElementById('syncTokenBtn');
@@ -322,8 +379,6 @@
       syncButton.title = '管理本机注册账号的使用期限';
       syncButton.lastChild.textContent = ' 账号授权';
     }
-    if (currentStatus.authenticated) await enterDashboard(currentStatus);
-
     const privacyLink = document.querySelector('#panel-login a[onclick*="showPrivacyAgreementModal"]');
     if (privacyLink) {
       const activationLink = document.createElement('a');

@@ -21,11 +21,27 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.match(source, /loginLocalAccount/u);
   assert.match(source, /activateOfflineLicense/u);
   assert.match(source, /listLocalAccountEntitlements/u);
+  assert.match(source, /getLoginPrefill/u);
+  assert.match(source, /clearLoginPrefill/u);
   assert.match(source, /记住登录/u);
   assert.match(source, /免费体验已结束/u);
   assert.match(source, /suppressLegacyTrialExperience/u);
   assert.match(source, /update-ui\.js/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
+});
+
+test('startup remains on the login screen with compact manual login actions', async () => {
+  const [source, style] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
+  ]);
+  assert.match(source, /function showLoginScreen\(\)/u);
+  assert.match(source, /function configureLoginActions\(\)/u);
+  assert.match(source, /登录进入工作台/u);
+  assert.match(source, /切换账号/u);
+  assert.doesNotMatch(source, /if \(currentStatus\.authenticated\) await enterDashboard\(currentStatus\)/u);
+  assert.match(style, /\.login-action-row\s*\{/u);
+  assert.match(style, /grid-template-columns:\s*minmax\(108px, 0\.8fr\) minmax\(0, 1\.35fr\)/u);
 });
 
 test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {

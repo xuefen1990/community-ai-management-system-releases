@@ -32,12 +32,14 @@ test('registers the work attachment channel', () => {
 
 test('registers local account entitlement management channels', () => {
   const authService = {
-    register: async () => ({}), login: async () => ({}), logout: async () => ({}), getStatus: async () => ({}), activate: async () => ({}),
+    register: async () => ({}), login: async () => ({}), logout: async () => ({}), getStatus: async () => ({}), getLoginPrefill: async () => ({}), clearLoginPrefill: async () => ({}), activate: async () => ({}),
     listAccountEntitlements: async () => [], setAccountEntitlement: async () => [],
   };
   const { handlers } = makeHandlers({ authService });
   assert.equal(handlers.has(INVOKE_CHANNELS.listLocalAccountEntitlements), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.setLocalAccountEntitlement), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.getLoginPrefill), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.clearLoginPrefill), true);
 });
 
 test('registers application update channels', () => {

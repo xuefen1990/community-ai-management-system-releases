@@ -8,17 +8,29 @@ const test = require('node:test');
 
 const { AuthStore } = require('../../src/main/auth-store');
 const { LocalAuthService, TRIAL_DURATION_MS } = require('../../src/main/local-auth-service');
+const { RememberedLoginStore } = require('../../src/main/remembered-login-store');
+
+function fakeSafeStorage() {
+  return {
+    isEncryptionAvailable: () => true,
+    encryptString: (value) => Buffer.from(`encrypted:${value}`),
+    decryptString: (value) => value.toString().replace(/^encrypted:/u, ''),
+  };
+}
 
 async function makeService(t, now = new Date('2026-08-13T00:00:00.000Z')) {
   const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-auth-'));
   t.after(() => fs.rm(userDataPath, { recursive: true, force: true }));
   const clock = { now };
+  const store = new AuthStore({ userDataPath });
+  const rememberedLoginStore = new RememberedLoginStore({ userDataPath, safeStorage: fakeSafeStorage() });
   const service = new LocalAuthService({
-    store: new AuthStore({ userDataPath }),
+    store,
+    rememberedLoginStore,
     machineId: 'machine-test-001',
     now: () => clock.now,
   });
-  return { clock, service };
+  return { clock, service, rememberedLoginStore };
 }
 
 test('registration creates a local session and starts a 30 day trial', async (t) => {
@@ -92,7 +104,7 @@ test('valid offline activation replaces trial entitlement', async (t) => {
   assert.equal(status.entitlement.plan, 'permanent');
 });
 
-test('single legacy account becomes the permanent local owner and restores its session', async (t) => {
+test('single legacy account becomes the permanent local owner without restoring its session', async (t) => {
   const { service } = await makeService(t);
   await service.register({ phone: '13800138000', password: 'secret88', remember: false });
   const legacyState = await service.store.read();
@@ -102,27 +114,34 @@ test('single legacy account becomes the permanent local owner and restores its s
   await service.store.write(legacyState);
   service.sessionAccountId = null;
   const status = await service.getStatus();
-  assert.equal(status.account.isOwner, true);
-  assert.equal(status.entitlement.type, 'licensed');
-  assert.equal(status.entitlement.plan, 'permanent');
+  assert.equal(status.authenticated, false);
+  const migrated = await service.store.read();
+  assert.equal(migrated.accounts[0].role, 'owner');
+  assert.equal(migrated.accounts[0].entitlement.plan, 'permanent');
 });
 
-test('remembered account session is restored by a new service instance', async (t) => {
-  const { service } = await makeService(t);
+test('remembered account prefills the login form but does not restore a session', async (t) => {
+  const { service, rememberedLoginStore } = await makeService(t);
   await service.register({ phone: '13800138000', password: 'secret88', remember: true });
   const restoredService = new LocalAuthService({
     store: service.store,
+    rememberedLoginStore,
     machineId: 'machine-test-001',
     now: () => new Date('2026-08-13T00:00:00.000Z'),
   });
 
-  assert.equal((await restoredService.getStatus()).authenticated, true);
-  await restoredService.logout();
-  assert.equal((await new LocalAuthService({
-    store: service.store,
-    machineId: 'machine-test-001',
-    now: () => new Date('2026-08-13T00:00:00.000Z'),
-  }).getStatus()).authenticated, false);
+  assert.equal((await restoredService.getStatus()).authenticated, false);
+  assert.deepEqual(await restoredService.getLoginPrefill(), {
+    phone: '13800138000', password: 'secret88', remembered: true, warning: '',
+  });
+  await restoredService.clearLoginPrefill();
+  assert.deepEqual(await restoredService.getLoginPrefill(), {
+    phone: '', password: '', remembered: false, warning: '',
+  });
+  await restoredService.login({ phone: '13800138000', password: 'secret88', remember: false });
+  assert.deepEqual(await restoredService.getLoginPrefill(), {
+    phone: '13800138000', password: '', remembered: false, warning: '',
+  });
 });
 
 test('local owner can grant permanent and custom expiry access to another account', async (t) => {
