@@ -388,6 +388,32 @@
     button.addEventListener('click', handler);
   }
 
+  function configureCompactSidebarFooter() {
+    const footer = document.querySelector('.sidebar-footer');
+    const actions = footer?.querySelector('.sidebar-footer-actions');
+    const legacyRow = actions?.querySelector('.sidebar-action-row');
+    const refreshButton = document.getElementById('syncTokenBtn');
+    const logoutButton = document.getElementById('logoutBtn');
+    const privacyButton = legacyRow?.querySelector('button[onclick*="showPrivacyAgreementModal"]');
+    if (!footer || !actions || !legacyRow || !refreshButton || !logoutButton || !privacyButton) return;
+
+    footer.classList.add('sidebar-footer-compact');
+    privacyButton.id = 'privacyPolicyBtn';
+    privacyButton.classList.add('sidebar-security-btn');
+    privacyButton.removeAttribute('style');
+    privacyButton.removeAttribute('onmouseover');
+    privacyButton.removeAttribute('onmouseout');
+
+    const primaryActions = document.createElement('div');
+    primaryActions.className = 'sidebar-primary-actions';
+    const secondaryActions = document.createElement('div');
+    secondaryActions.className = 'sidebar-secondary-actions';
+
+    primaryActions.append(refreshButton, logoutButton);
+    secondaryActions.append(privacyButton);
+    actions.replaceChildren(primaryActions, secondaryActions);
+  }
+
   async function initialize() {
     applyProductBrand();
     const brandObserver = new MutationObserver(applyProductBrand);
@@ -406,6 +432,7 @@
     bindButton('doRegisterBtn', submitRegister);
     bindButton('logoutBtn', logout);
     bindButton('syncTokenBtn', window.forceSyncToken);
+    configureCompactSidebarFooter();
     configureLoginActions();
     showLoginScreen();
     await hydrateLoginPrefill();

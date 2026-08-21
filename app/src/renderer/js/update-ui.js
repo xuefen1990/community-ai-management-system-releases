@@ -103,15 +103,14 @@
 
   function addManualCheckButton() {
     if (document.getElementById('manualUpdateCheckBtn')) return;
-    const row = document.getElementById('syncTokenBtn')?.parentElement;
+    const row = document.querySelector('.sidebar-secondary-actions');
     if (!row) return;
     const button = document.createElement('button');
     button.id = 'manualUpdateCheckBtn';
-    button.className = 'sync-text-btn';
+    button.className = 'sidebar-update-btn';
     button.type = 'button';
     button.title = '检查软件新版本';
-    button.style.cssText = 'flex:1;padding-left:0;padding-right:0;';
-    button.textContent = '更新';
+    button.textContent = '检查更新';
     button.addEventListener('click', async () => {
       button.disabled = true;
       const previousText = button.textContent;
