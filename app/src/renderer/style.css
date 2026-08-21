@@ -869,14 +869,14 @@ body.light-theme .custom-confirm__confirm--danger:active {
   color: var(--primary-hover);
 }
 .sidebar-footer {
-  padding: 12px 16px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border-color);
   background-color: var(--bg-sidebar-footer);
 }
 .admin-profile {
   display: flex;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .admin-avatar {
   width: 36px;
@@ -929,14 +929,35 @@ body.light-theme .custom-confirm__confirm--danger:active {
 .sidebar-footer-actions {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   width: 100%;
 }
 .sidebar-action-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-items: center;
-  gap: 8px;
+  gap: 6px !important;
   width: 100%;
+}
+.sidebar-action-row > button {
+  box-sizing: border-box;
+  min-width: 0;
+  height: 36px !important;
+  padding: 0 4px !important;
+  white-space: nowrap;
+  font-size: 11px;
+  line-height: 1;
+}
+.sidebar-action-row .sync-text-btn,
+.sidebar-action-row .logout-btn {
+  width: 100%;
+}
+.sidebar-action-row .sync-text-btn svg,
+.sidebar-action-row .logout-btn svg {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  margin-right: 3px;
 }
 .logout-btn {
   flex: 1;

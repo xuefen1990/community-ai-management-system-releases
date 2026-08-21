@@ -28,32 +28,18 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });
 
-test('post-login state prevents hidden layers from intercepting clicks', async () => {
+test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
-  assert.match(source, /function setAppViewVisibility\(id, visible\)/u);
-  assert.match(source, /view\.style\.pointerEvents = visible \? 'auto' : 'none'/u);
-  assert.match(source, /setAppViewVisibility\('loginView', false\)/u);
-  assert.match(source, /setAppViewVisibility\('dashboardView', true\)/u);
-  assert.match(source, /modal\.style\.pointerEvents = 'none'/u);
-  assert.match(source, /#globalCustomConfirmModal/u);
-  assert.match(source, /function repairInactiveInteractionLayers\(\)/u);
-  assert.match(source, /document\.body\.classList\.add\('logged-in'\)/u);
-  assert.match(source, /async function initializeLegacyDashboard\(status\)/u);
-  assert.match(source, /await window\.enterApp\(status\.account\?\.phone \|\| '本机管理员', formatEntitlement\(status\.entitlement\)\)/u);
-  assert.match(source, /function bindDashboardNavigation\(\)/u);
-  assert.match(source, /window\.addEventListener\('click'/u);
-  assert.match(source, /window\.__localDashboardNavigationBound/u);
-  assert.match(source, /item\.addEventListener\('click'/u);
-  assert.match(source, /window\.switchTab\(target\)/u);
-  assert.match(source, /showDashboardTab\(target\)/u);
-  assert.doesNotMatch(source, /window\.switchTab\(target\);\s*return;/u);
-  assert.match(source, /bindDashboardNavigation\(\);/u);
-  assert.doesNotMatch(source, /parentElement\?\.parentElement\?\.parentElement/u);
+  assert.match(source, /getElementById\('loginView'\)\?\.classList\.add\('hidden'\)/u);
+  assert.match(source, /getElementById\('dashboardView'\)\?\.classList\.remove\('hidden'\)/u);
+  assert.match(source, /await window\.loadDatabase\(\)/u);
+  assert.match(source, /window\.renderOverview\(\)/u);
+  assert.match(source, /trialTitle\.parentElement\?\.parentElement\?\.parentElement/u);
+  assert.doesNotMatch(source, /function setAppViewVisibility\(id, visible\)/u);
 });
 
-test('dashboard shell is explicitly interactive in the macOS window', async () => {
+test('dashboard shell keeps the v0.1.3 sidebar dimensions', async () => {
   const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  for (const selector of ['.app-wrapper', '.dashboard-view', '.app-sidebar', '.sidebar-menu', '.app-main']) {
-    assert.match(style, new RegExp(`${selector.replace('.', '\\.') }\\s*\\{[^}]*-webkit-app-region:\\s*no-drag\\s*!important[^}]*pointer-events:\\s*auto`, 'su'));
-  }
+  assert.match(style, /\.app-sidebar\s*\{[^}]*width:\s*250px/su);
+  assert.match(style, /\.sidebar-footer\s*\{[^}]*background-color:\s*var\(--bg-sidebar-footer\)/su);
 });
