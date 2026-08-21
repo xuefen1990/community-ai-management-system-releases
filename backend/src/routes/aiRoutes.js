@@ -103,6 +103,7 @@ router.post('/providers', authRequired, adminRequired, async (req, res, next) =>
   try {
     const { name, providerType, baseUrl, apiKey, defaultModel, availableModels } = req.body;
     const provider = aiService.createProvider({ name, providerType, baseUrl, apiKey, defaultModel, availableModels });
+    authService.writeAuditLog(req.user.id, 'create_ai_provider', provider.id, JSON.stringify({ name: provider.name, providerType: provider.providerType }), req.ip);
     res.status(201).json({ provider });
   } catch (err) { next(err); }
 });
@@ -110,15 +111,20 @@ router.post('/providers', authRequired, adminRequired, async (req, res, next) =>
 // ===== 更新 Provider =====
 router.put('/providers/:id', authRequired, adminRequired, async (req, res, next) => {
   try {
-    const { name, baseUrl, apiKey, defaultModel, availableModels, isActive } = req.body;
-    const provider = aiService.updateProvider(req.params.id, { name, baseUrl, apiKey, defaultModel, availableModels, isActive });
+    const { name, providerType, baseUrl, apiKey, defaultModel, availableModels, isActive } = req.body;
+    const provider = aiService.updateProvider(req.params.id, { name, providerType, baseUrl, apiKey, defaultModel, availableModels, isActive });
+    authService.writeAuditLog(req.user.id, 'update_ai_provider', provider.id, JSON.stringify({ name: provider.name, isActive: provider.isActive }), req.ip);
     res.json({ provider });
   } catch (err) { next(err); }
 });
 
 // ===== 删除 Provider =====
-router.delete('/providers/:id', authRequired, adminRequired, (req, res) => {
-  res.json(aiService.deleteProvider(req.params.id));
+router.delete('/providers/:id', authRequired, adminRequired, (req, res, next) => {
+  try {
+    const result = aiService.deleteProvider(req.params.id);
+    authService.writeAuditLog(req.user.id, 'delete_ai_provider', req.params.id, '', req.ip);
+    res.json(result);
+  } catch (err) { next(err); }
 });
 
 // ===== 全局用量统计 =====

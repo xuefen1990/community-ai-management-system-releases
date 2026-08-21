@@ -87,13 +87,34 @@ router.get('/my-licenses', authRequired, (req, res) => {
 
 // ===== 用户列表 =====
 router.get('/users', authRequired, adminRequired, (req, res) => {
-  res.json({ users: authService.listUsers() });
+  const { keyword, isActive, page, pageSize } = req.query;
+  res.json(authService.listUsers({ keyword, isActive, page, pageSize }));
+});
+
+router.get('/users/:userId', authRequired, adminRequired, (req, res, next) => {
+  try {
+    const user = authService.getUserById(req.params.userId);
+    if (!user) throw new ApiError(404, '用户不存在');
+    res.json({ user });
+  } catch (err) { next(err); }
+});
+
+router.post('/users/:userId/reset-password', authRequired, adminRequired, async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    const user = authService.resetPassword(req.params.userId, newPassword);
+    authService.writeAuditLog(req.user.id, 'reset_password', req.params.userId, '', getClientIp(req));
+    res.json({ user });
+  } catch (err) { next(err); }
 });
 
 // ===== 更新用户授权（管理员）=====
 router.put('/users/:userId/entitlement', authRequired, adminRequired, async (req, res, next) => {
   try {
     const { planType, planExpiresAt, isActive } = req.body;
+    if (req.params.userId === req.user.id && isActive === false) {
+      throw new ApiError(400, '不能停用当前登录的管理员账号');
+    }
     const user = authService.updateEntitlement(req.params.userId, { planType, planExpiresAt, isActive });
     authService.writeAuditLog(req.user.id, 'update_entitlement', req.params.userId, JSON.stringify({ planType, planExpiresAt, isActive }), getClientIp(req));
     res.json({ user });

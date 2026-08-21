@@ -1,6 +1,7 @@
 'use strict';
 
 const express = require('express');
+const path = require('path');
 const helmet = require('helmet');
 const cors = require('cors');
 const config = require('./config');
@@ -12,13 +13,27 @@ const healthRoutes = require('./routes/healthRoutes');
 const authRoutes = require('./routes/authRoutes');
 const updateRoutes = require('./routes/updateRoutes');
 const aiRoutes = require('./routes/aiRoutes');
+const adminRoutes = require('./routes/adminRoutes');
 
 const { standard } = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      connectSrc: ["'self'"],
+      imgSrc: ["'self'", 'data:'],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      formAction: ["'self'"],
+    },
+  },
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -36,6 +51,8 @@ app.use('/api/health', healthRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/update', updateRoutes);
 app.use('/api/ai', aiRoutes);
+app.use('/api/admin', adminRoutes);
+app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
 app.use(notFoundHandler);
 app.use(errorHandler);

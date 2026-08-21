@@ -5,6 +5,29 @@ const { hashPassword, verifyPassword, signToken } = require('../utils/crypto');
 const logger = require('../utils/logger');
 
 const TRIAL_DAYS = 30;
+const PLAN_TYPES = new Set(['trial', 'expires', 'monthly', 'yearly', 'permanent']);
+
+function normalizePhone(phone) {
+  return String(phone || '').replace(/[\s-]/g, '');
+}
+
+function assertPhone(phone) {
+  const normalized = normalizePhone(phone);
+  if (!/^\+?\d{6,20}$/.test(normalized)) {
+    const err = new Error('请输入有效的手机号');
+    err.statusCode = 400;
+    throw err;
+  }
+  return normalized;
+}
+
+function assertPassword(password, label = '密码') {
+  if (typeof password !== 'string' || password.length < 6) {
+    const err = new Error(`${label}长度不能少于6位`);
+    err.statusCode = 400;
+    throw err;
+  }
+}
 
 function addDays(dateStr, days) {
   const d = new Date(dateStr);
@@ -31,18 +54,10 @@ function sanitizeUser(user) {
 }
 
 function register({ phone, password, name, villageName, machineId }) {
-  if (!phone || !password) {
-    const err = new Error('手机号和密码不能为空');
-    err.statusCode = 400;
-    throw err;
-  }
-  if (password.length < 6) {
-    const err = new Error('密码长度不能少于6位');
-    err.statusCode = 400;
-    throw err;
-  }
+  const normalizedPhone = assertPhone(phone);
+  assertPassword(password);
 
-  const existing = db.findOne('users', u => u.phone === phone);
+  const existing = db.findOne('users', u => u.phone === normalizedPhone);
   if (existing) {
     const err = new Error('该手机号已注册');
     err.statusCode = 409;
@@ -55,7 +70,7 @@ function register({ phone, password, name, villageName, machineId }) {
   const trialExpires = addDays(now, TRIAL_DAYS);
 
   const record = {
-    id, phone, password_hash: hash,
+    id, phone: normalizedPhone, password_hash: hash,
     name: name || '', role: 'user',
     village_name: villageName || '',
     plan_type: 'trial', plan_expires_at: trialExpires,
@@ -65,14 +80,15 @@ function register({ phone, password, name, villageName, machineId }) {
   };
 
   db.insert('users', record);
-  logger.info('用户注册', { userId: id, phone });
+  logger.info('用户注册', { userId: id, phone: normalizedPhone });
 
   const token = signToken({ userId: id, role: 'user' });
   return { token, user: getUserById(id) };
 }
 
 function login({ phone, password, machineId }) {
-  const user = db.findOne('users', u => u.phone === phone);
+  const normalizedPhone = normalizePhone(phone);
+  const user = db.findOne('users', u => u.phone === normalizedPhone);
   if (!user || !verifyPassword(password, user.password_hash)) {
     const err = new Error('手机号或密码错误');
     err.statusCode = 401;
@@ -92,7 +108,7 @@ function login({ phone, password, machineId }) {
   }
 
   db.updateById('users', user.id, patch);
-  logger.info('用户登录', { userId: user.id, phone });
+  logger.info('用户登录', { userId: user.id, phone: normalizedPhone });
 
   const token = signToken({ userId: user.id, role: user.role });
   return { token, user: getUserById(user.id) };
@@ -106,10 +122,28 @@ function getUserByPhone(phone) {
   return sanitizeUser(db.findOne('users', u => u.phone === phone));
 }
 
-function listUsers() {
-  return db.findAll('users')
+function listUsers({ keyword = '', isActive, page = 1, pageSize = 20 } = {}) {
+  const normalizedKeyword = String(keyword).trim().toLowerCase();
+  const requestedPage = Math.max(1, Number.parseInt(page, 10) || 1);
+  const requestedSize = Math.min(100, Math.max(1, Number.parseInt(pageSize, 10) || 20));
+  let users = db.findAll('users');
+  if (normalizedKeyword) {
+    users = users.filter(user => [user.phone, user.name, user.village_name]
+      .some(value => String(value || '').toLowerCase().includes(normalizedKeyword)));
+  }
+  if (isActive !== undefined && isActive !== '') {
+    const active = String(isActive) === 'true' || String(isActive) === '1';
+    users = users.filter(user => Boolean(user.is_active) === active);
+  }
+  users = users
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
     .map(sanitizeUser);
+  const total = users.length;
+  const start = (requestedPage - 1) * requestedSize;
+  return {
+    users: users.slice(start, start + requestedSize),
+    pagination: { page: requestedPage, pageSize: requestedSize, total, totalPages: Math.max(1, Math.ceil(total / requestedSize)) },
+  };
 }
 
 function updateProfile(userId, { name, villageName, phone }) {
@@ -121,7 +155,8 @@ function updateProfile(userId, { name, villageName, phone }) {
   }
 
   if (phone && phone !== current.phone) {
-    const existing = db.findOne('users', u => u.phone === phone && u.id !== userId);
+    const normalizedPhone = assertPhone(phone);
+    const existing = db.findOne('users', u => u.phone === normalizedPhone && u.id !== userId);
     if (existing) {
       const err = new Error('该手机号已被其他用户使用');
       err.statusCode = 409;
@@ -132,18 +167,14 @@ function updateProfile(userId, { name, villageName, phone }) {
   const patch = { updated_at: db.now() };
   if (name !== undefined) patch.name = name;
   if (villageName !== undefined) patch.village_name = villageName;
-  if (phone) patch.phone = phone;
+  if (phone) patch.phone = normalizePhone(phone);
 
   db.updateById('users', userId, patch);
   return getUserById(userId);
 }
 
 function changePassword(userId, { oldPassword, newPassword }) {
-  if (!newPassword || newPassword.length < 6) {
-    const err = new Error('新密码长度不能少于6位');
-    err.statusCode = 400;
-    throw err;
-  }
+  assertPassword(newPassword, '新密码');
 
   const user = db.findById('users', userId);
   if (!user) {
@@ -164,6 +195,19 @@ function changePassword(userId, { oldPassword, newPassword }) {
   return { success: true };
 }
 
+function resetPassword(userId, newPassword) {
+  assertPassword(newPassword, '新密码');
+  const user = db.findById('users', userId);
+  if (!user) {
+    const err = new Error('用户不存在');
+    err.statusCode = 404;
+    throw err;
+  }
+  db.updateById('users', userId, { password_hash: hashPassword(newPassword), updated_at: db.now() });
+  logger.info('管理员重置用户密码', { targetUserId: userId });
+  return getUserById(userId);
+}
+
 function updateEntitlement(userId, { planType, planExpiresAt, isActive }) {
   const user = db.findById('users', userId);
   if (!user) {
@@ -172,9 +216,34 @@ function updateEntitlement(userId, { planType, planExpiresAt, isActive }) {
     throw err;
   }
 
+  if (planType && !PLAN_TYPES.has(planType)) {
+    const err = new Error('授权类型无效');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (planType === 'permanent' && planExpiresAt) {
+    const err = new Error('永久授权不能设置到期日期');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (planType === 'expires' && !planExpiresAt) {
+    const err = new Error('限期授权必须设置到期日期');
+    err.statusCode = 400;
+    throw err;
+  }
+  if ((planType === 'trial' || planType === 'expires') && planExpiresAt) {
+    const expiresAt = new Date(planExpiresAt);
+    if (Number.isNaN(expiresAt.getTime())) {
+      const err = new Error('授权到期日期无效');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
   const patch = { updated_at: db.now() };
   if (planType) patch.plan_type = planType;
-  if (planExpiresAt !== undefined) patch.plan_expires_at = planExpiresAt;
+  if (planType === 'permanent') patch.plan_expires_at = null;
+  else if (planType === 'trial' && !planExpiresAt) patch.plan_expires_at = addDays(db.now(), TRIAL_DAYS);
+  else if (planExpiresAt !== undefined) patch.plan_expires_at = planExpiresAt || null;
   if (isActive !== undefined) patch.is_active = isActive ? 1 : 0;
 
   db.updateById('users', userId, patch);
@@ -221,6 +290,7 @@ module.exports = {
   listUsers,
   updateProfile,
   changePassword,
+  resetPassword,
   updateEntitlement,
   bindMachine,
   checkEntitlement,

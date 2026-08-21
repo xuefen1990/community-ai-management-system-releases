@@ -29,9 +29,9 @@ function getProviderById(id) {
     name: row.name,
     providerType: row.provider_type,
     baseUrl: row.base_url,
-    apiKey: decrypt(row.api_key_encrypted),
     defaultModel: row.default_model,
     availableModels: JSON.parse(row.available_models || '[]'),
+    hasApiKey: Boolean(row.api_key_encrypted),
     isActive: !!row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -41,14 +41,44 @@ function getProviderById(id) {
 function listProviders() {
   return db.findAll('ai_providers')
     .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-    .map(row => {
-      const p = getProviderById(row.id);
-      p.apiKey = undefined;
-      return p;
-    });
+    .map(row => getProviderById(row.id));
+}
+
+function assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableModels }, { isCreate = false } = {}) {
+  if ((isCreate || name !== undefined) && !String(name || '').trim()) {
+    const err = new Error('服务名称不能为空');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (isCreate || baseUrl !== undefined) {
+    try {
+      const url = new URL(baseUrl);
+      if (!['http:', 'https:'].includes(url.protocol)) throw new Error('protocol');
+    } catch {
+      const err = new Error('请输入有效的 API 地址');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+  if (isCreate && !String(apiKey || '').trim()) {
+    const err = new Error('API 密钥不能为空');
+    err.statusCode = 400;
+    throw err;
+  }
+  if ((isCreate || defaultModel !== undefined) && !String(defaultModel || '').trim()) {
+    const err = new Error('默认模型不能为空');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (availableModels !== undefined && (!Array.isArray(availableModels) || availableModels.some(model => !String(model || '').trim()))) {
+    const err = new Error('可用模型必须是非空模型名称组成的列表');
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, availableModels }) {
+  assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableModels }, { isCreate: true });
   const now = db.now();
   const id = db.genId();
 
@@ -68,7 +98,7 @@ function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, ava
   return getProviderById(id);
 }
 
-function updateProvider(id, { name, baseUrl, apiKey, defaultModel, availableModels, isActive }) {
+function updateProvider(id, { name, providerType, baseUrl, apiKey, defaultModel, availableModels, isActive }) {
   const row = db.findById('ai_providers', id);
   if (!row) {
     const err = new Error('AI Provider 不存在');
@@ -76,10 +106,12 @@ function updateProvider(id, { name, baseUrl, apiKey, defaultModel, availableMode
     throw err;
   }
 
+  assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableModels });
   const patch = { updated_at: db.now() };
   if (name !== undefined) patch.name = name;
+  if (providerType !== undefined) patch.provider_type = providerType || 'custom';
   if (baseUrl !== undefined) patch.base_url = baseUrl;
-  if (apiKey !== undefined) patch.api_key_encrypted = encrypt(apiKey);
+  if (apiKey !== undefined && String(apiKey).trim()) patch.api_key_encrypted = encrypt(apiKey);
   if (defaultModel !== undefined) patch.default_model = defaultModel;
   if (availableModels !== undefined) patch.available_models = JSON.stringify(availableModels);
   if (isActive !== undefined) patch.is_active = isActive ? 1 : 0;
@@ -89,7 +121,11 @@ function updateProvider(id, { name, baseUrl, apiKey, defaultModel, availableMode
 }
 
 function deleteProvider(id) {
-  db.removeById('ai_providers', id);
+  if (!db.removeById('ai_providers', id)) {
+    const err = new Error('AI Provider 不存在');
+    err.statusCode = 404;
+    throw err;
+  }
   return { success: true };
 }
 

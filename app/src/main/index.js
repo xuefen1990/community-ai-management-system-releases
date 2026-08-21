@@ -1,16 +1,14 @@
 'use strict';
 
 const path = require('node:path');
-const fs = require('node:fs');
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 const { registerCompatibilityHandlers } = require('./ipc-handlers');
 const { AuthStore } = require('./auth-store');
 const { RememberedLoginStore } = require('./remembered-login-store');
-const { LocalAuthService } = require('./local-auth-service');
+const { RemoteAuthService } = require('./remote-auth-service');
 const { createMachineId } = require('./machine-id');
-const { verifyOfflineLicense } = require('./license-codec');
 const { LocalModelCatalog } = require('./local-model-catalog');
 const { AiSettingsStore } = require('./ai-settings-store');
 const { OpenAiCompatibleClient } = require('./openai-compatible-client');
@@ -38,16 +36,11 @@ function createMainWindow() {
 
 app.whenReady().then(() => {
   const machineId = createMachineId();
-  const publicKey = fs.readFileSync(path.join(__dirname, 'license-public-key.pem'), 'utf8');
-  const authService = new LocalAuthService({
+  const authService = new RemoteAuthService({
     store: new AuthStore({ userDataPath: app.getPath('userData') }),
     rememberedLoginStore: new RememberedLoginStore({ userDataPath: app.getPath('userData'), safeStorage }),
     machineId,
-    verifyActivation: (code, boundMachineId, now) => verifyOfflineLicense(code, {
-      publicKey,
-      machineId: boundMachineId,
-      now,
-    }),
+    baseUrl: process.env.COMMUNITY_AI_BACKEND_URL || 'http://127.0.0.1:3000',
   });
   const modelCatalog = new LocalModelCatalog({ userDataPath: app.getPath('userData') });
   const aiSettingsStore = new AiSettingsStore({ userDataPath: app.getPath('userData'), safeStorage });
