@@ -35,5 +35,15 @@ test('post-login state prevents hidden layers from intercepting clicks', async (
   assert.match(source, /setAppViewVisibility\('loginView', false\)/u);
   assert.match(source, /setAppViewVisibility\('dashboardView', true\)/u);
   assert.match(source, /modal\.style\.pointerEvents = 'none'/u);
+  assert.match(source, /#globalCustomConfirmModal/u);
+  assert.match(source, /function repairInactiveInteractionLayers\(\)/u);
+  assert.match(source, /document\.body\.classList\.add\('logged-in'\)/u);
   assert.doesNotMatch(source, /parentElement\?\.parentElement\?\.parentElement/u);
+});
+
+test('dashboard shell is explicitly interactive in the macOS window', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  for (const selector of ['.app-wrapper', '.dashboard-view', '.app-sidebar', '.sidebar-menu', '.app-main']) {
+    assert.match(style, new RegExp(`${selector.replace('.', '\\.') }\\s*\\{[^}]*-webkit-app-region:\\s*no-drag\\s*!important[^}]*pointer-events:\\s*auto`, 'su'));
+  }
 });

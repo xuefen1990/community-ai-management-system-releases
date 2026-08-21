@@ -69,12 +69,28 @@
     modal.setAttribute('aria-hidden', 'true');
   }
 
+  function isVisuallyHidden(element) {
+    const style = window.getComputedStyle(element);
+    return element.classList.contains('hidden')
+      || element.getAttribute('aria-hidden') === 'true'
+      || style.display === 'none'
+      || style.visibility === 'hidden'
+      || Number.parseFloat(style.opacity || '1') === 0;
+  }
+
+  function repairInactiveInteractionLayers() {
+    document.querySelectorAll('.modal-overlay, #globalCustomConfirmModal, .document-profile-panel, .ai-copilot-drawer').forEach((layer) => {
+      if (isVisuallyHidden(layer)) layer.style.pointerEvents = 'none';
+    });
+  }
+
   function suppressLegacyTrialExperience(status) {
     if (!isPermanent(status)) return;
-    const modal = Array.from(document.querySelectorAll('.modal-overlay,[role="dialog"],[data-legacy-trial-overlay]')).find((candidate) => (
-      /免费体验已结束|免注册体验已结束/u.test(candidate.textContent?.trim() || '')
+    const modal = Array.from(document.querySelectorAll('.modal-overlay,#globalCustomConfirmModal,[role="dialog"],[data-legacy-trial-overlay]')).find((candidate) => (
+      /免费体验已结束|免注册体验已结束|体验期限|登录或注册|免费解锁|注册体验超过/u.test(candidate.textContent?.trim() || '')
     ));
     if (modal) hideLegacyTrialModal(modal);
+    repairInactiveInteractionLayers();
   }
 
   function keepPermanentAccessVisible(status) {
@@ -93,6 +109,7 @@
     }
     setAppViewVisibility('loginView', false);
     setAppViewVisibility('dashboardView', true);
+    document.body.classList.add('logged-in');
     refreshLegacyAuthLabels(status);
     keepPermanentAccessVisible(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
@@ -140,6 +157,7 @@
     currentStatus = null;
     setAppViewVisibility('dashboardView', false);
     setAppViewVisibility('loginView', true);
+    document.body.classList.remove('logged-in');
     if (typeof window.showPanel === 'function') window.showPanel('login');
     const password = document.getElementById('login-password');
     if (password) password.value = '';
