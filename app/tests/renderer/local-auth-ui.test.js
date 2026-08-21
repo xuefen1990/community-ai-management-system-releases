@@ -38,6 +38,16 @@ test('post-login state prevents hidden layers from intercepting clicks', async (
   assert.match(source, /#globalCustomConfirmModal/u);
   assert.match(source, /function repairInactiveInteractionLayers\(\)/u);
   assert.match(source, /document\.body\.classList\.add\('logged-in'\)/u);
+  assert.match(source, /async function initializeLegacyDashboard\(status\)/u);
+  assert.match(source, /await window\.enterApp\(status\.account\?\.phone \|\| '本机管理员', formatEntitlement\(status\.entitlement\)\)/u);
+  assert.match(source, /function bindDashboardNavigation\(\)/u);
+  assert.match(source, /window\.addEventListener\('click'/u);
+  assert.match(source, /window\.__localDashboardNavigationBound/u);
+  assert.match(source, /item\.addEventListener\('click'/u);
+  assert.match(source, /window\.switchTab\(target\)/u);
+  assert.match(source, /showDashboardTab\(target\)/u);
+  assert.doesNotMatch(source, /window\.switchTab\(target\);\s*return;/u);
+  assert.match(source, /bindDashboardNavigation\(\);/u);
   assert.doesNotMatch(source, /parentElement\?\.parentElement\?\.parentElement/u);
 });
 

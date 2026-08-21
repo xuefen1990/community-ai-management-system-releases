@@ -5,6 +5,7 @@
   if (!api?.loginLocalAccount) return;
 
   let currentStatus = null;
+  let legacyDashboardInitialized = false;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -61,6 +62,56 @@
     view.setAttribute('aria-hidden', String(!visible));
   }
 
+  async function initializeLegacyDashboard(status) {
+    if (legacyDashboardInitialized || typeof window.enterApp !== 'function') return;
+    legacyDashboardInitialized = true;
+    try {
+      await window.enterApp(status.account?.phone || '本机管理员', formatEntitlement(status.entitlement));
+    } catch (error) {
+      legacyDashboardInitialized = false;
+      console.error('兼容界面初始化失败：', error);
+    }
+  }
+
+  function showDashboardTab(target) {
+    const tab = document.getElementById(target);
+    if (!tab) return false;
+    document.querySelectorAll('.tab-content').forEach((panel) => {
+      panel.classList.toggle('hidden', panel !== tab);
+    });
+    document.querySelectorAll('.menu-item[data-target]').forEach((item) => {
+      item.classList.toggle('active', item.dataset.target === target);
+    });
+    return true;
+  }
+
+  function bindDashboardNavigation() {
+    if (window.__localDashboardNavigationBound) return;
+    window.__localDashboardNavigationBound = true;
+
+    window.addEventListener('click', (event) => {
+      const item = event.target instanceof Element ? event.target.closest('.menu-item[data-target]') : null;
+      const target = item?.dataset.target;
+      if (!target) return;
+      showDashboardTab(target);
+    }, true);
+
+    document.querySelectorAll('.menu-item[data-target]').forEach((item) => {
+      item.addEventListener('click', () => {
+        const target = item.dataset.target;
+        if (!target) return;
+        try {
+          if (typeof window.switchTab === 'function') {
+            window.switchTab(target);
+          }
+        } catch (error) {
+          console.error('菜单切换失败，已使用兼容切换：', error);
+        }
+        showDashboardTab(target);
+      }, true);
+    });
+  }
+
   function hideLegacyTrialModal(modal) {
     modal.classList.add('hidden');
     modal.style.display = 'none';
@@ -107,6 +158,8 @@
       openActivationModal(status);
       return;
     }
+    await initializeLegacyDashboard(status);
+    bindDashboardNavigation();
     setAppViewVisibility('loginView', false);
     setAppViewVisibility('dashboardView', true);
     document.body.classList.add('logged-in');
@@ -155,6 +208,7 @@
   async function logout() {
     await api.logoutLocalAccount();
     currentStatus = null;
+    legacyDashboardInitialized = false;
     setAppViewVisibility('dashboardView', false);
     setAppViewVisibility('loginView', true);
     document.body.classList.remove('logged-in');
