@@ -17,7 +17,7 @@ function toEntitlement(payload = {}) {
 }
 
 class RemoteAuthService {
-  constructor({ store, machineId, baseUrl, rememberedLoginStore = null, fetchImpl = globalThis.fetch }) {
+  constructor({ store, machineId, baseUrl, rememberedLoginStore = null, fetchImpl = globalThis.fetch, requestTimeoutMs = 12000 }) {
     if (typeof fetchImpl !== 'function') throw new Error('当前运行环境不支持网络请求');
     this.store = store;
     this.machineId = machineId;
@@ -25,7 +25,27 @@ class RemoteAuthService {
     this.baseUrl = this.defaultBaseUrl;
     this.rememberedLoginStore = rememberedLoginStore;
     this.fetchImpl = fetchImpl;
+    this.requestTimeoutMs = requestTimeoutMs;
     this.session = null;
+  }
+
+  async fetchWithTimeout(url, options, timeoutMessage) {
+    const controller = new AbortController();
+    let timer = null;
+    try {
+      const timeout = new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          controller.abort();
+          reject(new Error(timeoutMessage));
+        }, this.requestTimeoutMs);
+      });
+      return await Promise.race([
+        this.fetchImpl(url, { ...options, signal: controller.signal }),
+        timeout,
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async getServerConfig() {
@@ -55,8 +75,9 @@ class RemoteAuthService {
     const targetBaseUrl = normalizeBaseUrl(baseUrl || (await this.getServerConfig()).baseUrl);
     let response;
     try {
-      response = await this.fetchImpl(`${targetBaseUrl}/api/health`, { headers: { Accept: 'application/json' } });
-    } catch {
+      response = await this.fetchWithTimeout(`${targetBaseUrl}/api/health`, { headers: { Accept: 'application/json' } }, '账号服务器连接超时，请检查地址、网络和服务状态');
+    } catch (error) {
+      if (/超时/u.test(error?.message || '')) throw error;
       throw new Error('无法连接账号服务器，请确认地址、网络和服务状态');
     }
     const payload = await response.json().catch(() => ({}));
@@ -68,12 +89,13 @@ class RemoteAuthService {
     const { baseUrl } = await this.getServerConfig();
     let response;
     try {
-      response = await this.fetchImpl(`${baseUrl}/api${path}`, {
+      response = await this.fetchWithTimeout(`${baseUrl}/api${path}`, {
         method,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      });
-    } catch {
+      }, '账号服务器响应超时，请检查地址、网络和服务状态后重试');
+    } catch (error) {
+      if (/超时/u.test(error?.message || '')) throw error;
       throw new Error('无法连接账号服务，请检查网络或后端地址');
     }
     const payload = await response.json().catch(() => ({}));

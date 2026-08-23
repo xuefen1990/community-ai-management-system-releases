@@ -8155,3 +8155,4 @@ body.dark-theme .document-editor-viewport { background: rgba(2, 6, 23, .32); }
   .document-history-filters { grid-template-columns: 1fr 1fr; }
   .document-history-card { align-items: flex-start; flex-direction: column; }
 }
+body.auth-login-required #loginView{display:flex!important}body.auth-login-required #dashboardView{display:none!important}

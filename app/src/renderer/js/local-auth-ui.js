@@ -6,6 +6,8 @@
 
   let currentStatus = null;
   let startupTrialGuardTimer = null;
+  let loginSubmission = null;
+  let startupLoginGuardTimer = null;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -133,6 +135,7 @@
       return;
     }
     removeLegacyTrialArtifacts();
+    document.body.classList.remove('auth-login-required');
     document.getElementById('loginView')?.classList.add('hidden');
     document.getElementById('dashboardView')?.classList.remove('hidden');
     refreshLegacyAuthLabels(status);
@@ -142,18 +145,26 @@
   }
 
   async function submitLogin() {
-    setError('login');
-    setLoading('doLoginBtn', true, '安全登录');
+    if (loginSubmission) return loginSubmission;
+    loginSubmission = (async () => {
+      setError('login');
+      setLoading('doLoginBtn', true, '登录进入工作台');
+      try {
+        const phone = document.getElementById('login-phone')?.value || '';
+        const password = document.getElementById('login-password')?.value || '';
+        const remember = Boolean(document.getElementById('remember-me')?.checked);
+        const status = await api.loginLocalAccount({ phone, password, remember });
+        await enterDashboard(status);
+      } catch (error) {
+        setError('login', error.message || '登录失败');
+      } finally {
+        setLoading('doLoginBtn', false, '登录进入工作台');
+      }
+    })();
     try {
-      const phone = document.getElementById('login-phone')?.value || '';
-      const password = document.getElementById('login-password')?.value || '';
-      const remember = Boolean(document.getElementById('remember-me')?.checked);
-      const status = await api.loginLocalAccount({ phone, password, remember });
-      await enterDashboard(status);
-    } catch (error) {
-      setError('login', error.message || '登录失败');
+      return await loginSubmission;
     } finally {
-      setLoading('doLoginBtn', false, '安全登录');
+      loginSubmission = null;
     }
   }
 
@@ -183,9 +194,32 @@
   }
 
   function showLoginScreen() {
+    document.body.classList.add('auth-login-required');
     document.getElementById('dashboardView')?.classList.add('hidden');
     document.getElementById('loginView')?.classList.remove('hidden');
     forceLoginPanel();
+  }
+
+  function keepStartupOnLoginScreen() {
+    if (loginSubmission || currentStatus?.authenticated) return;
+    showLoginScreen();
+    removeLegacyTrialArtifacts();
+  }
+
+  function installStartupLoginGuard() {
+    if (startupLoginGuardTimer) window.clearTimeout(startupLoginGuardTimer);
+    const delays = [0, 100, 500, 1200];
+    let attempt = 0;
+    const confirmLoginScreen = () => {
+      keepStartupOnLoginScreen();
+      if (attempt >= delays.length - 1) {
+        startupLoginGuardTimer = null;
+        return;
+      }
+      attempt += 1;
+      startupLoginGuardTimer = window.setTimeout(confirmLoginScreen, delays[attempt]);
+    };
+    confirmLoginScreen();
   }
 
   async function hydrateLoginPrefill() {
@@ -544,6 +578,7 @@
     configureCompactSidebarFooter();
     configureLoginActions();
     showLoginScreen();
+    installStartupLoginGuard();
     await refreshRemoteServerSummary();
     await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
@@ -559,6 +594,7 @@
       syncButton.title = '管理本机注册账号的使用期限';
       syncButton.lastChild.textContent = ' 账号授权';
     }
+    installStartupLoginGuard();
     const privacyLink = document.querySelector('#panel-login a[onclick*="showPrivacyAgreementModal"]');
     if (privacyLink) {
       const activationLink = document.createElement('a');

@@ -56,3 +56,18 @@ test('账号服务器地址可保存、切换并执行健康检查', async () =>
   assert.equal(cleared, 1);
   assert.deepEqual(await service.checkServerConnection(), { ok: true, baseUrl: 'http://192.168.1.9:3000', service: 'community-ai-backend', version: '1.0.0' });
 });
+
+test('远程登录在账号服务器无响应时会超时返回', async () => {
+  const service = new RemoteAuthService({
+    baseUrl: 'http://127.0.0.1:3000',
+    machineId: 'mac-test-timeout',
+    requestTimeoutMs: 20,
+    store: { read: async () => ({ version: 2, accounts: [], remoteServerUrl: '' }), write: async () => {} },
+    fetchImpl: async () => new Promise(() => {}),
+  });
+
+  await assert.rejects(
+    () => service.login({ phone: '13900139000', password: 'secret88' }),
+    /账号服务器响应超时/u,
+  );
+});

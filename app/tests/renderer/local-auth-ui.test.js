@@ -43,15 +43,21 @@ test('startup remains on the login screen with compact manual login actions', as
   ]);
   assert.match(source, /function showLoginScreen\(\)/u);
   assert.match(source, /function configureLoginActions\(\)/u);
+  assert.match(source, /function installStartupLoginGuard\(\)/u);
+  assert.match(source, /function keepStartupOnLoginScreen\(\)/u);
+  assert.match(source, /let loginSubmission = null/u);
   assert.match(source, /登录进入工作台/u);
   assert.match(source, /切换账号/u);
   assert.match(source, /forceLoginPanel\(\)/u);
   assert.doesNotMatch(source, /window\.showPanel/u);
   assert.doesNotMatch(source, /attributeFilter:\s*\['class', 'style'\]/u);
   assert.doesNotMatch(source, /if \(currentStatus\.authenticated\) await enterDashboard\(currentStatus\)/u);
+  assert.match(source, /if \(loginSubmission\) return loginSubmission/u);
+  assert.match(source, /installStartupLoginGuard\(\);/u);
   assert.match(style, /\.login-action-row\s*\{/u);
   assert.match(style, /grid-template-columns:\s*minmax\(108px, 0\.8fr\) minmax\(0, 1\.35fr\)/u);
   assert.match(style, /\.remote-server-entry\s*\{/u);
+  assert.match(style, /body\.auth-login-required #dashboardView\{display:none!important\}/u);
 });
 
 test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {
