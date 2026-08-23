@@ -15,6 +15,7 @@ const releaseDirectory = path.join(appRoot, 'release');
 const dmgPath = path.join(releaseDirectory, `社区AI管理系统-${version}-arm64.dmg`);
 const zipPath = path.join(releaseDirectory, `community-ai-management-system-${version}-arm64.zip`);
 const latestPath = path.join(releaseDirectory, 'latest-mac.yml');
+const githubInstallerName = `AI.-${version}-arm64.dmg`;
 const notesPath = path.join(projectRoot, 'docs', 'releases', `${version}.md`);
 const backendUrl = process.env.COMMUNITY_AI_BACKEND_URL;
 const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE;
@@ -68,7 +69,7 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
   form.set('channel', 'stable');
   form.set('releaseNotes', releaseNotes);
   form.set('githubReleaseUrl', githubReleaseUrl);
-  form.set('file', await openAsBlob(dmgPath, { type: 'application/x-apple-diskimage' }), path.basename(dmgPath));
+  form.set('file', await openAsBlob(dmgPath, { type: 'application/x-apple-diskimage' }), githubInstallerName);
 
   const publishResponse = await fetch(new URL('/api/update/publish', backendUrl), {
     method: 'POST',
@@ -100,7 +101,7 @@ await Promise.all([
 
 const notes = await readFile(notesPath, 'utf8');
 const releaseTarget = run('git', ['rev-parse', 'HEAD'], { capture: true });
-const assets = [dmgPath, zipPath, latestPath];
+const assets = [`${dmgPath}#${githubInstallerName}`, zipPath, latestPath];
 if (!skipGithub) {
   const releaseExists = spawnSync('gh', ['release', 'view', tag, '--repo', 'xuefen1990/community-ai-management-system-releases'], {
     cwd: projectRoot,
