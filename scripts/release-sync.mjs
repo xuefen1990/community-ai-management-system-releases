@@ -19,6 +19,7 @@ const notesPath = path.join(projectRoot, 'docs', 'releases', `${version}.md`);
 const backendUrl = process.env.COMMUNITY_AI_BACKEND_URL;
 const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE;
 const adminPassword = process.env.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD;
+const skipBuild = process.argv.includes('--skip-build');
 
 function run(command, args, { capture = false, cwd = projectRoot } = {}) {
   const result = spawnSync(command, args, {
@@ -89,7 +90,7 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
 
 requireEnvironment();
 await requireFile(notesPath, '发行说明');
-run('npm', ['run', 'build:arm64'], { cwd: appRoot });
+if (!skipBuild) run('npm', ['run', 'build:arm64'], { cwd: appRoot });
 await Promise.all([
   requireFile(dmgPath, 'DMG 安装包'),
   requireFile(zipPath, '应用内更新包'),
@@ -97,6 +98,7 @@ await Promise.all([
 ]);
 
 const notes = await readFile(notesPath, 'utf8');
+const releaseTarget = run('git', ['rev-parse', 'HEAD'], { capture: true });
 const releaseExists = spawnSync('gh', ['release', 'view', tag, '--repo', 'xuefen1990/community-ai-management-system-releases'], {
   cwd: projectRoot,
   stdio: 'ignore',
@@ -106,7 +108,7 @@ if (releaseExists) {
   run('gh', ['release', 'upload', tag, ...assets, '--clobber', '--repo', 'xuefen1990/community-ai-management-system-releases']);
   run('gh', ['release', 'edit', tag, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
 } else {
-  run('gh', ['release', 'create', tag, ...assets, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
+  run('gh', ['release', 'create', tag, ...assets, '--target', releaseTarget, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
 }
 
 const githubReleaseUrl = run('gh', ['release', 'view', tag, '--json', 'url', '--jq', '.url', '--repo', 'xuefen1990/community-ai-management-system-releases'], { capture: true });
