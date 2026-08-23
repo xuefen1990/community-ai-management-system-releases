@@ -101,4 +101,7 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   const staticPage = await fetch(`${url}/admin/`);
   assert.equal(staticPage.status, 200);
   assert.match(staticPage.headers.get('content-security-policy'), /script-src 'self' 'unsafe-inline'/u);
+  const staticHtml = await staticPage.text();
+  assert.match(staticHtml, /function bindDynamicActions\(\)/u);
+  assert.match(staticHtml, /button\.removeAttribute\('onclick'\)/u);
 });
