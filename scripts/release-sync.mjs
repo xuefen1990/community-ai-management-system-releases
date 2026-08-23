@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-import { openAsBlob, readFile, stat } from 'node:fs';
-import { access } from 'node:fs/promises';
+import { openAsBlob } from 'node:fs';
+import { access, readFile, stat } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { spawnSync } from 'node:child_process';
