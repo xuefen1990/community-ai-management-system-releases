@@ -20,9 +20,9 @@ const backendUrl = process.env.COMMUNITY_AI_BACKEND_URL;
 const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE;
 const adminPassword = process.env.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD;
 
-function run(command, args, { capture = false } = {}) {
+function run(command, args, { capture = false, cwd = projectRoot } = {}) {
   const result = spawnSync(command, args, {
-    cwd: projectRoot,
+    cwd,
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
   });
@@ -89,7 +89,7 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
 
 requireEnvironment();
 await requireFile(notesPath, '发行说明');
-run('npm', ['run', 'build:arm64'], { capture: false });
+run('npm', ['run', 'build:arm64'], { cwd: appRoot });
 await Promise.all([
   requireFile(dmgPath, 'DMG 安装包'),
   requireFile(zipPath, '应用内更新包'),
