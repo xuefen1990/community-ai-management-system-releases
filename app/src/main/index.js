@@ -19,6 +19,7 @@ const { DocumentDraftingService } = require('./document-drafting-service');
 const { WritingProfileService } = require('./writing-profile-service');
 const { DocumentExportService } = require('./document-export-service');
 const { UpdateService } = require('./update-service');
+const { BackendUpdateClient } = require('./backend-update-client');
 const { createWindowOptions } = require('./window-config');
 const { SEND_CHANNELS } = require('../shared/ipc-contract');
 
@@ -57,6 +58,10 @@ app.whenReady().then(() => {
     isPackaged: () => app.isPackaged,
     isInApplicationsFolder: () => typeof app.isInApplicationsFolder === 'function' && app.isInApplicationsFolder(),
     sendStatus: (status) => mainWindow?.webContents.send('app-update-status', status),
+    backendUpdateClient: new BackendUpdateClient({
+      getServerConfig: () => authService.getServerConfig(),
+    }),
+    currentVersion: () => app.getVersion(),
   });
   registerCompatibilityHandlers({
     app,

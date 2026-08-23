@@ -96,6 +96,14 @@
       showToast(status.message || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
       return;
     }
+    if (status.type === 'backend-unavailable') {
+      showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
+      return;
+    }
+    if (status.type === 'release-mismatch') {
+      showToast('更新发布尚未同步完成，稍后再试。', 'info');
+      return;
+    }
     if (status.type === 'error' && modal && !modal.classList.contains('hidden')) {
       modal.querySelector('#appUpdateError').textContent = status.message || '更新服务暂时不可用';
     }
@@ -118,6 +126,7 @@
       const result = await api.checkForAppUpdate();
       if (result.disabled) showToast('当前为本机测试版，暂不检查线上更新', 'info');
       else if (result.installRequired) showToast(result.error || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
+      else if (result.backendUnavailable) showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
       else if (!result.ok) showToast(result.error || '检查更新失败', 'error');
       else setTimeout(() => { if (button.textContent === '检查中') button.textContent = previousText; }, 1200);
       button.disabled = false;

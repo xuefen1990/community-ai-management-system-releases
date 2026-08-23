@@ -71,3 +71,35 @@ test('release notes are normalized without rendering remote HTML', () => {
   assert.equal(normalizeReleaseNotes(['第一项', { note: '第二项' }]), '第一项\n\n第二项');
   assert.equal(normalizeReleaseNotes(null), '');
 });
+
+test('only prompts when the backend record and GitHub release are synchronized', async () => {
+  const updater = makeUpdater();
+  const statuses = [];
+  updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.1', releaseNotes: 'GitHub notes' });
+  const service = new UpdateService({
+    updater,
+    isPackaged: () => true,
+    currentVersion: () => '0.3.0',
+    backendUpdateClient: { check: async () => ({ hasUpdate: true, latestVersion: '0.3.1', releaseNotes: '同步发行说明' }) },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  assert.deepEqual(await service.check(), { ok: true });
+  assert.deepEqual(statuses.at(-1), { type: 'available', version: '0.3.1', releaseNotes: '同步发行说明', releaseDate: null });
+});
+
+test('does not download a GitHub release older than the backend record', async () => {
+  const updater = makeUpdater();
+  const statuses = [];
+  updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.0' });
+  const service = new UpdateService({
+    updater,
+    isPackaged: () => true,
+    currentVersion: () => '0.2.9',
+    backendUpdateClient: { check: async () => ({ hasUpdate: true, latestVersion: '0.3.1' }) },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  assert.deepEqual(await service.check(), { ok: true });
+  assert.deepEqual(statuses.at(-1), { type: 'release-mismatch', backendVersion: '0.3.1', githubVersion: '0.3.0' });
+});

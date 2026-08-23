@@ -57,12 +57,13 @@ const upload = require('multer')({
   storage: require('multer').diskStorage({
     destination: (req, file, cb) => {
       const config = require('../config');
-      const dir = path.resolve(config.updateFilesDir);
+      const dir = path.join(path.resolve(config.updateFilesDir), '.uploads');
       if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
       cb(null, dir);
     },
     filename: (req, file, cb) => {
-      cb(null, file.originalname);
+      const suffix = path.extname(file.originalname);
+      cb(null, `${require('crypto').randomUUID()}${suffix}`);
     },
   }),
   limits: { fileSize: 1024 * 1024 * 1024 },
@@ -71,17 +72,21 @@ const upload = require('multer')({
 router.post('/publish', authRequired, adminRequired, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) throw new ApiError(400, '请上传更新文件');
-    const { version, platform, channel, releaseNotes } = req.body;
+    const { version, platform, channel, releaseNotes, githubReleaseUrl } = req.body;
     const version_record = updateService.publishVersion({
       version,
       platform: platform || 'darwin-arm64',
       channel: channel || 'stable',
       releaseNotes,
+      githubReleaseUrl,
       fileName: req.file.originalname,
       filePath: req.file.path,
     });
     res.status(201).json({ version: version_record });
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+    next(err);
+  }
 });
 
 // ===== 停用版本（管理员）=====

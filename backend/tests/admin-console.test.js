@@ -71,6 +71,40 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   assert.equal(adminLogin.status, 200);
   const adminToken = adminLogin.body.token;
 
+  const installerPath = path.join(directory, 'community-ai-management-system-0.3.1-arm64.dmg');
+  await fs.writeFile(installerPath, 'test installer');
+  const updateForm = new FormData();
+  updateForm.set('version', '0.3.1');
+  updateForm.set('platform', 'darwin-arm64');
+  updateForm.set('channel', 'stable');
+  updateForm.set('releaseNotes', '同步发布测试');
+  updateForm.set('githubReleaseUrl', 'https://github.com/example/releases/tag/v0.3.1');
+  updateForm.set('file', new Blob([await fs.readFile(installerPath)]), path.basename(installerPath));
+  const published = await fetch(`${url}/api/update/publish`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: updateForm,
+  });
+  assert.equal(published.status, 201);
+  const publishedBody = await published.json();
+  assert.equal(publishedBody.version.githubReleaseUrl, 'https://github.com/example/releases/tag/v0.3.1');
+
+  const updateCheck = await request(url, '/update/check?version=0.3.0&platform=darwin-arm64');
+  assert.equal(updateCheck.status, 200);
+  assert.equal(updateCheck.body.latestVersion, '0.3.1');
+  assert.equal(updateCheck.body.githubReleaseUrl, 'https://github.com/example/releases/tag/v0.3.1');
+
+  const duplicateForm = new FormData();
+  duplicateForm.set('version', '0.3.1');
+  duplicateForm.set('platform', 'darwin-arm64');
+  duplicateForm.set('file', new Blob(['duplicate installer']), 'duplicate.dmg');
+  const duplicate = await fetch(`${url}/api/update/publish`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: duplicateForm,
+  });
+  assert.equal(duplicate.status, 409);
+
   const page = await request(url, '/auth/users?keyword=139001&page=1&pageSize=10', { token: adminToken });
   assert.equal(page.status, 200);
   assert.equal(page.body.pagination.total, 1);

@@ -36,6 +36,7 @@ function sanitizeVersion(v) {
     fileName: v.file_name,
     fileSize: v.file_size,
     fileHash: v.file_hash,
+    githubReleaseUrl: v.github_release_url || null,
     downloadCount: v.download_count,
     isActive: !!v.is_active,
     createdAt: v.created_at,
@@ -48,7 +49,7 @@ function checkUpdate({ currentVersion, platform, channel }) {
 
   const versions = db.findAll('versions', v =>
     v.platform === platform && v.channel === channel && v.is_active === 1
-  ).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  ).sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''));
 
   if (versions.length === 0) {
     return { hasUpdate: false, latestVersion: null, currentVersion, message: '暂无可用版本' };
@@ -68,11 +69,12 @@ function checkUpdate({ currentVersion, platform, channel }) {
     fileName: latest.file_name,
     fileSize: latest.file_size,
     fileHash: latest.file_hash,
+    githubReleaseUrl: latest.github_release_url || null,
     publishedAt: latest.created_at,
   };
 }
 
-function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath }) {
+function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath, githubReleaseUrl }) {
   if (!version || !platform || !fileName || !filePath) {
     const err = new Error('version, platform, fileName, filePath 为必填');
     err.statusCode = 400;
@@ -80,6 +82,15 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
   }
 
   channel = channel || 'stable';
+
+  const duplicate = db.findOne('versions', v =>
+    v.version === version && v.platform === platform && v.channel === channel
+  );
+  if (duplicate) {
+    const err = new Error(`版本 ${version}（${platform}/${channel}）已发布`);
+    err.statusCode = 409;
+    throw err;
+  }
 
   if (!fs.existsSync(filePath)) {
     const err = new Error('文件不存在: ' + filePath);
@@ -94,13 +105,20 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
 
   const destName = `${id}-${fileName}`;
   const destPath = path.join(filesDir, destName);
-  fs.copyFileSync(filePath, destPath);
+  try {
+    fs.renameSync(filePath, destPath);
+  } catch (error) {
+    if (error.code !== 'EXDEV') throw error;
+    fs.copyFileSync(filePath, destPath);
+    fs.unlinkSync(filePath);
+  }
 
   const record = {
     id, version, platform, channel,
     release_notes: releaseNotes || '',
     file_name: destName, file_size: stat.size,
     file_hash: hash, download_count: 0,
+    github_release_url: githubReleaseUrl || '',
     is_active: 1, created_at: now,
   };
 
@@ -119,7 +137,7 @@ function getLatestVersion(platform, channel) {
   channel = channel || 'stable';
   const versions = db.findAll('versions', v =>
     v.platform === platform && v.channel === channel && v.is_active === 1
-  ).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  ).sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''));
   return sanitizeVersion(versions[0] || null);
 }
 
@@ -128,7 +146,7 @@ function listVersions({ platform, channel }) {
   if (platform) results = results.filter(v => v.platform === platform);
   if (channel) results = results.filter(v => v.channel === channel);
   return results
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''))
     .map(sanitizeVersion);
 }
 
