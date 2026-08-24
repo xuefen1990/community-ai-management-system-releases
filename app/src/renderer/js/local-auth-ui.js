@@ -682,3 +682,12 @@ if (!document.querySelector('script[data-update-ui]')) {
   updateScript.dataset.updateUi = 'true';
   document.head.appendChild(updateScript);
 }
+
+// The legacy renderer's personnel import binding can be absent in packaged builds.
+// Load the standalone, testable import flow after all legacy scripts have initialized.
+if (!document.querySelector('script[data-personnel-excel-import]')) {
+  const personnelImportScript = document.createElement('script');
+  personnelImportScript.src = 'js/personnel-excel-import.js?v=1.0.0';
+  personnelImportScript.dataset.personnelExcelImport = 'true';
+  document.head.appendChild(personnelImportScript);
+}
