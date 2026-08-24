@@ -67,6 +67,11 @@
     if (idCard) return personnel.find((candidate) => text(candidate.idCard).toUpperCase() === idCard);
     return person.name && person.phone ? personnel.find((candidate) => text(candidate.name) === person.name && text(candidate.phone) === person.phone) : undefined;
   }
+  async function refreshPersonnelWorkspace() {
+    if (typeof window.loadDatabase === 'function') await window.loadDatabase();
+    if (typeof window.renderOverview === 'function') window.renderOverview();
+    if (typeof window.filterPersonnel === 'function') window.filterPersonnel();
+  }
   async function persistImport() {
     const selected = mapping();
     if (!selected.name) return showToast('请为“姓名”选择对应的表格列', 'error');
@@ -92,8 +97,12 @@
       const result = await window.api.writeDb(database);
       if (!result?.ok) throw new Error(result?.error || '本地数据保存失败');
       closeModal();
+      try {
+        await refreshPersonnelWorkspace();
+      } catch (refreshError) {
+        console.error('导入完成后刷新人员列表失败：', refreshError);
+      }
       showToast(`导入完成：新增 ${added} 人，更新 ${updated} 人${skipped ? `，跳过 ${skipped} 条空姓名数据` : ''}`, 'success');
-      window.setTimeout(() => window.location.reload(), 700);
     } catch (error) {
       showToast(error?.message || '导入失败，请检查表格内容后重试', 'error');
     } finally { confirm.disabled = false; confirm.textContent = originalLabel; }

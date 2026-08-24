@@ -52,6 +52,11 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   assert.match(importer, /身份证号/u);
   assert.match(importer, /姓名 \+ 手机号/u);
   assert.match(importer, /personnelImportRecords/u);
+  assert.match(importer, /function refreshPersonnelWorkspace\(\)/u);
+  assert.match(importer, /await window\.loadDatabase\(\)/u);
+  assert.match(importer, /window\.renderOverview\(\)/u);
+  assert.match(importer, /window\.filterPersonnel\(\)/u);
+  assert.doesNotMatch(importer, /window\.location\.reload/u);
   assert.doesNotMatch(importer, /require\(|ipcRenderer|node:/u);
 });
 
