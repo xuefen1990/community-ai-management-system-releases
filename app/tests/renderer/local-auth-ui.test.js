@@ -43,6 +43,7 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   ]);
   assert.match(adapter, /personnel-excel-import\.js/u);
   assert.match(importer, /importExcelBtn/u);
+  assert.match(importer, /batchImportExcelBtn/u);
   assert.match(importer, /excelFileInput/u);
   assert.match(importer, /confirmExcelImportBtn/u);
   assert.match(importer, /window\.api\?\.readDb/u);

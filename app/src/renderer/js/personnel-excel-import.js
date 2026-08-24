@@ -121,13 +121,13 @@
   }
   function install() {
     const previousInput = document.getElementById('excelFileInput');
-    const importButton = document.getElementById('importExcelBtn');
+    const importButtons = document.querySelectorAll('#importExcelBtn, #batchImportExcelBtn');
     const previousConfirm = document.getElementById('confirmExcelImportBtn');
-    if (!previousInput || !importButton || !previousConfirm) return;
+    if (!previousInput || importButtons.length === 0 || !previousConfirm) return;
     const input = previousInput.cloneNode(true); previousInput.replaceWith(input);
     const confirm = previousConfirm.cloneNode(true); previousConfirm.replaceWith(confirm);
     document.addEventListener('click', (event) => {
-      if (!event.target.closest('#importExcelBtn')) return;
+      if (!event.target.closest('#importExcelBtn, #batchImportExcelBtn')) return;
       event.preventDefault(); event.stopImmediatePropagation();
       if (typeof window.closePersonnelImportMenu === 'function') window.closePersonnelImportMenu();
       input.value = ''; input.click();
