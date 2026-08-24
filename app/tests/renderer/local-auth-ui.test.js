@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const test = require('node:test');
+const vm = require('node:vm');
 
 const appRoot = path.resolve(__dirname, '..', '..');
 
@@ -52,6 +53,60 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   assert.match(importer, /姓名 \+ 手机号/u);
   assert.match(importer, /personnelImportRecords/u);
   assert.doesNotMatch(importer, /require\(|ipcRenderer|node:/u);
+});
+
+test('personnel search safely filters imported and historical field variants in real time', async () => {
+  const [adapter, search] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-search.js'), 'utf8'),
+  ]);
+  assert.match(adapter, /personnel-search\.js/u);
+  assert.match(search, /searchPersonnel/u);
+  assert.match(search, /clearSearchPersonnel/u);
+  assert.match(search, /person_name/u);
+  assert.match(search, /idCard/u);
+  assert.match(search, /household_id/u);
+  assert.match(search, /mobile_phone/u);
+  assert.match(search, /personnelCurrentPage\s*=\s*1/u);
+  assert.match(search, /renderPersonnel\(results\)/u);
+  assert.match(search, /input\.removeAttribute\('oninput'\)/u);
+  assert.doesNotMatch(search, /require\(|ipcRenderer|node:/u);
+});
+
+test('personnel search refreshes matching results and resets to the first page', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-search.js'), 'utf8');
+  const listeners = {};
+  const input = {
+    value: '薛锋',
+    dataset: {},
+    addEventListener: (type, listener) => { listeners[type] = listener; },
+    removeAttribute: () => { input.legacyHandlerRemoved = true; },
+  };
+  const clearButton = { style: {}, addEventListener: () => {} };
+  let rendered = null;
+  const context = {
+    console,
+    dbState: {
+      personnel: [
+        { name: '李萍', phone: '13800000000' },
+        { person_name: '薛锋', idCard: '320101199001011234' },
+        { full_name: '王丽', household_id: '209175411' },
+      ],
+    },
+    personnelCurrentPage: 4,
+    renderPersonnel: (people) => { rendered = people; },
+    window: {},
+    document: {
+      readyState: 'complete',
+      getElementById: (id) => ({ searchPersonnel: input, clearSearchPersonnel: clearButton }[id] || null),
+      addEventListener: () => {},
+    },
+  };
+  vm.runInNewContext(source, context);
+  listeners.input();
+  assert.equal(input.legacyHandlerRemoved, true);
+  assert.equal(context.personnelCurrentPage, 1);
+  assert.deepEqual(rendered.map((person) => person.person_name), ['薛锋']);
 });
 
 test('startup remains on the login screen with compact manual login actions', async () => {

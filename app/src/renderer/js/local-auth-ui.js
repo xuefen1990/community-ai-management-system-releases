@@ -691,3 +691,12 @@ if (!document.querySelector('script[data-personnel-excel-import]')) {
   personnelImportScript.dataset.personnelExcelImport = 'true';
   document.head.appendChild(personnelImportScript);
 }
+
+// Keep personnel search independent from the legacy renderer so imported field
+// variants and incomplete historical records cannot stop live filtering.
+if (!document.querySelector('script[data-personnel-search]')) {
+  const personnelSearchScript = document.createElement('script');
+  personnelSearchScript.src = 'js/personnel-search.js?v=1.0.0';
+  personnelSearchScript.dataset.personnelSearch = 'true';
+  document.head.appendChild(personnelSearchScript);
+}
