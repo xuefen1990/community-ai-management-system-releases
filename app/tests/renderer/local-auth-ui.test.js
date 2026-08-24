@@ -68,8 +68,16 @@ test('personnel search safely filters imported and historical field variants in 
   assert.match(search, /household_id/u);
   assert.match(search, /mobile_phone/u);
   assert.match(search, /personnelCurrentPage\s*=\s*1/u);
-  assert.match(search, /renderPersonnel\(results\)/u);
-  assert.match(search, /input\.removeAttribute\('oninput'\)/u);
+  assert.match(search, /renderPersonnelResults\(results\)/u);
+  assert.match(search, /search\.removeAttribute\('oninput'\)/u);
+  assert.match(search, /filterGroup/u);
+  assert.match(search, /filterIdentity/u);
+  assert.match(search, /filterGender/u);
+  assert.match(search, /filterRelation/u);
+  assert.match(search, /filterAge/u);
+  assert.match(search, /filterDataAudit/u);
+  assert.match(search, /filterRegistryStatus/u);
+  assert.match(search, /clearPersonnelFilters/u);
   assert.doesNotMatch(search, /require\(|ipcRenderer|node:/u);
 });
 
@@ -99,6 +107,7 @@ test('personnel search refreshes matching results and resets to the first page',
     document: {
       readyState: 'complete',
       getElementById: (id) => ({ searchPersonnel: input, clearSearchPersonnel: clearButton }[id] || null),
+      querySelector: () => null,
       addEventListener: () => {},
     },
   };
@@ -107,6 +116,50 @@ test('personnel search refreshes matching results and resets to the first page',
   assert.equal(input.legacyHandlerRemoved, true);
   assert.equal(context.personnelCurrentPage, 1);
   assert.deepEqual(rendered.map((person) => person.person_name), ['薛锋']);
+});
+
+test('personnel filters combine group, identity and gender selections', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-search.js'), 'utf8');
+  const listeners = {};
+  const createInput = (value = '') => ({
+    value,
+    dataset: {},
+    removeAttribute: () => {},
+    addEventListener: (type, listener) => { listeners[type] = listener; },
+  });
+  const controls = {
+    searchPersonnel: createInput(),
+    clearSearchPersonnel: { style: {}, addEventListener: () => {} },
+    filterGroup: createInput('东一组'),
+    filterIdentity: createInput('党员'),
+    filterGender: createInput('女'),
+    filterRelation: createInput(),
+    filterAge: createInput(),
+    filterDataAudit: createInput(),
+    filterRegistryStatus: createInput(),
+  };
+  let rendered = null;
+  const context = {
+    console,
+    dbState: { personnel: [
+      { name: '薛锋', village_group: '东一组', gender: '女', tags: ['党员'] },
+      { name: '李萍', village_group: '东一组', gender: '男', tags: ['党员'] },
+      { name: '王丽', village_group: '西一组', gender: '女', tags: ['党员'] },
+    ] },
+    personnelCurrentPage: 2,
+    renderPersonnel: (people) => { rendered = people; },
+    window: {},
+    document: {
+      readyState: 'complete',
+      getElementById: (id) => controls[id] || null,
+      querySelector: () => null,
+      addEventListener: () => {},
+    },
+  };
+  vm.runInNewContext(source, context);
+  listeners.change();
+  assert.equal(context.personnelCurrentPage, 1);
+  assert.deepEqual(rendered.map((person) => person.name), ['薛锋']);
 });
 
 test('startup remains on the login screen with compact manual login actions', async () => {
