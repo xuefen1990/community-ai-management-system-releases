@@ -37,8 +37,8 @@
       const label = entitlement.plan === 'monthly' ? '月度授权' : '年度授权';
       return entitlement.expiresAt ? `${label} · 至 ${entitlement.expiresAt.slice(0, 10)}` : label;
     }
-    if (entitlement?.type === 'trial') return `本地试用 · 剩 ${entitlement.remainingDays} 天`;
-    if (entitlement?.type === 'expired') return '试用已到期';
+    if (entitlement?.type === 'trial') return entitlement.expiresAt ? `体验版 · 至 ${entitlement.expiresAt.slice(0, 10)}` : '体验版';
+    if (entitlement?.type === 'expired') return '单位有效期已到';
     return '未授权';
   }
 
@@ -132,7 +132,8 @@
     currentStatus = status;
     if (!status.authenticated) return;
     if (!['trial', 'licensed'].includes(status.entitlement?.type)) {
-      openActivationModal(status);
+      showLoginScreen();
+      window.showToast?.(status.entitlement?.reason || '单位有效期已到，请联系平台管理员续期', 'error');
       return;
     }
     removeLegacyTrialArtifacts();
@@ -140,10 +141,20 @@
     document.getElementById('loginView')?.classList.add('hidden');
     document.getElementById('dashboardView')?.classList.remove('hidden');
     refreshLegacyAuthLabels(status);
+    showExpiryReminder(status.entitlement);
     ensureUnitManagementEntry(status);
     if (typeof window.loadDatabase === 'function') await window.loadDatabase();
     if (typeof window.renderOverview === 'function') window.renderOverview();
     removeLegacyTrialArtifacts();
+  }
+
+  function showExpiryReminder(entitlement) {
+    if (!entitlement?.expiresAt || !['trial', 'licensed'].includes(entitlement.type)) return;
+    const remainingDays = Math.max(0, Math.ceil((new Date(entitlement.expiresAt).getTime() - Date.now()) / 86400000));
+    const threshold = entitlement.plan === 'trial' ? 7 : 30;
+    if (remainingDays > threshold) return;
+    const kind = entitlement.plan === 'trial' ? '体验版' : '正式授权';
+    window.showToast?.(`${kind}将于 ${entitlement.expiresAt.slice(0, 10)} 到期，剩余 ${remainingDays} 天，请联系平台管理员续期。`, 'error');
   }
 
   function escapeHtml(value) {
@@ -731,20 +742,6 @@
     const machineCode = document.getElementById('forgot-machine-id');
     if (machineCode) machineCode.textContent = currentStatus.machineId;
     installStartupLoginGuard();
-    const privacyLink = document.querySelector('#panel-login a[onclick*="showPrivacyAgreementModal"]');
-    if (privacyLink) {
-      const activationLink = document.createElement('a');
-      activationLink.href = '#';
-      activationLink.textContent = '🔐 离线激活';
-      activationLink.style.cssText = privacyLink.style.cssText;
-      activationLink.style.marginLeft = '8px';
-      activationLink.addEventListener('click', (event) => {
-        event.preventDefault();
-        openActivationModal(currentStatus);
-      });
-      privacyLink.parentElement.appendChild(activationLink);
-    }
-
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter' || document.getElementById('loginView')?.classList.contains('hidden')) return;
       if (!document.getElementById('panel-login')?.classList.contains('hidden')) {
@@ -755,6 +752,7 @@
     }, true);
   }
 
+  forceLoginPanel();
   prepareAuthorizedStartup();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);
   else initialize();

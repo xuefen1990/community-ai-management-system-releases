@@ -36,11 +36,18 @@
         await apiRequest(`/auth/unit-admin-applications/${applicationId}/review`, { method: 'POST', body: JSON.stringify({ approve: false }) });
         return renderApplications();
       }
-      const raw = prompt('请输入有效期结束日期（YYYY-MM-DD），留空取消：');
-      if (!raw) return;
-      const end = new Date(`${raw}T23:59:59`);
-      if (Number.isNaN(end.getTime()) || end <= new Date()) return alert('请输入未来的有效期结束日期');
-      await apiRequest(`/auth/unit-admin-applications/${applicationId}/review`, { method: 'POST', body: JSON.stringify({ approve: true, planType: 'expires', planExpiresAt: end.toISOString() }) });
+      const choice = prompt('授权类型：输入“体验”“正式”或“永久”（体验版默认 30 天）：', '体验');
+      if (!choice) return;
+      const normalized = choice.trim();
+      let body = { approve: true, planType: normalized === '永久' ? 'permanent' : normalized === '正式' ? 'expires' : 'trial' };
+      if (body.planType === 'expires') {
+        const raw = prompt('请输入正式授权结束日期（YYYY-MM-DD）：');
+        if (!raw) return;
+        const end = new Date(`${raw}T23:59:59`);
+        if (Number.isNaN(end.getTime()) || end <= new Date()) return alert('请输入未来的有效期结束日期');
+        body.planExpiresAt = end.toISOString();
+      }
+      await apiRequest(`/auth/unit-admin-applications/${applicationId}/review`, { method: 'POST', body: JSON.stringify(body) });
       renderApplications();
     };
     nav.addEventListener('click', event => {

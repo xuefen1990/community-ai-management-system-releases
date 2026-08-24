@@ -4,7 +4,7 @@ const crypto = require('node:crypto');
 const db = require('../database');
 const { hashPassword, verifyPassword, signToken, randomCode } = require('../utils/crypto');
 const logger = require('../utils/logger');
-const PLAN_TYPES = new Set(['expires', 'permanent']);
+const PLAN_TYPES = new Set(['trial', 'expires', 'permanent']);
 
 function failure(statusCode, message) { const error = new Error(message); error.statusCode = statusCode; return error; }
 function normalizePhone(phone) { return String(phone || '').replace(/[\s-]/g, ''); }
@@ -22,7 +22,7 @@ function checkUnitAdminPlan(user) {
   if (user.plan_type === 'permanent') return { valid: true, plan: 'permanent', expiresAt: null };
   const expiresAt = iso(user.plan_expires_at);
   if (!expiresAt || new Date(expiresAt) <= new Date()) return { valid: false, reason: '单位管理员有效期已到，请联系平台管理员续期' };
-  return { valid: true, plan: 'expires', expiresAt };
+  return { valid: true, plan: user.plan_type === 'trial' ? 'trial' : 'expires', expiresAt };
 }
 
 function getAccessStatus(user) {
@@ -65,12 +65,12 @@ function newUser({ phone, password, name, role, accountStatus, organizationId = 
   const now = db.now();
   return { id: db.genId(), phone, password_hash: hashPassword(password), name, role, account_status: accountStatus, organization_id: organizationId, permissions: {}, village_name: '', plan_type: null, plan_expires_at: null, trial_started_at: null, machine_id: machineId || '', is_active: accountStatus === 'active' ? 1 : 0, last_login_at: null, created_at: now, updated_at: now };
 }
-function planPatch({ planType = 'expires', planExpiresAt }) {
+function planPatch({ planType = 'trial', planExpiresAt }) {
   if (!PLAN_TYPES.has(planType)) throw failure(400, '有效期类型无效');
   if (planType === 'permanent') return { plan_type: 'permanent', plan_expires_at: null };
-  const expiresAt = iso(planExpiresAt);
+  const expiresAt = iso(planExpiresAt || (planType === 'trial' ? new Date(Date.now() + 30 * 86400000).toISOString() : null));
   if (!expiresAt || new Date(expiresAt) <= new Date()) throw failure(400, '请设置未来的有效期结束时间');
-  return { plan_type: 'expires', plan_expires_at: expiresAt };
+  return { plan_type: planType, plan_expires_at: expiresAt };
 }
 
 function submitUnitAdminApplication({ phone, password, name, organizationName, region, machineId }) {
@@ -86,7 +86,7 @@ function sanitizeUnitAdminApplication(application) {
   return { id: application.id, status: application.status, reviewNote: application.review_note || '', organizationName: application.organization_name, region: application.region, organizationId: application.organization_id || null, applicant: user && { id: user.id, name: user.name, phone: user.phone }, createdAt: application.created_at, reviewedAt: application.reviewed_at };
 }
 function listUnitAdminApplications({ status } = {}) { return db.findAll('unit_admin_applications', item => !status || item.status === status).sort((a, b) => b.created_at.localeCompare(a.created_at)).map(sanitizeUnitAdminApplication); }
-function reviewUnitAdminApplication(actor, applicationId, { approve, reviewNote = '', planType, planExpiresAt } = {}) {
+function reviewUnitAdminApplication(actor, applicationId, { approve, reviewNote = '', planType = 'trial', planExpiresAt } = {}) {
   const application = db.findById('unit_admin_applications', applicationId);
   if (!application) throw failure(404, '未找到单位管理员申请');
   if (application.status !== 'pending') throw failure(409, '该申请已经处理，不能重复审核');

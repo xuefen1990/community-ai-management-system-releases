@@ -76,9 +76,10 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   const applications = await request(url, '/auth/unit-admin-applications?status=pending', { token: adminToken });
   assert.equal(applications.status, 200);
   assert.equal(applications.body.applications.length, 1);
-  const approved = await request(url, `/auth/unit-admin-applications/${submitted.body.application.id}/review`, { token: adminToken, method: 'POST', body: { approve: true, planType: 'expires', planExpiresAt: '2026-12-31T23:59:59.000Z' } });
+  const approved = await request(url, `/auth/unit-admin-applications/${submitted.body.application.id}/review`, { token: adminToken, method: 'POST', body: { approve: true } });
   assert.equal(approved.status, 200);
   assert.equal(approved.body.user.role, 'unit_admin');
+  assert.equal(approved.body.user.planType, 'trial');
   const registered = { body: { user: approved.body.user } };
 
   const unitAdminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13900139000', password: 'secret88' } });
