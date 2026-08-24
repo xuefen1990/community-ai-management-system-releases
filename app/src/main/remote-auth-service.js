@@ -123,6 +123,19 @@ class RemoteAuthService {
   async createInvite({ expiresAt, maxUses }) { return this.request('/auth/unit/invites', { method: 'POST', body: { expiresAt, maxUses } }); }
   async deactivateInvite({ inviteId }) { return this.request(`/auth/unit/invites/${inviteId}`, { method: 'DELETE' }); }
 
+  async subscribeWorkspaceChanges(onChanged) {
+    if (!this.session?.token) return () => {};
+    const { baseUrl } = await this.getServerConfig();
+    const controller = new AbortController();
+    const response = await this.fetchImpl(`${baseUrl}/api/unit/workspace/events`, { headers: { Authorization: `Bearer ${this.session.token}`, Accept: 'text/event-stream' }, signal: controller.signal });
+    if (!response.ok || !response.body) throw new Error('无法连接共享数据实时服务');
+    (async () => {
+      const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = '';
+      try { for (;;) { const chunk = await reader.read(); if (chunk.done) break; buffer += decoder.decode(chunk.value, { stream: true }); let boundary; while ((boundary = buffer.indexOf('\n\n')) >= 0) { const message = buffer.slice(0, boundary); buffer = buffer.slice(boundary + 2); if (message.startsWith('event: changed')) { const data = message.split('\n').find(line => line.startsWith('data: ')); if (data) onChanged(JSON.parse(data.slice(6))); } } } } catch (error) { if (!controller.signal.aborted) onChanged({ error: error.message }); }
+    })();
+    return () => controller.abort();
+  }
+
   async login({ phone, password, remember = true }) {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone || typeof password !== 'string') throw new Error('请输入手机号和密码');

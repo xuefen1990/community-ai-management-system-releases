@@ -97,6 +97,7 @@ const SEND_CHANNELS = Object.freeze({
 });
 
 const EVENT_CHANNELS = Object.freeze({
+  onUnitWorkspaceChanged: 'unit-workspace-changed',
   onMobileFileUploaded: 'mobile-file-uploaded',
   onMobileVoiceParseRequest: 'mobile-voice-parse-request',
   onMobileVoiceConfirmSave: 'mobile-voice-confirm-save',

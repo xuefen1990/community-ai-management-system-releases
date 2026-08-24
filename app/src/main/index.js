@@ -50,7 +50,7 @@ app.whenReady().then(() => {
   const localAiRuntime = new LocalAiRuntime();
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient });
   const localDatabaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
-  const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore });
+  const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore, onChanged: (payload) => mainWindow?.webContents.send('unit-workspace-changed', payload) });
   const getCurrentAccount = async () => (await authService.getStatus()).account;
   const documentDraftingService = new DocumentDraftingService({ databaseStore, getCurrentAccount, aiRouter });
   const writingProfileService = new WritingProfileService({ databaseStore, getCurrentAccount });

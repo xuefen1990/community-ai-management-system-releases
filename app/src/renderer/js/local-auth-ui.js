@@ -692,6 +692,12 @@
     bindButton('doRegisterBtn', submitRegister);
     bindButton('logoutBtn', logout);
     bindButton('syncTokenBtn', window.forceSyncToken);
+    api.onUnitWorkspaceChanged?.(async (payload) => {
+      if (payload?.error || document.getElementById('dashboardView')?.classList.contains('hidden')) return;
+      await window.loadDatabase?.();
+      window.renderOverview?.();
+      window.showToast?.('本单位数据已同步更新', 'success');
+    });
     configureCompactSidebarFooter();
     configureApplicationPanel();
     bindButton('privacyPolicyBtn', openPrivacyPolicy);

@@ -12,21 +12,29 @@ function normalize(value) {
 }
 
 class RemoteDatabaseStore {
-  constructor({ authService, localStore }) {
+  constructor({ authService, localStore, onChanged = () => {} }) {
     this.authService = authService;
     this.localStore = localStore;
     this.version = null;
     this.writeQueue = Promise.resolve();
     this.dataDirectory = localStore.dataDirectory;
+    this.onChanged = onChanged;
+    this.stopSubscription = null;
   }
 
   async isAuthenticated() { return Boolean((await this.authService.getStatus()).authenticated); }
 
   async read() {
     if (!(await this.isAuthenticated())) return this.localStore.read();
+    await this.ensureSubscription();
     const response = await this.authService.request('/unit/workspace/data');
     this.version = response.version;
     return clone(normalize(response.data));
+  }
+
+  async ensureSubscription() {
+    if (this.stopSubscription) return;
+    this.stopSubscription = await this.authService.subscribeWorkspaceChanges((payload) => { this.version = null; this.onChanged(payload); });
   }
 
   async write(value) {

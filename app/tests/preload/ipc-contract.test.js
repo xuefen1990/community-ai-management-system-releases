@@ -8,7 +8,7 @@ const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/sh
 test('compatibility contract retains all original preload API entries', () => {
   assert.equal(Object.keys(INVOKE_CHANNELS).length, 89);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
-  assert.equal(Object.keys(EVENT_CHANNELS).length, 4);
+  assert.equal(Object.keys(EVENT_CHANNELS).length, 5);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
   assert.equal(INVOKE_CHANNELS.writeDb, 'write-db');
   assert.equal(INVOKE_CHANNELS.scanLocalModels, 'scan-local-models');
@@ -47,6 +47,7 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.exportDraftDocument, 'export-draft-document');
   assert.equal(INVOKE_CHANNELS.importWorkAttachments, 'import-work-attachments');
   assert.equal(EVENT_CHANNELS.onMobileVoiceConfirmSave, 'mobile-voice-confirm-save');
+  assert.equal(EVENT_CHANNELS.onUnitWorkspaceChanged, 'unit-workspace-changed');
   assert.equal(EVENT_CHANNELS.onAppUpdateStatus, 'app-update-status');
 });
 
