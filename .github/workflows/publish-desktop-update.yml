@@ -1,0 +1,54 @@
+name: Publish desktop update
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and publish macOS update
+    runs-on: macos-14
+    timeout-minutes: 45
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COMMUNITY_AI_CI_BUILD: '1'
+      COMMUNITY_AI_BACKEND_URL: ${{ secrets.COMMUNITY_AI_BACKEND_URL }}
+      COMMUNITY_AI_BACKEND_ADMIN_PHONE: ${{ secrets.COMMUNITY_AI_BACKEND_ADMIN_PHONE }}
+      COMMUNITY_AI_BACKEND_ADMIN_PASSWORD: ${{ secrets.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD }}
+
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            app/package-lock.json
+            backend/package-lock.json
+
+      - name: Verify release version and notes
+        run: node scripts/verify-release-inputs.mjs
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix app
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Run desktop tests
+        run: npm test --prefix app
+
+      - name: Run backend tests
+        run: npm test --prefix backend
+
+      - name: Build and publish update assets
+        run: node scripts/release-sync.mjs

@@ -22,6 +22,7 @@ const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE;
 const adminPassword = process.env.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD;
 const skipBuild = process.argv.includes('--skip-build');
 const skipGithub = process.argv.includes('--skip-github');
+const useCiBuild = process.env.COMMUNITY_AI_CI_BUILD === '1';
 
 function run(command, args, { capture = false, cwd = projectRoot } = {}) {
   const result = spawnSync(command, args, {
@@ -92,8 +93,11 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
 }
 
 requireEnvironment();
+if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== tag) {
+  throw new Error(`发布标签 ${process.env.GITHUB_REF_NAME} 与应用版本 ${version} 不一致，应为 ${tag}`);
+}
 await requireFile(notesPath, '发行说明');
-if (!skipBuild) run('npm', ['run', 'build:arm64'], { cwd: appRoot });
+if (!skipBuild) run('npm', ['run', useCiBuild ? 'build:ci:arm64' : 'build:arm64'], { cwd: appRoot });
 await Promise.all([
   requireFile(dmgPath, 'DMG 安装包'),
   requireFile(zipPath, '应用内更新包'),

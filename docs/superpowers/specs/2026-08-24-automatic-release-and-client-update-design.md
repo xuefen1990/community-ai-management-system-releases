@@ -32,7 +32,7 @@
 ## 组件边界
 
 - **项目协作约定**：要求每次完成改动都验证、提交并推送；只暂存本次改动，避免把工作区已有改动混入。
-- **本机 GitHub 凭据**：使用 GitHub CLI 或 Git Credential Manager 的 macOS Keychain 凭据。首次登录后，所有新开的项目窗口和 Codex 对话都从同一用户钥匙串读取；令牌不写入仓库、脚本、环境样例或日志。
+- **本机 GitHub 凭据**：使用 macOS Keychain 中的 Git 凭据。首次登录后，所有新开的项目窗口和 Codex 对话都从同一用户钥匙串读取；令牌不写入仓库、脚本、环境样例或日志。GitHub Actions 发布不依赖本机 GitHub CLI 登录状态。
 - **发布工作流**：只处理已标记的版本，负责构建、测试、资产发布和状态校验；不修改业务代码或替代日常提交。
 - **CI 打包入口**：在干净的 Apple Silicon macOS runner 上从 `app/` 与 `package-lock.json` 生成与现有更新协议兼容的 DMG、ZIP 和清单；保留原有本机模板打包脚本，避免影响当前本机验证和恢复流程。
 - **`scripts/release-sync.mjs`**：唯一的发布编排入口，保证 GitHub Release 与后端记录使用同一个版本、ZIP 和发行说明。
