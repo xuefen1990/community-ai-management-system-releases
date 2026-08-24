@@ -109,10 +109,12 @@ if (!skipGithub) {
     stdio: 'ignore',
   }).status === 0;
   if (releaseExists) {
-    run('gh', ['release', 'upload', tag, ...assets, '--clobber', '--repo', 'xuefen1990/community-ai-management-system-releases']);
     run('gh', ['release', 'edit', tag, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
   } else {
-    run('gh', ['release', 'create', tag, ...assets, '--target', releaseTarget, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
+    run('gh', ['release', 'create', tag, '--target', releaseTarget, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
+  }
+  for (const asset of assets) {
+    run('gh', ['release', 'upload', tag, asset, '--clobber', '--repo', 'xuefen1990/community-ai-management-system-releases']);
   }
 }
 
