@@ -65,7 +65,8 @@
   function hasIdentity(person, identity) {
     if (!identity) return true;
     const tags = Array.isArray(person?.tags) ? person.tags : [person?.tags];
-    const labels = [...tags, person?.special_identity, person?.specialIdentity, person?.political_status, person?.politicalStatus].map(text).join(' ');
+    const specialIdentities = Array.isArray(person?.specialIdentities) ? person.specialIdentities : [person?.specialIdentities];
+    const labels = [...tags, ...specialIdentities, person?.special_identity, person?.specialIdentity, person?.political_status, person?.politicalStatus].map(text).join(' ');
     const flags = {
       '党员': Boolean(person?.is_party_member || person?.isPartyMember),
       '低保户': Boolean(person?.is_low_income || person?.isLowIncome),

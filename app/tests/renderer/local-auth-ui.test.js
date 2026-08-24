@@ -43,6 +43,7 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
     fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-excel-import.js'), 'utf8'),
   ]);
   assert.match(adapter, /personnel-excel-import\.js/u);
+  assert.match(adapter, /personnel-import-merge\.js/u);
   assert.match(importer, /importExcelBtn/u);
   assert.match(importer, /batchImportExcelBtn/u);
   assert.match(importer, /excelFileInput/u);
@@ -50,8 +51,10 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   assert.match(importer, /window\.api\?\.readDb/u);
   assert.match(importer, /window\.api\?\.writeDb/u);
   assert.match(importer, /身份证号/u);
-  assert.match(importer, /姓名 \+ 手机号/u);
+  assert.match(importer, /专项标签/u);
+  assert.match(importer, /唯一合并凭证/u);
   assert.match(importer, /personnelImportRecords/u);
+  assert.match(importer, /skippedReasons/u);
   assert.match(importer, /function refreshPersonnelWorkspace\(\)/u);
   assert.match(importer, /await window\.loadDatabase\(\)/u);
   assert.match(importer, /window\.renderOverview\(\)/u);
@@ -82,6 +85,7 @@ test('personnel search safely filters imported and historical field variants in 
   assert.match(search, /filterAge/u);
   assert.match(search, /filterDataAudit/u);
   assert.match(search, /filterRegistryStatus/u);
+  assert.match(search, /specialIdentities/u);
   assert.match(search, /clearPersonnelFilters/u);
   assert.doesNotMatch(search, /require\(|ipcRenderer|node:/u);
 });

@@ -684,12 +684,23 @@ if (!document.querySelector('script[data-update-ui]')) {
 }
 
 // The legacy renderer's personnel import binding can be absent in packaged builds.
-// Load the standalone, testable import flow after all legacy scripts have initialized.
-if (!document.querySelector('script[data-personnel-excel-import]')) {
+// Load its merge rules first so the standalone import flow can use them reliably.
+function loadPersonnelExcelImport() {
+  if (document.querySelector('script[data-personnel-excel-import]')) return;
   const personnelImportScript = document.createElement('script');
-  personnelImportScript.src = 'js/personnel-excel-import.js?v=1.0.0';
+  personnelImportScript.src = 'js/personnel-excel-import.js?v=1.1.0';
   personnelImportScript.dataset.personnelExcelImport = 'true';
   document.head.appendChild(personnelImportScript);
+}
+
+if (!document.querySelector('script[data-personnel-import-merge]')) {
+  const personnelMergeScript = document.createElement('script');
+  personnelMergeScript.src = 'js/personnel-import-merge.js?v=1.0.0';
+  personnelMergeScript.dataset.personnelImportMerge = 'true';
+  personnelMergeScript.addEventListener('load', loadPersonnelExcelImport, { once: true });
+  document.head.appendChild(personnelMergeScript);
+} else {
+  loadPersonnelExcelImport();
 }
 
 // Keep personnel search independent from the legacy renderer so imported field
