@@ -256,6 +256,20 @@
     panel.querySelectorAll('input[name="application-kind"]').forEach(input => input.addEventListener('change', updateKind));
     panel.querySelector('#backToLoginBtn').addEventListener('click', () => forceLoginPanel());
     bindButton('doRegisterBtn', submitRegister);
+    const loginForm = document.querySelector('#panel-login .login-form');
+    if (!document.getElementById('unitApplicationEntry') && loginForm) {
+      const entry = document.createElement('div');
+      entry.id = 'unitApplicationEntry';
+      entry.style.cssText = 'margin-top:18px;padding-top:16px;border-top:1px solid var(--border-color);display:grid;grid-template-columns:1fr 1fr;gap:10px;';
+      entry.innerHTML = '<button type="button" class="btn btn-outline" data-apply-kind="unit-admin">申请开通单位</button><button type="button" class="btn btn-outline" data-apply-kind="member">邀请码加入单位</button>';
+      entry.querySelectorAll('[data-apply-kind]').forEach((button) => button.addEventListener('click', () => {
+        document.querySelectorAll('#loginCard .auth-panel').forEach((item) => { item.classList.toggle('hidden', item !== panel); item.setAttribute('aria-hidden', String(item !== panel)); });
+        const radio = panel.querySelector(`input[name="application-kind"][value="${button.dataset.applyKind}"]`);
+        if (radio) { radio.checked = true; updateKind(); }
+        panel.querySelector('#reg-name')?.focus();
+      }));
+      loginForm.appendChild(entry);
+    }
   }
 
   async function logout() {
