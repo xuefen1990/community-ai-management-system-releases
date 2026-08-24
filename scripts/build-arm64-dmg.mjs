@@ -19,6 +19,8 @@ const outputPath = path.join(releaseDirectory, installerArtifactName);
 const updateArtifactName = `community-ai-management-system-${version}-arm64.zip`;
 const zipOutputPath = path.join(releaseDirectory, updateArtifactName);
 const updateManifestPath = path.join(releaseDirectory, 'latest-mac.yml');
+const updateSigningRequirement = 'designated => identifier "com.community.ai.management"';
+const updateVerificationRequirement = 'identifier "com.community.ai.management"';
 const embeddedUpdaterConfigPath = path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml');
 const embeddedUpdaterConfig = [
   'provider: github',
@@ -65,6 +67,11 @@ run(process.execPath, [path.join(projectRoot, 'scripts', 'prepare-local-runtime.
 await writeFile(embeddedUpdaterConfigPath, embeddedUpdaterConfig, 'utf8');
 run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
+// Ad-hoc signatures normally use the build-specific CD hash as their
+// designated requirement. That makes macOS reject every later update. Keep a
+// stable requirement bound to this app identifier after the nested code has
+// been signed.
+run('codesign', ['--force', '--sign', '-', `-r=${updateSigningRequirement}`, runtimeApp]);
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', runtimeApp]);
 
 await mkdir(releaseDirectory, { recursive: true });
@@ -82,6 +89,7 @@ await cp(runtimeApp, stagedApplicationPath, {
 });
 await symlink('/Applications', path.join(stagingDirectory, 'Applications'));
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', stagedApplicationPath]);
+run('codesign', ['--verify', `-R=${updateVerificationRequirement}`, stagedApplicationPath]);
 try {
   run('hdiutil', ['create', '-volname', '社区AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
 } finally {
