@@ -58,6 +58,18 @@ class RemoteDatabaseStore {
     return { data: clone(draft), result: clone(result) };
   }
 
+  async importLocalDataToUnit() {
+    const status = await this.authService.getStatus();
+    if (status.account?.role !== 'unit_admin') throw new Error('只有单位管理员可以导入本机数据');
+    const remote = await this.read();
+    const hasRemoteRecords = Object.entries(remote).some(([key, value]) => key !== 'settings' && Array.isArray(value) && value.length > 0);
+    if (hasRemoteRecords) throw new Error('单位共享工作区已有数据。为避免重复或覆盖，本机数据不能自动导入。');
+    const local = await this.localStore.read();
+    await this.write(local);
+    const recordCount = Object.values(local).filter(Array.isArray).reduce((total, rows) => total + rows.length, 0);
+    return { ok: true, recordCount };
+  }
+
   async createBackup() { return this.localStore.createBackup(); }
   async listBackups() { return this.localStore.listBackups(); }
   async restoreBackup(value) { const restored = await this.localStore.restoreBackup(value); await this.write(restored.data); return restored; }

@@ -48,6 +48,7 @@ const INVOKE_CHANNELS = Object.freeze({
   listUnitInvites: 'list-unit-invites',
   createUnitInvite: 'create-unit-invite',
   deactivateUnitInvite: 'deactivate-unit-invite',
+  importLocalDataToUnit: 'import-local-data-to-unit',
   loginLocalAccount: 'login-local-account',
   logoutLocalAccount: 'logout-local-account',
   getLocalAuthStatus: 'get-local-auth-status',

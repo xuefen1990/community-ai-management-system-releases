@@ -67,6 +67,7 @@ const api = {
   listUnitInvites: () => invoke('listUnitInvites'),
   createUnitInvite: (value) => invoke('createUnitInvite', value),
   deactivateUnitInvite: (value) => invoke('deactivateUnitInvite', value),
+  importLocalDataToUnit: () => invoke('importLocalDataToUnit'),
   onUnitWorkspaceChanged: (callback) => subscribe('onUnitWorkspaceChanged', callback),
   loginLocalAccount: (value) => invoke('loginLocalAccount', value),
   logoutLocalAccount: () => invoke('logoutLocalAccount'),

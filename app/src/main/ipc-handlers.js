@@ -122,6 +122,7 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.listUnitInvites, async () => authService.listInvites());
     handle(INVOKE_CHANNELS.createUnitInvite, async (_event, value) => authService.createInvite(value));
     handle(INVOKE_CHANNELS.deactivateUnitInvite, async (_event, value) => authService.deactivateInvite(value));
+    handle(INVOKE_CHANNELS.importLocalDataToUnit, async () => store.importLocalDataToUnit());
     handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
