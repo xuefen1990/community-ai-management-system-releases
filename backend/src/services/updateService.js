@@ -167,13 +167,17 @@ function getLatestInAppVersion(platform, channel) {
 function getElectronManifest(platform, channel) {
   const version = getLatestInAppVersion(platform, channel);
   if (!version) return null;
+  // electron-updater uses the final path segment as its cached download name.
+  // Keep the real ZIP name in the manifest so it never tries to create a file
+  // whose name is only the update record ID.
+  const downloadPath = `../download/${encodeURIComponent(version.id)}/${encodeURIComponent(version.file_name)}`;
   return [
     `version: ${version.version}`,
     'files:',
-    `  - url: ../download/${version.id}`,
+    `  - url: ${downloadPath}`,
     `    sha512: ${version.file_sha512}`,
     `    size: ${version.file_size}`,
-    `path: ../download/${version.id}`,
+    `path: ${downloadPath}`,
     `sha512: ${version.file_sha512}`,
     `releaseDate: ${version.created_at}`,
     '',

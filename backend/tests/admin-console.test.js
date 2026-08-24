@@ -113,7 +113,11 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   assert.equal(electronManifest.status, 200);
   const electronManifestText = await electronManifest.text();
   assert.match(electronManifestText, /version: 0\.3\.2/u);
-  assert.match(electronManifestText, /url: \.\.\/download\//u);
+  const downloadMatch = electronManifestText.match(/url: (\.\.\/download\/[^/]+\/[^\n]+\.zip)/u);
+  assert.ok(downloadMatch, '应用内更新清单应提供以 ZIP 文件名结尾的下载地址');
+  const inAppDownload = await fetch(new URL(downloadMatch[1], `${url}/api/update/electron/latest-mac.yml`));
+  assert.equal(inAppDownload.status, 200);
+  assert.equal(await inAppDownload.text(), 'zip update package');
 
   const duplicateForm = new FormData();
   duplicateForm.set('version', '0.3.1');

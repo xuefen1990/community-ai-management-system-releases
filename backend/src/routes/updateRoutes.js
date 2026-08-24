@@ -28,7 +28,7 @@ router.get('/electron/latest-mac.yml', (req, res, next) => {
 });
 
 // ===== 下载更新文件 =====
-router.get('/download/:id', (req, res, next) => {
+router.get('/download/:id/:fileName?', (req, res, next) => {
   try {
     const fileInfo = updateService.getFilePath(req.params.id);
     if (!fileInfo) {
