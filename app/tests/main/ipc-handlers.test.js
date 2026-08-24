@@ -1,7 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs/promises');
+const os = require('node:os');
+const path = require('node:path');
 const test = require('node:test');
+const XLSX = require('xlsx');
 
 const { registerCompatibilityHandlers } = require('../../src/main/ipc-handlers');
 const { INVOKE_CHANNELS } = require('../../src/shared/ipc-contract');
@@ -28,6 +32,33 @@ test('registers all dedicated document drafting channels', () => {
 test('registers the work attachment channel', () => {
   const { handlers } = makeHandlers();
   assert.equal(handlers.has(INVOKE_CHANNELS.importWorkAttachments), true);
+});
+
+test('Excel selection and preview handlers return a selected local sheet', async () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['姓名', '身份证号', '手机号'],
+    ['张三', '320000199001010011', '13800000000'],
+  ]), '人员');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-excel-'));
+  const filePath = path.join(directory, '人员导入.xlsx');
+  XLSX.writeFile(workbook, filePath);
+  const dialog = { showOpenDialog: async () => ({ canceled: false, filePaths: [filePath] }) };
+  const { callbacks } = makeHandlers({ dialog });
+
+  assert.equal(await callbacks.get(INVOKE_CHANNELS.selectExcelFile)({}), filePath);
+  const preview = await callbacks.get(INVOKE_CHANNELS.readExcelColumns)({}, filePath);
+  assert.deepEqual(preview.columns, ['姓名', '身份证号', '手机号']);
+  assert.deepEqual(preview.rows, [{ 姓名: '张三', 身份证号: '320000199001010011', 手机号: '13800000000' }]);
+  assert.equal(preview.total, 1);
+  await fs.rm(directory, { recursive: true, force: true });
+});
+
+test('file selection handlers return an empty result after cancellation', async () => {
+  const dialog = { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) };
+  const { callbacks } = makeHandlers({ dialog });
+  assert.equal(await callbacks.get(INVOKE_CHANNELS.selectExcelFile)({}), null);
+  assert.deepEqual(await callbacks.get(INVOKE_CHANNELS.selectFilesAndFolders)({}), []);
 });
 
 test('registers local account entitlement management channels', () => {

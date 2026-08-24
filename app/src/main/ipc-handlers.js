@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const XLSX = require('xlsx');
 
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
 const { JsonDatabaseStore } = require('./database-store');
@@ -32,6 +33,28 @@ function registerCompatibilityHandlers({
     handlerNames.add(channel);
   }
 
+  function requestedFilePath(value) {
+    if (typeof value === 'string') return value;
+    return value?.filePath || value?.path || null;
+  }
+
+  function readExcelPreview(value) {
+    const filePath = requestedFilePath(value);
+    if (!filePath) throw new TypeError('未指定 Excel 文件');
+    const extension = path.extname(filePath).toLowerCase();
+    if (!['.xlsx', '.xls', '.csv'].includes(extension)) throw new Error('请选择 .xlsx、.xls 或 .csv 表格文件');
+    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false });
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) throw new Error('表格中没有可读取的工作表');
+    const table = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, defval: '', raw: false });
+    const columns = (table.shift() || []).map((column) => String(column ?? '').trim());
+    if (!columns.some(Boolean)) throw new Error('未识别到表头，请确认第一行是字段名称');
+    const rows = table
+      .filter((values) => Array.isArray(values) && values.some((value) => String(value ?? '').trim()))
+      .map((values) => Object.fromEntries(columns.map((column, index) => [column || `未命名列${index + 1}`, values[index] ?? ''])));
+    return { columns, rows, fileName: path.basename(filePath), total: rows.length };
+  }
+
   handle(INVOKE_CHANNELS.readDb, async () => store.read());
   handle(INVOKE_CHANNELS.writeDb, async (_event, value) => {
     try {
@@ -47,10 +70,41 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.getMachineId, async () => machineId);
   handle(INVOKE_CHANNELS.isDev, async () => !app.isPackaged);
   handle(INVOKE_CHANNELS.getVersion, async () => app.getVersion());
-  handle(INVOKE_CHANNELS.getFilesMetadata, async () => []);
-  handle(INVOKE_CHANNELS.selectFilesAndFolders, async () => []);
-  handle(INVOKE_CHANNELS.selectExcelFile, async () => null);
-  handle(INVOKE_CHANNELS.readExcelColumns, async () => ({ columns: [], rows: [] }));
+  handle(INVOKE_CHANNELS.getFilesMetadata, async (_event, value = []) => {
+    const requestedPaths = Array.isArray(value) ? value : (value.paths || value.filePaths || []);
+    return Promise.all(requestedPaths.filter((item) => typeof item === 'string').map(async (filePath) => {
+      try {
+        const stats = await fs.promises.stat(filePath);
+        return { path: filePath, name: path.basename(filePath), size: stats.size, isDirectory: stats.isDirectory(), modifiedAt: stats.mtime.toISOString() };
+      } catch {
+        return null;
+      }
+    })).then((items) => items.filter(Boolean));
+  });
+  handle(INVOKE_CHANNELS.selectFilesAndFolders, async () => {
+    if (!dialog) return [];
+    const selected = await dialog.showOpenDialog({
+      title: '选择文件或文件夹',
+      properties: ['openFile', 'openDirectory', 'multiSelections'],
+    });
+    return selected.canceled ? [] : selected.filePaths;
+  });
+  handle(INVOKE_CHANNELS.selectExcelFile, async () => {
+    if (!dialog) return null;
+    const selected = await dialog.showOpenDialog({
+      title: '选择 Excel 表格',
+      properties: ['openFile'],
+      filters: [{ name: 'Excel 表格', extensions: ['xlsx', 'xls', 'csv'] }],
+    });
+    return selected.canceled || !selected.filePaths[0] ? null : selected.filePaths[0];
+  });
+  handle(INVOKE_CHANNELS.readExcelColumns, async (_event, value) => {
+    try {
+      return readExcelPreview(value);
+    } catch (error) {
+      return { columns: [], rows: [], error: error.message };
+    }
+  });
   handle(INVOKE_CHANNELS.getLanShareInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.getMobileUploadInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.scanLocalModels, async () => modelCatalog ? modelCatalog.scan() : []);
