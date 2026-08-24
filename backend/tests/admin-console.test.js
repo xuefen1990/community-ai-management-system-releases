@@ -90,11 +90,17 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   assert.equal(memberSubmitted.status, 201);
   const pendingMemberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
   assert.equal(pendingMemberLogin.status, 403);
-  const reviewedMember = await request(url, `/auth/unit/member-applications/${memberSubmitted.body.application.id}/review`, { token: unitAdminLogin.body.token, method: 'POST', body: { approve: true, permissions: { personnel: ['view', 'create'], party: ['view'] } } });
+  const reviewedMember = await request(url, `/auth/unit/member-applications/${memberSubmitted.body.application.id}/review`, { token: unitAdminLogin.body.token, method: 'POST', body: { approve: true, permissions: { personnel: ['view', 'create'], party: ['view'], workspace: ['view', 'update'] } } });
   assert.equal(reviewedMember.status, 200);
   assert.deepEqual(reviewedMember.body.user.permissions.personnel, ['view', 'create']);
   const memberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
   assert.equal(memberLogin.status, 200);
+  const emptyWorkspace = await request(url, '/unit/workspace/data', { token: memberLogin.body.token });
+  assert.equal(emptyWorkspace.status, 200);
+  const workspaceWrite = await request(url, '/unit/workspace/data', { token: memberLogin.body.token, method: 'PUT', body: { version: emptyWorkspace.body.version, data: { personnel: [{ name: '测试村民' }] } } });
+  assert.equal(workspaceWrite.status, 200);
+  const workspaceConflict = await request(url, '/unit/workspace/data', { token: memberLogin.body.token, method: 'PUT', body: { version: emptyWorkspace.body.version, data: {} } });
+  assert.equal(workspaceConflict.status, 409);
 
   const installerPath = path.join(directory, 'community-ai-management-system-0.3.1-arm64.dmg');
   await fs.writeFile(installerPath, 'test installer');

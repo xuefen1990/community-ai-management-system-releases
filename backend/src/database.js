@@ -18,6 +18,7 @@ const DEFAULT_DATA = {
   unit_admin_applications: [],
   member_applications: [],
   unit_invites: [],
+  unit_workspaces: [],
   licenses: [],
   versions: [],
   ai_providers: [],

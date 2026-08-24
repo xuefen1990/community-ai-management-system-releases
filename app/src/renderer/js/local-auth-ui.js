@@ -152,7 +152,7 @@
 
   function permissionChoices(selected = {}) {
     const has = (moduleName, action) => selected?.[moduleName]?.includes(action) ? 'checked' : '';
-    return `<div class="unit-permissions"><strong>成员权限</strong><label><input type="checkbox" data-permission="personnel:view" ${has('personnel', 'view')}> 人员档案查看</label><label><input type="checkbox" data-permission="personnel:create" ${has('personnel', 'create')}> 人员档案录入</label><label><input type="checkbox" data-permission="visit:view" ${has('visit', 'view')}> 走访记录查看</label><label><input type="checkbox" data-permission="visit:create" ${has('visit', 'create')}> 走访记录录入</label><label><input type="checkbox" data-permission="party:view" ${has('party', 'view')}> 党务查看</label><label><input type="checkbox" data-permission="work:view" ${has('work', 'view')}> 工作事项查看</label></div>`;
+    return `<div class="unit-permissions"><strong>成员权限</strong><label><input type="checkbox" data-permission="workspace:view" ${has('workspace', 'view')}> 查看单位共享数据</label><label><input type="checkbox" data-permission="workspace:update" ${has('workspace', 'update')}> 修改单位共享数据</label><label><input type="checkbox" data-permission="personnel:view" ${has('personnel', 'view')}> 人员档案查看</label><label><input type="checkbox" data-permission="personnel:create" ${has('personnel', 'create')}> 人员档案录入</label><label><input type="checkbox" data-permission="visit:view" ${has('visit', 'view')}> 走访记录查看</label><label><input type="checkbox" data-permission="visit:create" ${has('visit', 'create')}> 走访记录录入</label><label><input type="checkbox" data-permission="party:view" ${has('party', 'view')}> 党务查看</label><label><input type="checkbox" data-permission="work:view" ${has('work', 'view')}> 工作事项查看</label></div>`;
   }
 
   function selectedPermissions(root) {

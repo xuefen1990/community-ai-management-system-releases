@@ -14,6 +14,7 @@ const authRoutes = require('./routes/authRoutes');
 const updateRoutes = require('./routes/updateRoutes');
 const aiRoutes = require('./routes/aiRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const unitWorkspaceRoutes = require('./routes/unitWorkspaceRoutes');
 
 const { standard } = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
@@ -52,6 +53,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/update', updateRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/unit/workspace', unitWorkspaceRoutes);
 app.use('/admin', express.static(path.join(__dirname, 'admin')));
 
 app.use(notFoundHandler);
