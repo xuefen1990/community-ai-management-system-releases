@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const authService = require('../services/authService');
 const licenseService = require('../services/licenseService');
-const { authRequired, adminRequired } = require('../middleware/auth');
+const { authRequired, adminRequired, unitAdminRequired } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { ApiError } = require('../middleware/errorHandler');
 
@@ -12,12 +12,25 @@ function getClientIp(req) {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
 }
 
-// ===== 注册 =====
-router.post('/register', authLimiter, async (req, res, next) => {
+// 旧版直接注册不再绕过单位审核流程。
+router.post('/register', authLimiter, (_req, _res, next) => {
+  next(new ApiError(410, '请通过“申请成为单位管理员”或“申请加入单位”完成注册'));
+});
+
+// ===== 申请成为单位管理员（公开） =====
+router.post('/unit-admin-applications', authLimiter, async (req, res, next) => {
   try {
-    const { phone, password, name, villageName, machineId } = req.body;
-    const result = authService.register({ phone, password, name, villageName, machineId });
-    authService.writeAuditLog(result.user.id, 'register', phone, '', getClientIp(req));
+    const { phone, password, name, organizationName, region, machineId } = req.body;
+    const result = authService.submitUnitAdminApplication({ phone, password, name, organizationName, region, machineId });
+    res.status(201).json(result);
+  } catch (err) { next(err); }
+});
+
+// ===== 申请加入单位（公开） =====
+router.post('/member-applications', authLimiter, async (req, res, next) => {
+  try {
+    const { inviteCode, phone, password, name, machineId } = req.body;
+    const result = authService.submitMemberApplication({ inviteCode, phone, password, name, machineId });
     res.status(201).json(result);
   } catch (err) { next(err); }
 });
@@ -69,6 +82,46 @@ router.get('/entitlement', authRequired, (req, res) => {
   res.json(result);
 });
 
+// ===== 单位管理员接口 =====
+router.get('/unit/member-applications', authRequired, unitAdminRequired, (req, res) => {
+  res.json({ applications: authService.listMemberApplications(req.user, { status: req.query.status }) });
+});
+
+router.post('/unit/member-applications/:applicationId/review', authRequired, unitAdminRequired, (req, res, next) => {
+  try {
+    const result = authService.reviewMemberApplication(req.user, req.params.applicationId, req.body);
+    res.json(result);
+  } catch (err) { next(err); }
+});
+
+router.get('/unit/members', authRequired, unitAdminRequired, (req, res) => {
+  res.json({ members: authService.listUnitMembers(req.user) });
+});
+
+router.put('/unit/members/:memberId/permissions', authRequired, unitAdminRequired, (req, res, next) => {
+  try {
+    const user = authService.updateMemberPermissions(req.user, req.params.memberId, req.body.permissions);
+    res.json({ user });
+  } catch (err) { next(err); }
+});
+
+router.get('/unit/invites', authRequired, unitAdminRequired, (req, res) => {
+  res.json({ invites: authService.listInvites(req.user) });
+});
+
+router.post('/unit/invites', authRequired, unitAdminRequired, (req, res, next) => {
+  try {
+    const result = authService.createInvite(req.user, req.body);
+    res.status(201).json(result);
+  } catch (err) { next(err); }
+});
+
+router.delete('/unit/invites/:inviteId', authRequired, unitAdminRequired, (req, res, next) => {
+  try {
+    res.json({ invite: authService.deactivateInvite(req.user, req.params.inviteId) });
+  } catch (err) { next(err); }
+});
+
 // ===== 激活许可证 =====
 router.post('/activate-license', authRequired, async (req, res, next) => {
   try {
@@ -84,6 +137,18 @@ router.get('/my-licenses', authRequired, (req, res) => {
 });
 
 // ===== 以下是管理员接口 =====
+
+router.get('/unit-admin-applications', authRequired, adminRequired, (req, res) => {
+  res.json({ applications: authService.listUnitAdminApplications({ status: req.query.status }) });
+});
+
+router.post('/unit-admin-applications/:applicationId/review', authRequired, adminRequired, (req, res, next) => {
+  try {
+    const result = authService.reviewUnitAdminApplication(req.user, req.params.applicationId, req.body);
+    authService.writeAuditLog(req.user.id, 'review_unit_admin_application', req.params.applicationId, JSON.stringify(req.body), getClientIp(req));
+    res.json(result);
+  } catch (err) { next(err); }
+});
 
 // ===== 用户列表 =====
 router.get('/users', authRequired, adminRequired, (req, res) => {

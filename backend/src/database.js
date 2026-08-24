@@ -14,6 +14,10 @@ if (!fs.existsSync(dbDir)) {
 const DEFAULT_DATA = {
   _meta: { version: 1, createdAt: new Date().toISOString() },
   users: [],
+  organizations: [],
+  unit_admin_applications: [],
+  member_applications: [],
+  unit_invites: [],
   licenses: [],
   versions: [],
   ai_providers: [],

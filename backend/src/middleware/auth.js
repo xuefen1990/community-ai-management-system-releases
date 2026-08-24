@@ -2,6 +2,7 @@
 
 const { verifyToken } = require('../utils/crypto');
 const db = require('../database');
+const authService = require('../services/authService');
 const logger = require('../utils/logger');
 
 function extractToken(req) {
@@ -20,10 +21,9 @@ function authRequired(req, res, next) {
 
   try {
     const decoded = verifyToken(token);
-    const user = db.findOne('users', u => u.id === decoded.userId && u.is_active === 1);
-    if (!user) {
-      return res.status(401).json({ error: '用户不存在或已被禁用' });
-    }
+    const user = db.findOne('users', u => u.id === decoded.userId);
+    const access = authService.getAccessStatus(user);
+    if (!access.valid) return res.status(401).json({ error: access.reason || '用户不存在或已被禁用' });
     req.user = user;
     next();
   } catch (err) {
@@ -33,9 +33,14 @@ function authRequired(req, res, next) {
 }
 
 function adminRequired(req, res, next) {
-  if (!req.user || req.user.role !== 'admin') {
+  if (!authService.isPlatformAdmin(req.user)) {
     return res.status(403).json({ error: '需要管理员权限' });
   }
+  next();
+}
+
+function unitAdminRequired(req, res, next) {
+  if (!authService.isUnitAdmin(req.user)) return res.status(403).json({ error: '需要单位管理员权限' });
   next();
 }
 
@@ -44,8 +49,8 @@ function optionalAuth(req, res, next) {
   if (token) {
     try {
       const decoded = verifyToken(token);
-      const user = db.findOne('users', u => u.id === decoded.userId && u.is_active === 1);
-      if (user) req.user = user;
+      const user = db.findOne('users', u => u.id === decoded.userId);
+      if (authService.getAccessStatus(user).valid) req.user = user;
     } catch {
       // 忽略无效 token，继续作为匿名请求
     }
@@ -53,4 +58,4 @@ function optionalAuth(req, res, next) {
   next();
 }
 
-module.exports = { authRequired, adminRequired, optionalAuth };
+module.exports = { authRequired, adminRequired, unitAdminRequired, optionalAuth };

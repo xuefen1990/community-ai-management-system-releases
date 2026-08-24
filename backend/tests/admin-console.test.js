@@ -39,7 +39,7 @@ async function request(url, pathName, { token, method = 'GET', body } = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-test('管理员可查看前端注册账号、重置密码并安全管理模型', async (t) => {
+test('平台审核单位管理员，并管理成员、有效期和模型', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-backend-'));
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
@@ -63,13 +63,38 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   });
   await waitForHealth(url);
 
-  const registered = await request(url, '/auth/register', { method: 'POST', body: { phone: '139 0013 9000', password: 'secret88', machineId: 'mac-test-001' } });
-  assert.equal(registered.status, 201);
-  assert.equal(registered.body.user.phone, '13900139000');
-
   const adminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13800000000', password: 'admin123456' } });
   assert.equal(adminLogin.status, 200);
   const adminToken = adminLogin.body.token;
+
+  const submitted = await request(url, '/auth/unit-admin-applications', { method: 'POST', body: {
+    phone: '139 0013 9000', password: 'secret88', name: '李主任', organizationName: '示范社区', region: '示范街道', machineId: 'mac-test-001',
+  } });
+  assert.equal(submitted.status, 201);
+  assert.equal(submitted.body.application.status, 'pending');
+
+  const applications = await request(url, '/auth/unit-admin-applications?status=pending', { token: adminToken });
+  assert.equal(applications.status, 200);
+  assert.equal(applications.body.applications.length, 1);
+  const approved = await request(url, `/auth/unit-admin-applications/${submitted.body.application.id}/review`, { token: adminToken, method: 'POST', body: { approve: true, planType: 'expires', planExpiresAt: '2026-12-31T23:59:59.000Z' } });
+  assert.equal(approved.status, 200);
+  assert.equal(approved.body.user.role, 'unit_admin');
+  const registered = { body: { user: approved.body.user } };
+
+  const unitAdminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13900139000', password: 'secret88' } });
+  assert.equal(unitAdminLogin.status, 200);
+  const invite = await request(url, '/auth/unit/invites', { token: unitAdminLogin.body.token, method: 'POST', body: { maxUses: 3 } });
+  assert.equal(invite.status, 201);
+  assert.match(invite.body.code, /^CJ-/u);
+  const memberSubmitted = await request(url, '/auth/member-applications', { method: 'POST', body: { inviteCode: invite.body.code, phone: '13700137000', password: 'member88', name: '张成员' } });
+  assert.equal(memberSubmitted.status, 201);
+  const pendingMemberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
+  assert.equal(pendingMemberLogin.status, 403);
+  const reviewedMember = await request(url, `/auth/unit/member-applications/${memberSubmitted.body.application.id}/review`, { token: unitAdminLogin.body.token, method: 'POST', body: { approve: true, permissions: { personnel: ['view', 'create'], party: ['view'] } } });
+  assert.equal(reviewedMember.status, 200);
+  assert.deepEqual(reviewedMember.body.user.permissions.personnel, ['view', 'create']);
+  const memberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
+  assert.equal(memberLogin.status, 200);
 
   const installerPath = path.join(directory, 'community-ai-management-system-0.3.1-arm64.dmg');
   await fs.writeFile(installerPath, 'test installer');
@@ -148,6 +173,11 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   assert.equal(entitlement.body.plan, 'expires');
   assert.equal(entitlement.body.expiresAt, expiresAt);
 
+  const adminDisabled = await request(url, `/auth/users/${registered.body.user.id}/entitlement`, { token: adminToken, method: 'PUT', body: { isActive: false } });
+  assert.equal(adminDisabled.status, 200);
+  const memberAfterAdminDisabled = await request(url, '/auth/entitlement', { token: memberLogin.body.token });
+  assert.equal(memberAfterAdminDisabled.status, 401);
+
   const provider = await request(url, '/ai/providers', { token: adminToken, method: 'POST', body: { name: '测试模型', providerType: 'openai-compatible', baseUrl: 'https://example.com/v1', apiKey: 'secret-api-key', defaultModel: 'demo-chat', availableModels: ['demo-chat'] } });
   assert.equal(provider.status, 201);
   assert.equal(Object.hasOwn(provider.body.provider, 'apiKey'), false);
@@ -155,7 +185,7 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
 
   const overview = await request(url, '/admin/overview', { token: adminToken });
   assert.equal(overview.status, 200);
-  assert.equal(overview.body.metrics.registeredUsers, 1);
+  assert.equal(overview.body.metrics.registeredUsers, 2);
   assert.equal(overview.body.metrics.activeProviders, 1);
   const staticPage = await fetch(`${url}/admin/`);
   assert.equal(staticPage.status, 200);
