@@ -15,6 +15,7 @@ const { OpenAiCompatibleClient } = require('./openai-compatible-client');
 const { LocalAiRuntime } = require('./local-ai-runtime');
 const { AiRouter } = require('./ai-router');
 const { JsonDatabaseStore } = require('./database-store');
+const { RemoteDatabaseStore } = require('./remote-database-store');
 const { DocumentDraftingService } = require('./document-drafting-service');
 const { WritingProfileService } = require('./writing-profile-service');
 const { DocumentExportService } = require('./document-export-service');
@@ -48,7 +49,8 @@ app.whenReady().then(() => {
   const onlineClient = new OpenAiCompatibleClient();
   const localAiRuntime = new LocalAiRuntime();
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient });
-  const databaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
+  const localDatabaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
+  const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore });
   const getCurrentAccount = async () => (await authService.getStatus()).account;
   const documentDraftingService = new DocumentDraftingService({ databaseStore, getCurrentAccount, aiRouter });
   const writingProfileService = new WritingProfileService({ databaseStore, getCurrentAccount });
