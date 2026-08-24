@@ -115,6 +115,13 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.registerLocalAccount, async () => { throw new Error('请使用单位管理员申请或加入单位入口注册'); });
     handle(INVOKE_CHANNELS.submitUnitAdminApplication, async (_event, value) => authService.submitUnitAdminApplication(value));
     handle(INVOKE_CHANNELS.submitMemberApplication, async (_event, value) => authService.submitMemberApplication(value));
+    handle(INVOKE_CHANNELS.listUnitMemberApplications, async () => authService.listMemberApplications());
+    handle(INVOKE_CHANNELS.reviewUnitMemberApplication, async (_event, value) => authService.reviewMemberApplication(value));
+    handle(INVOKE_CHANNELS.listUnitMembers, async () => authService.listUnitMembers());
+    handle(INVOKE_CHANNELS.updateUnitMemberPermissions, async (_event, value) => authService.updateMemberPermissions(value));
+    handle(INVOKE_CHANNELS.listUnitInvites, async () => authService.listInvites());
+    handle(INVOKE_CHANNELS.createUnitInvite, async (_event, value) => authService.createInvite(value));
+    handle(INVOKE_CHANNELS.deactivateUnitInvite, async (_event, value) => authService.deactivateInvite(value));
     handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());

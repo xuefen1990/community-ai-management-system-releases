@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 82);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 89);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 4);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -15,6 +15,13 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.registerLocalAccount, 'register-local-account');
   assert.equal(INVOKE_CHANNELS.submitUnitAdminApplication, 'submit-unit-admin-application');
   assert.equal(INVOKE_CHANNELS.submitMemberApplication, 'submit-member-application');
+  assert.equal(INVOKE_CHANNELS.listUnitMemberApplications, 'list-unit-member-applications');
+  assert.equal(INVOKE_CHANNELS.reviewUnitMemberApplication, 'review-unit-member-application');
+  assert.equal(INVOKE_CHANNELS.listUnitMembers, 'list-unit-members');
+  assert.equal(INVOKE_CHANNELS.updateUnitMemberPermissions, 'update-unit-member-permissions');
+  assert.equal(INVOKE_CHANNELS.listUnitInvites, 'list-unit-invites');
+  assert.equal(INVOKE_CHANNELS.createUnitInvite, 'create-unit-invite');
+  assert.equal(INVOKE_CHANNELS.deactivateUnitInvite, 'deactivate-unit-invite');
   assert.equal(INVOKE_CHANNELS.getLoginPrefill, 'get-login-prefill');
   assert.equal(INVOKE_CHANNELS.getStartupEntitlement, 'get-startup-entitlement');
   assert.equal(INVOKE_CHANNELS.clearLoginPrefill, 'clear-login-prefill');

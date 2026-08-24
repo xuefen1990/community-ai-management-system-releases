@@ -115,6 +115,14 @@ class RemoteAuthService {
     return this.request('/auth/member-applications', { method: 'POST', body: { inviteCode, phone: normalizedPhone, password, name, machineId: this.machineId }, token: null });
   }
 
+  async listMemberApplications() { return this.request('/auth/unit/member-applications'); }
+  async reviewMemberApplication({ applicationId, approve, reviewNote, permissions }) { return this.request(`/auth/unit/member-applications/${applicationId}/review`, { method: 'POST', body: { approve, reviewNote, permissions } }); }
+  async listUnitMembers() { return this.request('/auth/unit/members'); }
+  async updateMemberPermissions({ memberId, permissions }) { return this.request(`/auth/unit/members/${memberId}/permissions`, { method: 'PUT', body: { permissions } }); }
+  async listInvites() { return this.request('/auth/unit/invites'); }
+  async createInvite({ expiresAt, maxUses }) { return this.request('/auth/unit/invites', { method: 'POST', body: { expiresAt, maxUses } }); }
+  async deactivateInvite({ inviteId }) { return this.request(`/auth/unit/invites/${inviteId}`, { method: 'DELETE' }); }
+
   async login({ phone, password, remember = true }) {
     const normalizedPhone = normalizePhone(phone);
     if (!normalizedPhone || typeof password !== 'string') throw new Error('请输入手机号和密码');
