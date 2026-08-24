@@ -19,6 +19,10 @@ test('sidebar footer compacts four actions into a two-row layout', async () => {
   assert.match(html, /id="logoutBtn"[^>]*title="安全退出系统"/u);
   assert.match(html, /数据安全承诺 · 使用须知/u);
   assert.match(localAuthUi, /function configureCompactSidebarFooter\(\)/u);
+  assert.match(localAuthUi, /function refreshEntitlementFromServer\(\)/u);
+  assert.match(localAuthUi, /api\.getLocalAuthStatus\(\)/u);
+  assert.match(localAuthUi, /function openPrivacyPolicy\(\)/u);
+  assert.match(localAuthUi, /bindButton\('privacyPolicyBtn', openPrivacyPolicy\)/u);
   assert.match(localAuthUi, /privacyButton\.id = 'privacyPolicyBtn'/u);
   assert.match(localAuthUi, /primaryActions\.append\(refreshButton, logoutButton\)/u);
   assert.match(localAuthUi, /secondaryActions\.append\(privacyButton\)/u);

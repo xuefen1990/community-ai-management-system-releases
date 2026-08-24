@@ -8,6 +8,7 @@
   let startupTrialGuardTimer = null;
   let loginSubmission = null;
   let startupLoginGuardTimer = null;
+  let footerActionInFlight = false;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -187,10 +188,60 @@
   }
 
   async function logout() {
-    await api.logoutLocalAccount();
-    currentStatus = null;
-    showLoginScreen();
-    await hydrateLoginPrefill();
+    if (footerActionInFlight) return;
+    footerActionInFlight = true;
+    const button = document.getElementById('logoutBtn');
+    const normalMarkup = button?.innerHTML || '安全退出';
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '退出中';
+    }
+    try {
+      await api.logoutLocalAccount();
+      currentStatus = null;
+      showLoginScreen();
+      await hydrateLoginPrefill();
+      window.showToast?.('已安全退出，请手动登录后进入工作台', 'success');
+    } finally {
+      footerActionInFlight = false;
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = normalMarkup;
+      }
+    }
+  }
+
+  async function refreshEntitlementFromServer() {
+    if (footerActionInFlight) return;
+    footerActionInFlight = true;
+    const button = document.getElementById('syncTokenBtn');
+    const normalMarkup = button?.innerHTML || '刷新额度';
+    if (button) {
+      button.disabled = true;
+      button.innerHTML = '同步中';
+    }
+    try {
+      currentStatus = await api.getLocalAuthStatus();
+      if (!currentStatus.authenticated) throw new Error('请先登录账号后再刷新授权');
+      refreshLegacyAuthLabels(currentStatus);
+      window.showToast?.(`授权已同步：${formatEntitlement(currentStatus.entitlement)}`, 'success');
+      return currentStatus;
+    } catch (error) {
+      window.showToast?.(error.message || '授权同步失败，请检查网络后重试', 'error');
+      return null;
+    } finally {
+      footerActionInFlight = false;
+      if (button) {
+        button.disabled = false;
+        button.innerHTML = normalMarkup;
+      }
+    }
+  }
+
+  function openPrivacyPolicy() {
+    if (typeof window.showPrivacyAgreementModal === 'function') return window.showPrivacyAgreementModal();
+    window.showToast?.('数据安全承诺暂时不可用，请稍后重试', 'error');
+    return null;
   }
 
   function showLoginScreen() {
@@ -566,16 +617,13 @@
     window.submitLogin = submitLogin;
     window.submitRegister = submitRegister;
     window.handleLogout = logout;
-    window.forceSyncToken = async () => {
-      currentStatus = await api.getLocalAuthStatus();
-      if (currentStatus.account?.isOwner) return openAccountEntitlementModal();
-      return openActivationModal(currentStatus);
-    };
+    window.forceSyncToken = refreshEntitlementFromServer;
     bindButton('doLoginBtn', submitLogin);
     bindButton('doRegisterBtn', submitRegister);
     bindButton('logoutBtn', logout);
     bindButton('syncTokenBtn', window.forceSyncToken);
     configureCompactSidebarFooter();
+    bindButton('privacyPolicyBtn', openPrivacyPolicy);
     configureLoginActions();
     showLoginScreen();
     installStartupLoginGuard();
@@ -584,16 +632,12 @@
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';
     const syncButton = document.getElementById('syncTokenBtn');
-    if (syncButton) syncButton.title = '查看设备码或输入离线授权码';
+    if (syncButton) syncButton.title = '从后端同步最新授权额度和有效期';
 
     currentStatus = await api.getLocalAuthStatus();
     refreshLegacyAuthLabels(currentStatus);
     const machineCode = document.getElementById('forgot-machine-id');
     if (machineCode) machineCode.textContent = currentStatus.machineId;
-    if (syncButton && currentStatus.account?.isOwner) {
-      syncButton.title = '管理本机注册账号的使用期限';
-      syncButton.lastChild.textContent = ' 账号授权';
-    }
     installStartupLoginGuard();
     const privacyLink = document.querySelector('#panel-login a[onclick*="showPrivacyAgreementModal"]');
     if (privacyLink) {

@@ -69,7 +69,8 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
   form.set('channel', 'stable');
   form.set('releaseNotes', releaseNotes);
   form.set('githubReleaseUrl', githubReleaseUrl);
-  form.set('file', await openAsBlob(dmgPath, { type: 'application/x-apple-diskimage' }), githubInstallerName);
+  form.set('packageType', 'zip');
+  form.set('file', await openAsBlob(zipPath, { type: 'application/zip' }), path.basename(zipPath));
 
   const publishResponse = await fetch(new URL('/api/update/publish', backendUrl), {
     method: 'POST',
@@ -117,5 +118,5 @@ if (!skipGithub) {
 
 const githubReleaseUrl = run('gh', ['release', 'view', tag, '--json', 'url', '--jq', '.url', '--repo', 'xuefen1990/community-ai-management-system-releases'], { capture: true });
 const backendRelease = await publishToBackend({ releaseNotes: notes.trim(), githubReleaseUrl });
-const dmgStats = await stat(dmgPath);
-console.log(JSON.stringify({ version, githubReleaseUrl, backendVersion: backendRelease.latestVersion, dmgBytes: dmgStats.size }, null, 2));
+const zipStats = await stat(zipPath);
+console.log(JSON.stringify({ version, githubReleaseUrl, backendVersion: backendRelease.latestVersion, updateZipBytes: zipStats.size }, null, 2));

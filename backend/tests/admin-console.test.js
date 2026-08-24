@@ -94,6 +94,27 @@ test('管理员可查看前端注册账号、重置密码并安全管理模型',
   assert.equal(updateCheck.body.latestVersion, '0.3.1');
   assert.equal(updateCheck.body.githubReleaseUrl, 'https://github.com/example/releases/tag/v0.3.1');
 
+  const zipForm = new FormData();
+  zipForm.set('version', '0.3.2');
+  zipForm.set('platform', 'darwin-arm64');
+  zipForm.set('packageType', 'zip');
+  zipForm.set('file', new Blob(['zip update package']), 'community-ai-management-system-0.3.2-arm64.zip');
+  const zipPublished = await fetch(`${url}/api/update/publish`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${adminToken}` },
+    body: zipForm,
+  });
+  assert.equal(zipPublished.status, 201);
+  const inAppCheck = await request(url, '/update/check?version=0.3.1&platform=darwin-arm64');
+  assert.equal(inAppCheck.body.hasUpdate, true);
+  assert.equal(inAppCheck.body.packageType, 'zip');
+  assert.match(inAppCheck.body.fileSha512, /^[A-Za-z0-9+/]+=*$/u);
+  const electronManifest = await fetch(`${url}/api/update/electron/latest-mac.yml?platform=darwin-arm64`);
+  assert.equal(electronManifest.status, 200);
+  const electronManifestText = await electronManifest.text();
+  assert.match(electronManifestText, /version: 0\.3\.2/u);
+  assert.match(electronManifestText, /url: \.\.\/download\//u);
+
   const duplicateForm = new FormData();
   duplicateForm.set('version', '0.3.1');
   duplicateForm.set('platform', 'darwin-arm64');

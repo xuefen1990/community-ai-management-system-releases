@@ -17,6 +17,7 @@ test('update UI uses the preload bridge and waits for user confirmation before d
   assert.match(source, /installation-required/u);
   assert.match(source, /release-mismatch/u);
   assert.match(source, /backend-unavailable/u);
+  assert.match(source, /当前已是最新版本/u);
   assert.match(source, /拖入“应用程序”/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });

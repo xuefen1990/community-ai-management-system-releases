@@ -3,7 +3,7 @@
 const path = require('path');
 const fs = require('fs');
 const db = require('../database');
-const { sha256File } = require('../utils/crypto');
+const { sha256File, sha512FileBase64 } = require('../utils/crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
 
@@ -36,6 +36,8 @@ function sanitizeVersion(v) {
     fileName: v.file_name,
     fileSize: v.file_size,
     fileHash: v.file_hash,
+    fileSha512: v.file_sha512 || null,
+    packageType: v.package_type || 'dmg',
     githubReleaseUrl: v.github_release_url || null,
     downloadCount: v.download_count,
     isActive: !!v.is_active,
@@ -57,9 +59,11 @@ function checkUpdate({ currentVersion, platform, channel }) {
 
   const latest = versions[0];
   const hasUpdate = compareVersions(latest.version, currentVersion) > 0;
+  const supportsInAppUpdate = latest.package_type === 'zip' && Boolean(latest.file_sha512);
 
   return {
-    hasUpdate,
+    hasUpdate: hasUpdate && supportsInAppUpdate,
+    hasNewerVersion: hasUpdate,
     latestVersion: latest.version,
     currentVersion,
     platform,
@@ -69,12 +73,14 @@ function checkUpdate({ currentVersion, platform, channel }) {
     fileName: latest.file_name,
     fileSize: latest.file_size,
     fileHash: latest.file_hash,
+    fileSha512: latest.file_sha512 || null,
+    packageType: latest.package_type || 'dmg',
     githubReleaseUrl: latest.github_release_url || null,
     publishedAt: latest.created_at,
   };
 }
 
-function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath, githubReleaseUrl }) {
+function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath, githubReleaseUrl, packageType }) {
   if (!version || !platform || !fileName || !filePath) {
     const err = new Error('version, platform, fileName, filePath 为必填');
     err.statusCode = 400;
@@ -82,6 +88,12 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
   }
 
   channel = channel || 'stable';
+  packageType = packageType || path.extname(fileName).slice(1).toLowerCase();
+  if (!['zip', 'dmg'].includes(packageType)) {
+    const err = new Error('应用更新包仅支持 ZIP 或 DMG 文件');
+    err.statusCode = 400;
+    throw err;
+  }
 
   const duplicate = db.findOne('versions', v =>
     v.version === version && v.platform === platform && v.channel === channel
@@ -100,6 +112,7 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
 
   const stat = fs.statSync(filePath);
   const hash = sha256File(filePath);
+  const sha512 = packageType === 'zip' ? sha512FileBase64(filePath) : '';
   const now = db.now();
   const id = db.genId();
 
@@ -118,6 +131,7 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
     release_notes: releaseNotes || '',
     file_name: destName, file_size: stat.size,
     file_hash: hash, download_count: 0,
+    file_sha512: sha512, package_type: packageType,
     github_release_url: githubReleaseUrl || '',
     is_active: 1, created_at: now,
   };
@@ -139,6 +153,31 @@ function getLatestVersion(platform, channel) {
     v.platform === platform && v.channel === channel && v.is_active === 1
   ).sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''));
   return sanitizeVersion(versions[0] || null);
+}
+
+function getLatestInAppVersion(platform, channel) {
+  platform = platform || 'darwin-arm64';
+  channel = channel || 'stable';
+  const versions = db.findAll('versions', v =>
+    v.platform === platform && v.channel === channel && v.is_active === 1 && v.package_type === 'zip' && v.file_sha512
+  ).sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''));
+  return versions[0] || null;
+}
+
+function getElectronManifest(platform, channel) {
+  const version = getLatestInAppVersion(platform, channel);
+  if (!version) return null;
+  return [
+    `version: ${version.version}`,
+    'files:',
+    `  - url: ../download/${version.id}`,
+    `    sha512: ${version.file_sha512}`,
+    `    size: ${version.file_size}`,
+    `path: ../download/${version.id}`,
+    `sha512: ${version.file_sha512}`,
+    `releaseDate: ${version.created_at}`,
+    '',
+  ].join('\n');
 }
 
 function listVersions({ platform, channel }) {
@@ -182,6 +221,7 @@ module.exports = {
   publishVersion,
   getVersionById,
   getLatestVersion,
+  getElectronManifest,
   listVersions,
   deactivateVersion,
   incrementDownloadCount,

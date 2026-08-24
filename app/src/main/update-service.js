@@ -59,7 +59,7 @@ class UpdateService {
     this.updater.on('checking-for-update', () => this.emit('checking'));
     this.updater.on('update-available', (info) => {
       if (this.backendRelease && compareVersions(info.version, this.backendRelease.latestVersion) < 0) {
-        this.emit('release-mismatch', { backendVersion: this.backendRelease.latestVersion, githubVersion: info.version });
+        this.emit('release-mismatch', { backendVersion: this.backendRelease.latestVersion, downloadVersion: info.version });
         return;
       }
       this.emit('available', {
@@ -70,7 +70,7 @@ class UpdateService {
     });
     this.updater.on('update-not-available', (info) => {
       if (this.backendRelease?.hasUpdate) {
-        this.emit('release-mismatch', { backendVersion: this.backendRelease.latestVersion, githubVersion: info?.version || null });
+        this.emit('release-mismatch', { backendVersion: this.backendRelease.latestVersion, downloadVersion: info?.version || null });
         return;
       }
       this.emit('not-available', { version: info?.version || null });
@@ -110,6 +110,13 @@ class UpdateService {
       if (!this.backendRelease.hasUpdate) {
         this.emit('not-available', { version: this.backendRelease.latestVersion || this.currentVersion(), source: 'backend' });
         return { ok: true, hasUpdate: false, source: 'backend' };
+      }
+      try {
+        const feedUrl = await this.backendUpdateClient.getElectronFeedUrl();
+        this.updater.setFeedURL({ provider: 'generic', url: feedUrl });
+      } catch (error) {
+        this.emit('backend-unavailable', { message: error?.message || '更新服务器暂时不可用' });
+        return { ok: false, backendUnavailable: true, error: error?.message || '更新服务器暂时不可用' };
       }
     }
 

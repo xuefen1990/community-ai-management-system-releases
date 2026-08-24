@@ -76,30 +76,36 @@ test('only prompts when the backend record and GitHub release are synchronized',
   const updater = makeUpdater();
   const statuses = [];
   updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.1', releaseNotes: 'GitHub notes' });
+  updater.setFeedURL = (value) => { updater.feedUrl = value; };
   const service = new UpdateService({
     updater,
     isPackaged: () => true,
     currentVersion: () => '0.3.0',
-    backendUpdateClient: { check: async () => ({ hasUpdate: true, latestVersion: '0.3.1', releaseNotes: '同步发行说明' }) },
+    backendUpdateClient: {
+      check: async () => ({ hasUpdate: true, latestVersion: '0.3.1', releaseNotes: '同步发行说明' }),
+      getElectronFeedUrl: async () => 'http://backend.test/api/update/electron/',
+    },
     sendStatus: (status) => statuses.push(status),
   });
 
   assert.deepEqual(await service.check(), { ok: true });
   assert.deepEqual(statuses.at(-1), { type: 'available', version: '0.3.1', releaseNotes: '同步发行说明', releaseDate: null });
+  assert.deepEqual(updater.feedUrl, { provider: 'generic', url: 'http://backend.test/api/update/electron/' });
 });
 
 test('does not download a GitHub release older than the backend record', async () => {
   const updater = makeUpdater();
   const statuses = [];
   updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.0' });
+  updater.setFeedURL = () => {};
   const service = new UpdateService({
     updater,
     isPackaged: () => true,
     currentVersion: () => '0.2.9',
-    backendUpdateClient: { check: async () => ({ hasUpdate: true, latestVersion: '0.3.1' }) },
+    backendUpdateClient: { check: async () => ({ hasUpdate: true, latestVersion: '0.3.1' }), getElectronFeedUrl: async () => 'http://backend.test/api/update/electron/' },
     sendStatus: (status) => statuses.push(status),
   });
 
   assert.deepEqual(await service.check(), { ok: true });
-  assert.deepEqual(statuses.at(-1), { type: 'release-mismatch', backendVersion: '0.3.1', githubVersion: '0.3.0' });
+  assert.deepEqual(statuses.at(-1), { type: 'release-mismatch', backendVersion: '0.3.1', downloadVersion: '0.3.0' });
 });

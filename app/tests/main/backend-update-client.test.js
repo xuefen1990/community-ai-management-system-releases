@@ -21,3 +21,12 @@ test('backend update client passes version, platform and channel to the configur
   assert.equal(requested.searchParams.get('platform'), 'darwin-arm64');
   assert.equal(requested.searchParams.get('channel'), 'stable');
 });
+
+test('backend update client provides a generic Electron feed URL on the same backend', async () => {
+  const client = new BackendUpdateClient({
+    getServerConfig: async () => ({ baseUrl: 'http://updates.example.test:3000' }),
+    fetchImpl: async () => ({ ok: true, json: async () => ({}) }),
+  });
+
+  assert.equal(await client.getElectronFeedUrl(), 'http://updates.example.test:3000/api/update/electron/');
+});

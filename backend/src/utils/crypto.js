@@ -63,6 +63,12 @@ function sha256File(filePath) {
   return hash.digest('hex');
 }
 
+function sha512FileBase64(filePath) {
+  const hash = crypto.createHash('sha512');
+  hash.update(require('fs').readFileSync(filePath));
+  return hash.digest('base64');
+}
+
 function randomCode(prefix = '') {
   return prefix + crypto.randomBytes(16).toString('hex');
 }
@@ -75,5 +81,6 @@ module.exports = {
   encrypt,
   decrypt,
   sha256File,
+  sha512FileBase64,
   randomCode,
 };

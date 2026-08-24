@@ -128,6 +128,7 @@
       else if (result.installRequired) showToast(result.error || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
       else if (result.backendUnavailable) showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
       else if (!result.ok) showToast(result.error || '检查更新失败', 'error');
+      else if (!result.hasUpdate) showToast('当前已是最新版本', 'success');
       else setTimeout(() => { if (button.textContent === '检查中') button.textContent = previousText; }, 1200);
       button.disabled = false;
     });

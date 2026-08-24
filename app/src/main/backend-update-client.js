@@ -33,6 +33,11 @@ class BackendUpdateClient {
       timeout.clear();
     }
   }
+
+  async getElectronFeedUrl() {
+    const config = await this.getServerConfig();
+    return new URL('/api/update/electron/', config.baseUrl).toString();
+  }
 }
 
 module.exports = { BackendUpdateClient };

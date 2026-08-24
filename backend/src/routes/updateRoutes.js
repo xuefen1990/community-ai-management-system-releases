@@ -19,6 +19,14 @@ router.get('/check', (req, res, next) => {
   } catch (err) { next(err); }
 });
 
+router.get('/electron/latest-mac.yml', (req, res, next) => {
+  try {
+    const manifest = updateService.getElectronManifest(req.query.platform, req.query.channel);
+    if (!manifest) throw new ApiError(404, '暂无可用于应用内更新的版本');
+    res.type('text/yaml').send(manifest);
+  } catch (err) { next(err); }
+});
+
 // ===== 下载更新文件 =====
 router.get('/download/:id', (req, res, next) => {
   try {
@@ -72,13 +80,14 @@ const upload = require('multer')({
 router.post('/publish', authRequired, adminRequired, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) throw new ApiError(400, '请上传更新文件');
-    const { version, platform, channel, releaseNotes, githubReleaseUrl } = req.body;
+    const { version, platform, channel, releaseNotes, githubReleaseUrl, packageType } = req.body;
     const version_record = updateService.publishVersion({
       version,
       platform: platform || 'darwin-arm64',
       channel: channel || 'stable',
       releaseNotes,
       githubReleaseUrl,
+      packageType,
       fileName: req.file.originalname,
       filePath: req.file.path,
     });
