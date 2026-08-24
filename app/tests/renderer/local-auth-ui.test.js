@@ -90,6 +90,12 @@ test('personnel search safely filters imported and historical field variants in 
   assert.doesNotMatch(search, /require\(|ipcRenderer|node:/u);
 });
 
+test('party stage statistic cards are loaded through the readable local auth adapter', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
+  assert.match(source, /party-stage-stat-cards\.js/u);
+  assert.match(source, /data-party-stage-stat-cards/u);
+});
+
 test('personnel search refreshes matching results and resets to the first page', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-search.js'), 'utf8');
   const listeners = {};

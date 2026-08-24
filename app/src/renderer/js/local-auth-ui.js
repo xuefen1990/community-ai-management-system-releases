@@ -712,6 +712,15 @@ if (!document.querySelector('script[data-personnel-search]')) {
   document.head.appendChild(personnelSearchScript);
 }
 
+// Keep the party stage statistics readable and independently testable from
+// the legacy party-management bundle.
+if (!document.querySelector('script[data-party-stage-stat-cards]')) {
+  const partyStageStatCardsScript = document.createElement('script');
+  partyStageStatCardsScript.src = 'js/party-stage-stat-cards.js?v=1.0.0';
+  partyStageStatCardsScript.dataset.partyStageStatCards = 'true';
+  document.head.appendChild(partyStageStatCardsScript);
+}
+
 // Household 360° cards must be tied to the exact household number, including
 // leading zeroes, rather than a name or a normalized numeric value.
 if (!document.querySelector('script[data-household-membership]')) {
