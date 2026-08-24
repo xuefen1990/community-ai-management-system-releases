@@ -38,6 +38,7 @@ test('merges only non-empty fields and unions special identity labels', () => {
   assert.equal(person.phone, '13800000000');
   assert.equal(person.address, '幸福路 1 号');
   assert.equal(person.idCard, '11010519491231002X');
+  assert.equal(person.id_card, '11010519491231002X');
   assert.deepEqual(person.specialIdentities, ['党员']);
   assert.deepEqual(person.tags, ['低保户', '党员']);
   assert.equal(person.is_party_member, true);

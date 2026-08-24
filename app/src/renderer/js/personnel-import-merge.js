@@ -55,7 +55,13 @@
     Object.entries(incoming || {}).forEach(([key, value]) => {
       const cleaned = text(value);
       if (!cleaned) return;
-      person[key] = key === 'idCard' ? normalizedCard : cleaned;
+      if (key === 'idCard') {
+        // Keep the modern import field and the legacy renderer field in sync.
+        person.idCard = normalizedCard;
+        person.id_card = normalizedCard;
+        return;
+      }
+      person[key] = cleaned;
     });
 
     const currentIdentities = asLabels(person.specialIdentities);

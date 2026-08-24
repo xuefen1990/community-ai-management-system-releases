@@ -720,3 +720,12 @@ if (!document.querySelector('script[data-household-membership]')) {
   householdMembershipScript.dataset.householdMembership = 'true';
   document.head.appendChild(householdMembershipScript);
 }
+
+// Bridge the readable import schema with the legacy household renderer, then
+// route every household click through its exact household number.
+if (!document.querySelector('script[data-personnel-data-compatibility]')) {
+  const personnelCompatibilityScript = document.createElement('script');
+  personnelCompatibilityScript.src = 'js/personnel-data-compatibility.js?v=1.0.0';
+  personnelCompatibilityScript.dataset.personnelDataCompatibility = 'true';
+  document.head.appendChild(personnelCompatibilityScript);
+}
