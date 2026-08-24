@@ -700,3 +700,12 @@ if (!document.querySelector('script[data-personnel-search]')) {
   personnelSearchScript.dataset.personnelSearch = 'true';
   document.head.appendChild(personnelSearchScript);
 }
+
+// Household 360° cards must be tied to the exact household number, including
+// leading zeroes, rather than a name or a normalized numeric value.
+if (!document.querySelector('script[data-household-membership]')) {
+  const householdMembershipScript = document.createElement('script');
+  householdMembershipScript.src = 'js/household-membership.js?v=1.0.0';
+  householdMembershipScript.dataset.householdMembership = 'true';
+  document.head.appendChild(householdMembershipScript);
+}

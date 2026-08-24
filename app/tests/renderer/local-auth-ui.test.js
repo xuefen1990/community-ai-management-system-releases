@@ -167,6 +167,36 @@ test('personnel filters combine group, identity and gender selections', async ()
   assert.deepEqual(rendered.map((person) => person.name), ['薛锋']);
 });
 
+test('household membership uses the complete household number as its only association key', async () => {
+  const [adapter, membership] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'household-membership.js'), 'utf8'),
+  ]);
+  assert.match(adapter, /household-membership\.js/u);
+  assert.match(membership, /person\?\.household_id\) === target/u);
+  assert.doesNotMatch(membership, /replace\([^)]*\^0\+/u);
+
+  const context = {
+    dbState: { personnel: [
+      { name: '户主甲', household_id: '00123', relation_to_head: '户主' },
+      { name: '成员甲', household_id: '00123', relation_to_head: '子' },
+      { name: '另一户户主', household_id: '123', relation_to_head: '户主' },
+      { name: '已注销人员', household_id: '00123', registry_status: '已注销' },
+    ] },
+    window: {},
+  };
+  context.window = context;
+  vm.runInNewContext(membership, context);
+  assert.deepEqual(
+    context.getHouseholdMembersById('00123').map((person) => person.name),
+    ['户主甲', '成员甲'],
+  );
+  assert.deepEqual(
+    context.getHouseholdMembersById('123').map((person) => person.name),
+    ['另一户户主'],
+  );
+});
+
 test('startup remains on the login screen with compact manual login actions', async () => {
   const [source, style] = await Promise.all([
     fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
