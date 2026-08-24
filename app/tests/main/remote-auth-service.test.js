@@ -8,7 +8,7 @@ function response(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
 }
 
-test('远程注册写入后端并在本地只保留会话资料', async () => {
+test('单位管理员申请只提交后端，不创建本地会话', async () => {
   let state = { version: 2, accounts: [], lastLoginPhone: '', rememberedAccountId: null };
   const requests = [];
   const service = new RemoteAuthService({
@@ -18,19 +18,16 @@ test('远程注册写入后端并在本地只保留会话资料', async () => {
     rememberedLoginStore: { save: async () => ({ saved: true }), clear: async () => ({}) },
     fetchImpl: async (url, options) => {
       requests.push({ url, options });
-      if (url.endsWith('/api/auth/register')) return response(201, { token: 'jwt-token', user: { id: 'user-1', phone: '13900139000', createdAt: '2026-08-21T00:00:00.000Z' } });
-      if (url.endsWith('/api/auth/entitlement')) return response(200, { valid: true, plan: 'trial', expiresAt: '2026-09-20T00:00:00.000Z' });
+      if (url.endsWith('/api/auth/unit-admin-applications')) return response(201, { application: { id: 'application-1', status: 'pending' } });
       throw new Error(`unexpected request: ${url}`);
     },
   });
 
-  const status = await service.register({ phone: '139 0013 9000', password: 'secret88' });
-  assert.equal(status.authenticated, true);
-  assert.equal(status.account.phone, '13900139000');
-  assert.equal(status.entitlement.type, 'trial');
-  assert.equal(requests[0].url, 'https://backend.example.com/api/auth/register');
-  assert.deepEqual(JSON.parse(requests[0].options.body), { phone: '13900139000', password: 'secret88', machineId: 'mac-test-001' });
-  assert.equal(state.remoteAccount.id, 'user-1');
+  const result = await service.submitUnitAdminApplication({ phone: '139 0013 9000', password: 'secret88', name: '李主任', organizationName: '示范社区', region: '示范街道' });
+  assert.equal(result.application.status, 'pending');
+  assert.equal(requests[0].url, 'https://backend.example.com/api/auth/unit-admin-applications');
+  assert.deepEqual(JSON.parse(requests[0].options.body), { phone: '13900139000', password: 'secret88', name: '李主任', organizationName: '示范社区', region: '示范街道', machineId: 'mac-test-001' });
+  assert.equal(state.remoteAccount, undefined);
   assert.equal(Object.hasOwn(state, 'token'), false);
 });
 

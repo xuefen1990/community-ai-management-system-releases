@@ -112,7 +112,9 @@ function registerCompatibilityHandlers({
     ? localAiRuntime.getStatus()
     : ({ running: false }));
   if (authService) {
-    handle(INVOKE_CHANNELS.registerLocalAccount, async (_event, value) => authService.register(value));
+    handle(INVOKE_CHANNELS.registerLocalAccount, async () => { throw new Error('请使用单位管理员申请或加入单位入口注册'); });
+    handle(INVOKE_CHANNELS.submitUnitAdminApplication, async (_event, value) => authService.submitUnitAdminApplication(value));
+    handle(INVOKE_CHANNELS.submitMemberApplication, async (_event, value) => authService.submitMemberApplication(value));
     handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());

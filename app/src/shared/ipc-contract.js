@@ -39,6 +39,8 @@ const INVOKE_CHANNELS = Object.freeze({
   appendAiLog: 'append-ai-log',
   exportAiLog: 'export-ai-log',
   registerLocalAccount: 'register-local-account',
+  submitUnitAdminApplication: 'submit-unit-admin-application',
+  submitMemberApplication: 'submit-member-application',
   loginLocalAccount: 'login-local-account',
   logoutLocalAccount: 'logout-local-account',
   getLocalAuthStatus: 'get-local-auth-status',

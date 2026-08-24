@@ -103,11 +103,16 @@ class RemoteAuthService {
     return payload;
   }
 
-  async register({ phone, password, remember = true }) {
+  async register() { throw new Error('请使用单位管理员申请或加入单位入口注册'); }
+
+  async submitUnitAdminApplication({ phone, password, name, organizationName, region }) {
     const normalizedPhone = validateCredentials(phone, password);
-    const result = await this.request('/auth/register', { method: 'POST', body: { phone: normalizedPhone, password, machineId: this.machineId }, token: null });
-    await this.beginSession(result, { password, remember });
-    return this.getStatus();
+    return this.request('/auth/unit-admin-applications', { method: 'POST', body: { phone: normalizedPhone, password, name, organizationName, region, machineId: this.machineId }, token: null });
+  }
+
+  async submitMemberApplication({ inviteCode, phone, password, name }) {
+    const normalizedPhone = validateCredentials(phone, password);
+    return this.request('/auth/member-applications', { method: 'POST', body: { inviteCode, phone: normalizedPhone, password, name, machineId: this.machineId }, token: null });
   }
 
   async login({ phone, password, remember = true }) {
@@ -149,6 +154,10 @@ class RemoteAuthService {
       account: this.session ? {
         id: this.session.user.id,
         phone: this.session.user.phone,
+        name: this.session.user.name,
+        role: this.session.user.role,
+        organization: this.session.user.organization || null,
+        permissions: this.session.user.permissions || {},
         createdAt: this.session.user.createdAt,
         isOwner: false,
       } : null,

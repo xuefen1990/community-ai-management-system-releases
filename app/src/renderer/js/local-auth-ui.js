@@ -171,20 +171,33 @@
 
   async function submitRegister() {
     setError('reg');
+    const kind = document.querySelector('input[name="application-kind"]:checked')?.value || 'unit-admin';
     const phone = document.getElementById('reg-phone')?.value || '';
     const password = document.getElementById('reg-password')?.value || '';
-    if (password !== (document.getElementById('reg-password-confirm')?.value || '')) {
-      setError('reg', '两次输入的密码不一致');
-      return;
-    }
-    setLoading('doRegisterBtn', true, '注册并开启 30 天免费试用');
+    const name = document.getElementById('reg-name')?.value || '';
+    if (password !== (document.getElementById('reg-password-confirm')?.value || '')) return setError('reg', '两次输入的密码不一致');
+    setLoading('doRegisterBtn', true, '提交申请');
     try {
-      await enterDashboard(await api.registerLocalAccount({ phone, password, remember: true }));
-    } catch (error) {
-      setError('reg', error.message || '注册失败');
-    } finally {
-      setLoading('doRegisterBtn', false, '注册并开启 30 天免费试用');
-    }
+      if (kind === 'unit-admin') {
+        await api.submitUnitAdminApplication({ phone, password, name, organizationName: document.getElementById('reg-organization-name')?.value || '', region: document.getElementById('reg-region')?.value || '' });
+        setError('reg', '申请已提交，等待平台审核后即可登录。');
+      } else {
+        await api.submitMemberApplication({ phone, password, name, inviteCode: document.getElementById('reg-invite-code')?.value || '' });
+        setError('reg', '加入申请已提交，等待单位管理员审核。');
+      }
+    } catch (error) { setError('reg', error.message || '提交申请失败'); }
+    finally { setLoading('doRegisterBtn', false, '提交申请'); }
+  }
+
+  function configureApplicationPanel() {
+    const panel = document.getElementById('panel-register');
+    if (!panel || panel.dataset.unitApplications) return;
+    panel.dataset.unitApplications = 'true';
+    panel.innerHTML = `<div class="login-header"><div class="login-logo-container"><img src="logo.png" alt="Logo" style="width:60px;height:60px;object-fit:contain;"></div><h1>开户注册申请</h1><p class="subtitle">选择申请单位管理员，或通过邀请码加入单位</p></div><div class="login-form"><div class="input-group"><label><input type="radio" name="application-kind" value="unit-admin" checked> 申请成为单位管理员</label><label style="margin-left:12px"><input type="radio" name="application-kind" value="member"> 申请加入单位</label></div><div class="input-group"><label for="reg-name">姓名</label><input id="reg-name" type="text" placeholder="请输入真实姓名"></div><div class="input-group"><label for="reg-phone">手机号</label><input id="reg-phone" type="text" placeholder="请输入手机号"></div><div class="input-group"><label for="reg-password">密码</label><input id="reg-password" type="password" placeholder="至少 6 位"></div><div class="input-group"><label for="reg-password-confirm">确认密码</label><input id="reg-password-confirm" type="password" placeholder="再次输入密码"></div><div data-unit-admin-fields><div class="input-group"><label for="reg-organization-name">村居/社区名称</label><input id="reg-organization-name" type="text" placeholder="例如：陆庄社区"></div><div class="input-group"><label for="reg-region">所在地区</label><input id="reg-region" type="text" placeholder="例如：晓店街道"></div></div><div class="input-group hidden" data-member-fields><label for="reg-invite-code">邀请码</label><input id="reg-invite-code" type="text" placeholder="扫描二维码后自动填入，或手工输入"></div><div id="regErrorContainer" class="login-error" style="visibility:hidden"><span id="regErrorText"></span></div><button id="doRegisterBtn" type="button" class="btn btn-primary"><span>提交申请</span></button><button id="backToLoginBtn" type="button" class="btn btn-outline" style="margin-top:10px">返回登录</button></div>`;
+    const updateKind = () => { const member = panel.querySelector('input[name="application-kind"]:checked')?.value === 'member'; panel.querySelector('[data-unit-admin-fields]').classList.toggle('hidden', member); panel.querySelector('[data-member-fields]').classList.toggle('hidden', !member); };
+    panel.querySelectorAll('input[name="application-kind"]').forEach(input => input.addEventListener('change', updateKind));
+    panel.querySelector('#backToLoginBtn').addEventListener('click', () => forceLoginPanel());
+    bindButton('doRegisterBtn', submitRegister);
   }
 
   async function logout() {
@@ -623,6 +636,7 @@
     bindButton('logoutBtn', logout);
     bindButton('syncTokenBtn', window.forceSyncToken);
     configureCompactSidebarFooter();
+    configureApplicationPanel();
     bindButton('privacyPolicyBtn', openPrivacyPolicy);
     configureLoginActions();
     showLoginScreen();
