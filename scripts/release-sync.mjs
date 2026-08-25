@@ -45,13 +45,8 @@ async function requireFile(filePath, label) {
   }
 }
 
-function requireEnvironment() {
-  const missing = [
-    ['COMMUNITY_AI_BACKEND_URL', backendUrl],
-    ['COMMUNITY_AI_BACKEND_ADMIN_PHONE', adminPhone],
-    ['COMMUNITY_AI_BACKEND_ADMIN_PASSWORD', adminPassword],
-  ].filter(([, value]) => !value).map(([name]) => name);
-  if (missing.length) throw new Error(`缺少发布配置：${missing.join('、')}`);
+function hasBackendPublishConfig() {
+  return Boolean(backendUrl && adminPhone && adminPassword);
 }
 
 async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
@@ -92,7 +87,6 @@ async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
   return verified;
 }
 
-requireEnvironment();
 if (process.env.GITHUB_REF_NAME && process.env.GITHUB_REF_NAME !== tag) {
   throw new Error(`发布标签 ${process.env.GITHUB_REF_NAME} 与应用版本 ${version} 不一致，应为 ${tag}`);
 }
@@ -123,6 +117,15 @@ if (!skipGithub) {
 }
 
 const githubReleaseUrl = run('gh', ['release', 'view', tag, '--json', 'url', '--jq', '.url', '--repo', 'xuefen1990/community-ai-management-system-releases'], { capture: true });
-const backendRelease = await publishToBackend({ releaseNotes: notes.trim(), githubReleaseUrl });
+let backendRelease = null;
+if (hasBackendPublishConfig()) {
+  backendRelease = await publishToBackend({ releaseNotes: notes.trim(), githubReleaseUrl });
+}
 const zipStats = await stat(zipPath);
-console.log(JSON.stringify({ version, githubReleaseUrl, backendVersion: backendRelease.latestVersion, updateZipBytes: zipStats.size }, null, 2));
+console.log(JSON.stringify({
+  version,
+  githubReleaseUrl,
+  backendVersion: backendRelease?.latestVersion || null,
+  backendSynced: Boolean(backendRelease),
+  updateZipBytes: zipStats.size,
+}, null, 2));

@@ -44,3 +44,21 @@ test('credential verification is non-interactive so a new window never triggers 
   assert.match(source, /git', \['ls-remote', '--exit-code', 'origin', 'HEAD'\]/);
   assert.match(source, /GITHUB_TOKEN/);
 });
+
+test('release sync publishes GitHub assets even when backend configuration is absent', async () => {
+  const source = await readFile(path.join(projectRoot, 'scripts', 'release-sync.mjs'), 'utf8');
+  assert.match(source, /function hasBackendPublishConfig\(\)/u);
+  assert.match(source, /if \(hasBackendPublishConfig\(\)\)/u);
+  assert.match(source, /backendSynced: Boolean\(backendRelease\)/u);
+});
+
+test('local update sync downloads the release zip and publishes it to the configured backend', async () => {
+  const source = await readFile(path.join(projectRoot, 'scripts', 'sync-local-update.mjs'), 'utf8');
+  const manifest = JSON.parse(await readFile(path.join(projectRoot, 'app', 'package.json'), 'utf8'));
+  assert.match(source, /'release', 'download'/u);
+  assert.match(source, /\/api\/auth\/login/u);
+  assert.match(source, /\/api\/update\/publish/u);
+  assert.match(source, /COMMUNITY_AI_BACKEND_URL/u);
+  assert.match(source, /COMMUNITY_AI_BACKEND_ADMIN_PASSWORD/u);
+  assert.equal(manifest.scripts['release:sync-local'], 'node ../scripts/sync-local-update.mjs');
+});

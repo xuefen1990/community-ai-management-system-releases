@@ -64,6 +64,7 @@ const api = {
   reviewUnitMemberApplication: (value) => invoke('reviewUnitMemberApplication', value),
   listUnitMembers: () => invoke('listUnitMembers'),
   updateUnitMemberPermissions: (value) => invoke('updateUnitMemberPermissions', value),
+  updateUnitMemberStatus: (value) => invoke('updateUnitMemberStatus', value),
   listUnitInvites: () => invoke('listUnitInvites'),
   createUnitInvite: (value) => invoke('createUnitInvite', value),
   deactivateUnitInvite: (value) => invoke('deactivateUnitInvite', value),

@@ -102,6 +102,16 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   assert.equal(workspaceWrite.status, 200);
   const workspaceConflict = await request(url, '/unit/workspace/data', { token: memberLogin.body.token, method: 'PUT', body: { version: emptyWorkspace.body.version, data: {} } });
   assert.equal(workspaceConflict.status, 409);
+  const disabledMember = await request(url, `/auth/unit/members/${reviewedMember.body.user.id}/status`, { token: unitAdminLogin.body.token, method: 'PUT', body: { isActive: false } });
+  assert.equal(disabledMember.status, 200);
+  assert.equal(disabledMember.body.user.isActive, false);
+  const disabledLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
+  assert.equal(disabledLogin.status, 403);
+  const restoredMember = await request(url, `/auth/unit/members/${reviewedMember.body.user.id}/status`, { token: unitAdminLogin.body.token, method: 'PUT', body: { isActive: true } });
+  assert.equal(restoredMember.status, 200);
+  assert.equal(restoredMember.body.user.isActive, true);
+  const invalidMemberStatus = await request(url, `/auth/unit/members/${reviewedMember.body.user.id}/status`, { token: unitAdminLogin.body.token, method: 'PUT', body: { isActive: 'yes' } });
+  assert.equal(invalidMemberStatus.status, 400);
 
   const installerPath = path.join(directory, 'community-ai-management-system-0.3.1-arm64.dmg');
   await fs.writeFile(installerPath, 'test installer');
