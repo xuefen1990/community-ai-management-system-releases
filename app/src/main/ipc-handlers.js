@@ -5,6 +5,7 @@ const path = require('node:path');
 const XLSX = require('xlsx');
 
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
+const { parsePersonnelExcelGrid } = require('../shared/personnel-excel-parser');
 const { JsonDatabaseStore } = require('./database-store');
 
 function registerCompatibilityHandlers({
@@ -47,12 +48,7 @@ function registerCompatibilityHandlers({
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) throw new Error('表格中没有可读取的工作表');
     const table = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheetName], { header: 1, defval: '', raw: false });
-    const columns = (table.shift() || []).map((column) => String(column ?? '').trim());
-    if (!columns.some(Boolean)) throw new Error('未识别到表头，请确认第一行是字段名称');
-    const rows = table
-      .filter((values) => Array.isArray(values) && values.some((value) => String(value ?? '').trim()))
-      .map((values) => Object.fromEntries(columns.map((column, index) => [column || `未命名列${index + 1}`, values[index] ?? ''])));
-    return { columns, rows, fileName: path.basename(filePath), total: rows.length };
+    return { ...parsePersonnelExcelGrid(table), fileName: path.basename(filePath) };
   }
 
   handle(INVOKE_CHANNELS.readDb, async () => store.read());

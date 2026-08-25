@@ -788,14 +788,26 @@ function loadPersonnelExcelImport() {
   document.head.appendChild(personnelImportScript);
 }
 
-if (!document.querySelector('script[data-personnel-import-merge]')) {
-  const personnelMergeScript = document.createElement('script');
-  personnelMergeScript.src = 'js/personnel-import-merge.js?v=1.0.0';
-  personnelMergeScript.dataset.personnelImportMerge = 'true';
-  personnelMergeScript.addEventListener('load', loadPersonnelExcelImport, { once: true });
-  document.head.appendChild(personnelMergeScript);
-} else {
+function loadPersonnelImportMerge() {
+  if (!document.querySelector('script[data-personnel-import-merge]')) {
+    const personnelMergeScript = document.createElement('script');
+    personnelMergeScript.src = 'js/personnel-import-merge.js?v=1.0.0';
+    personnelMergeScript.dataset.personnelImportMerge = 'true';
+    personnelMergeScript.addEventListener('load', loadPersonnelExcelImport, { once: true });
+    document.head.appendChild(personnelMergeScript);
+    return;
+  }
   loadPersonnelExcelImport();
+}
+
+if (!document.querySelector('script[data-personnel-excel-parser]')) {
+  const personnelExcelParserScript = document.createElement('script');
+  personnelExcelParserScript.src = '../shared/personnel-excel-parser.js?v=1.0.0';
+  personnelExcelParserScript.dataset.personnelExcelParser = 'true';
+  personnelExcelParserScript.addEventListener('load', loadPersonnelImportMerge, { once: true });
+  document.head.appendChild(personnelExcelParserScript);
+} else {
+  loadPersonnelImportMerge();
 }
 
 // Keep personnel search independent from the legacy renderer so imported field

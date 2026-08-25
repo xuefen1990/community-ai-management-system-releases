@@ -1,21 +1,12 @@
 (() => {
   'use strict';
 
-  const FIELD_DEFINITIONS = [
-    { key: 'name', label: '姓名', aliases: ['姓名', '村民姓名', '人员姓名', '名字'] },
-    { key: 'idCard', label: '身份证号', aliases: ['身份证号', '身份证号码', '公民身份号码', '证件号码'], required: true },
-    { key: 'gender', label: '性别', aliases: ['性别'] },
-    { key: 'birth_date', label: '出生日期', aliases: ['出生日期', '出生年月', '生日'] },
-    { key: 'phone', label: '联系电话', aliases: ['联系电话', '手机号码', '手机号', '电话', '联系方式'] },
-    { key: 'household_id', label: '户号', aliases: ['户号', '家庭户号', '家庭编号'] },
-    { key: 'village_group', label: '村民小组', aliases: ['村民小组', '村组', '小组', '组别'] },
-    { key: 'relation_to_head', label: '与户主关系', aliases: ['与户主关系', '户主关系', '关系'] },
-    { key: 'address', label: '住址', aliases: ['住址', '地址', '详细地址'] },
-  ];
-  const importState = { columns: [], rows: [], fileName: '', sheetName: '', detectedIdentity: '' };
+  const getExcelParser = () => window.PersonnelExcelParser;
+  const FIELD_DEFINITIONS = getExcelParser()?.FIELD_DEFINITIONS || [];
+  const importState = { columns: [], rows: [], fileName: '', sheetName: '', detectedIdentity: '', headerRowNumber: 0, ignoredRows: 0 };
   const text = (value) => String(value ?? '').trim();
   const escapeHtml = (value) => text(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
-  const normalizeHeader = (value) => text(value).replace(/[\s_（）()\-]/g, '').toLowerCase();
+  const normalizeHeader = (value) => getExcelParser()?.normalizeHeader(value) || text(value).replace(/[\s_（）()\-]/g, '').toLowerCase();
   const inferredColumn = (columns, aliases) => columns.find((column) => aliases.map(normalizeHeader).includes(normalizeHeader(column))) || '';
   const getMergeTools = () => window.PersonnelImportMerge;
 
@@ -63,7 +54,7 @@
     if (!modal || !container || !confirm) return;
     document.getElementById('excelImportModalTitle').textContent = '专项人员信息导入';
     document.getElementById('excelImportModeHint').innerHTML = '系统将以<b>身份证号</b>作为唯一合并凭证：匹配到已有居民时仅补充非空信息并追加标签；找不到居民时会新建档案。无效或缺失身份证号不会按姓名自动合并。';
-    document.getElementById('excelMappingSummary').innerHTML = `<div style="padding:9px 12px;background:rgba(16,185,129,.08);border-radius:8px;color:var(--text-primary);font-size:13px;">已读取 <b>${escapeHtml(importState.fileName)}</b>（工作表：<b>${escapeHtml(importState.sheetName)}</b>），共 <b>${importState.rows.length}</b> 条有效数据。</div>`;
+    document.getElementById('excelMappingSummary').innerHTML = `<div style="padding:9px 12px;background:rgba(16,185,129,.08);border-radius:8px;color:var(--text-primary);font-size:13px;">已读取 <b>${escapeHtml(importState.fileName)}</b>（工作表：<b>${escapeHtml(importState.sheetName)}</b>），第 <b>${importState.headerRowNumber}</b> 行为表头，共 <b>${importState.rows.length}</b> 条有效数据${importState.ignoredRows ? `，已自动忽略 <b>${importState.ignoredRows}</b> 条无效行` : ''}。</div>`;
     document.getElementById('excelImportScopeSelector').innerHTML = renderIdentitySelector();
     container.innerHTML = FIELD_DEFINITIONS.map((field) => {
       const suggested = inferredColumn(importState.columns, field.aliases);
@@ -153,22 +144,17 @@
   async function readSelectedFile(file) {
     if (!file) return;
     if (!window.XLSX) return showToast('表格处理组件尚未加载，请重新打开软件后再试', 'error');
+    const parser = getExcelParser();
+    if (!parser) return showToast('人员表格识别组件尚未加载，请重新打开软件后再试', 'error');
     try {
       const workbook = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const grid = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
-      const headers = (grid.shift() || []).map(text);
-      if (!headers.length || headers.every((header) => !header)) throw new Error('未识别到表头，请确认第一行是字段名称');
-      const usedHeaders = new Set();
-      importState.columns = headers.map((header, index) => {
-        const base = header || `未命名列${index + 1}`;
-        let unique = base; let serial = 2;
-        while (usedHeaders.has(unique)) unique = `${base}_${serial++}`;
-        usedHeaders.add(unique);
-        return unique;
-      });
-      importState.rows = grid.filter((values) => Array.isArray(values) && values.some((value) => text(value))).map((values) => Object.fromEntries(importState.columns.map((column, index) => [column, text(values[index])])));
-      if (!importState.rows.length) throw new Error('表格没有可导入的数据');
+      const parsed = parser.parsePersonnelExcelGrid(grid);
+      importState.columns = parsed.columns;
+      importState.rows = parsed.rows;
+      importState.headerRowNumber = parsed.headerRowNumber;
+      importState.ignoredRows = parsed.ignoredRows;
       importState.fileName = file.name;
       importState.sheetName = sheetName;
       openMappingModal();

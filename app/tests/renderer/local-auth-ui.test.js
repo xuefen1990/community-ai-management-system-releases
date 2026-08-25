@@ -71,6 +71,7 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
     fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'personnel-excel-import.js'), 'utf8'),
   ]);
   assert.match(adapter, /personnel-excel-import\.js/u);
+  assert.match(adapter, /personnel-excel-parser\.js/u);
   assert.match(adapter, /personnel-import-merge\.js/u);
   assert.match(importer, /importExcelBtn/u);
   assert.match(importer, /batchImportExcelBtn/u);
@@ -82,6 +83,8 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   assert.match(importer, /专项标签/u);
   assert.match(importer, /唯一合并凭证/u);
   assert.match(importer, /personnelImportRecords/u);
+  assert.match(importer, /parsePersonnelExcelGrid/u);
+  assert.match(importer, /自动忽略/u);
   assert.match(importer, /skippedReasons/u);
   assert.match(importer, /function refreshPersonnelWorkspace\(\)/u);
   assert.match(importer, /await window\.loadDatabase\(\)/u);

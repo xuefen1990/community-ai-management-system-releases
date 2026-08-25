@@ -38,7 +38,7 @@ test('Excel selection and preview handlers return a selected local sheet', async
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
     ['姓名', '身份证号', '手机号'],
-    ['张三', '320000199001010011', '13800000000'],
+    ['张三', '11010519491231002X', '13800000000'],
   ]), '人员');
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-excel-'));
   const filePath = path.join(directory, '人员导入.xlsx');
@@ -49,8 +49,29 @@ test('Excel selection and preview handlers return a selected local sheet', async
   assert.equal(await callbacks.get(INVOKE_CHANNELS.selectExcelFile)({}), filePath);
   const preview = await callbacks.get(INVOKE_CHANNELS.readExcelColumns)({}, filePath);
   assert.deepEqual(preview.columns, ['姓名', '身份证号', '手机号']);
-  assert.deepEqual(preview.rows, [{ 姓名: '张三', 身份证号: '320000199001010011', 手机号: '13800000000' }]);
+  assert.deepEqual(preview.rows, [{ 姓名: '张三', 身份证号: '11010519491231002X', 手机号: '13800000000' }]);
   assert.equal(preview.total, 1);
+  await fs.rm(directory, { recursive: true, force: true });
+});
+
+test('Excel preview skips title rows and invalid footer rows', async () => {
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([
+    ['青山村人员花名册'],
+    ['姓名', '身份证号', '手机号'],
+    ['张三', '11010519491231002X', '13800000000'],
+    ['合计', '1 人'],
+    ['填表人：王主任'],
+  ]), '人员');
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-excel-'));
+  const filePath = path.join(directory, '人员导入.xlsx');
+  XLSX.writeFile(workbook, filePath);
+  const { callbacks } = makeHandlers();
+
+  const preview = await callbacks.get(INVOKE_CHANNELS.readExcelColumns)({}, filePath);
+  assert.equal(preview.headerRowNumber, 2);
+  assert.equal(preview.ignoredRows, 2);
+  assert.deepEqual(preview.rows, [{ 姓名: '张三', 身份证号: '11010519491231002X', 手机号: '13800000000' }]);
   await fs.rm(directory, { recursive: true, force: true });
 });
 
