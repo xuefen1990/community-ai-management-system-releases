@@ -45,15 +45,26 @@ class JsonDatabaseStore {
     this.databasePath = path.join(this.dataDirectory, 'community-data.json');
     this.now = now;
     this.writeQueue = Promise.resolve();
+    this.initializationPromise = null;
   }
 
-  async initialize() {
+  initialize() {
+    if (!this.initializationPromise) {
+      this.initializationPromise = this.initializeStorage().catch((error) => {
+        this.initializationPromise = null;
+        throw error;
+      });
+    }
+    return this.initializationPromise;
+  }
+
+  async initializeStorage() {
     await fs.mkdir(this.backupsDirectory, { recursive: true });
     try {
       await fs.access(this.databasePath);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
-      await this.write(createEmptyDatabase());
+      await this.writeSnapshot(createEmptyDatabase());
     }
     return this.databasePath;
   }
@@ -97,9 +108,10 @@ class JsonDatabaseStore {
 
   async update(mutator) {
     if (typeof mutator !== 'function') throw new TypeError('mutator must be a function');
-    await this.initialize();
+    const initialization = this.initialize();
     let outcome;
     this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
+      await initialization;
       const current = normalizeDatabase(JSON.parse(await fs.readFile(this.databasePath, 'utf8')));
       const draft = clone(current);
       const result = await mutator(draft);
