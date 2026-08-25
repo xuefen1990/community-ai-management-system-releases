@@ -5,7 +5,7 @@
   if (!api?.loginLocalAccount) return;
 
   let currentStatus = null;
-  let startupTrialGuardTimer = null;
+  let legacyTrialObserver = null;
   let loginSubmission = null;
   let startupLoginGuardTimer = null;
   let footerActionInFlight = false;
@@ -86,43 +86,28 @@
     return removed;
   }
 
-  function hasPurchasedStartupAccess(summary) {
-    return summary?.entitlement?.type === 'licensed';
-  }
-
   function installShortLivedTrialRemoval() {
     const observeTarget = document.body || document.documentElement;
-    if (!observeTarget || typeof MutationObserver !== 'function') return;
-    let observer = null;
-    const stop = () => {
-      observer?.disconnect();
-      observer = null;
-      if (startupTrialGuardTimer) window.clearTimeout(startupTrialGuardTimer);
-      startupTrialGuardTimer = null;
-    };
+    if (!observeTarget || typeof MutationObserver !== 'function' || legacyTrialObserver) return;
     const removeIfLegacyTrial = (node) => {
       const candidate = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
       return candidate && removeLegacyTrialArtifacts(candidate);
     };
-    observer = new MutationObserver((records) => {
-      const removed = records.some((record) => {
-        if (record.type === 'characterData') return removeIfLegacyTrial(record.target);
-        return Array.from(record.addedNodes).some(removeIfLegacyTrial);
+    legacyTrialObserver = new MutationObserver((records) => {
+      records.forEach((record) => {
+        if (record.type === 'characterData') removeIfLegacyTrial(record.target);
+        else Array.from(record.addedNodes).forEach(removeIfLegacyTrial);
       });
-      if (removed) stop();
     });
-    observer.observe(observeTarget, { childList: true, subtree: true, characterData: true });
-    if (removeLegacyTrialArtifacts()) {
-      stop();
-      return;
-    }
-    startupTrialGuardTimer = window.setTimeout(stop, 2500);
+    legacyTrialObserver.observe(observeTarget, { childList: true, subtree: true, characterData: true });
+    removeLegacyTrialArtifacts();
   }
 
   async function prepareAuthorizedStartup() {
+    installShortLivedTrialRemoval();
     try {
       const startupSummary = await api.getStartupEntitlement();
-      if (hasPurchasedStartupAccess(startupSummary)) installShortLivedTrialRemoval();
+      if (startupSummary?.hasPreviousAccount) showExpiryReminder(startupSummary.entitlement);
     } catch {
       // The login screen remains usable if the optional startup summary is unavailable.
     }
@@ -149,12 +134,24 @@
   }
 
   function showExpiryReminder(entitlement) {
+    if (entitlement?.type === 'expired') {
+      window.showToast?.('上次登录的单位账号已到期，请联系平台管理员续期。', 'error');
+      return;
+    }
     if (!entitlement?.expiresAt || !['trial', 'licensed'].includes(entitlement.type)) return;
     const remainingDays = Math.max(0, Math.ceil((new Date(entitlement.expiresAt).getTime() - Date.now()) / 86400000));
     const threshold = entitlement.plan === 'trial' ? 7 : 30;
     if (remainingDays > threshold) return;
     const kind = entitlement.plan === 'trial' ? '体验版' : '正式授权';
     window.showToast?.(`${kind}将于 ${entitlement.expiresAt.slice(0, 10)} 到期，剩余 ${remainingDays} 天，请联系平台管理员续期。`, 'error');
+  }
+
+  function friendlyRemoteError(error) {
+    const message = String(error?.message || '');
+    if (/无法连接账号服务|账号服务器响应超时|账号服务器连接超时|ECONNREFUSED|Failed to fetch|fetch failed/iu.test(message)) {
+      return '无法连接账号服务器。请确认账号服务器已启动；如服务器在其他电脑上，请点击下方“设置账号服务器”填写地址并测试连接。';
+    }
+    return message.replace(/^Error invoking remote method '[^']+': Error: /u, '') || '提交申请失败，请稍后重试。';
   }
 
   function escapeHtml(value) {
@@ -240,6 +237,7 @@
 
   async function submitRegister() {
     setError('reg');
+    document.getElementById('openRemoteServerSettings')?.setAttribute('hidden', '');
     const kind = document.querySelector('input[name="application-kind"]:checked')?.value || 'unit-admin';
     const phone = document.getElementById('reg-phone')?.value || '';
     const password = document.getElementById('reg-password')?.value || '';
@@ -254,7 +252,12 @@
         await api.submitMemberApplication({ phone, password, name, inviteCode: document.getElementById('reg-invite-code')?.value || '' });
         setError('reg', '加入申请已提交，等待单位管理员审核。');
       }
-    } catch (error) { setError('reg', error.message || '提交申请失败'); }
+    } catch (error) {
+      setError('reg', friendlyRemoteError(error));
+      if (/无法连接账号服务|账号服务器响应超时|账号服务器连接超时|ECONNREFUSED|Failed to fetch|fetch failed/iu.test(String(error?.message || ''))) {
+        document.getElementById('openRemoteServerSettings')?.removeAttribute('hidden');
+      }
+    }
     finally { setLoading('doRegisterBtn', false, '提交申请'); }
   }
 
@@ -263,10 +266,11 @@
     if (!panel || panel.dataset.unitApplications) return;
     panel.dataset.unitApplications = 'true';
     panel.classList.add('unit-application-panel');
-    panel.innerHTML = `<div class="login-header unit-application-heading"><div class="login-logo-container"><img src="logo.png" alt="Logo" style="width:60px;height:60px;object-fit:contain;"></div><h1>开户注册申请</h1><p class="subtitle">填写资料后，由平台管理员审核开通</p></div><div class="unit-application-kind" role="radiogroup" aria-label="申请类型"><label class="unit-application-kind-option is-selected"><input type="radio" name="application-kind" value="unit-admin" checked><span>申请成为单位管理员</span></label><label class="unit-application-kind-option"><input type="radio" name="application-kind" value="member"><span>邀请码加入单位</span></label></div><div class="login-form unit-application-scroll"><div class="input-group"><label for="reg-name">姓名</label><input id="reg-name" type="text" placeholder="请输入真实姓名"></div><div class="input-group"><label for="reg-phone">手机号</label><input id="reg-phone" type="text" placeholder="请输入手机号"></div><div class="unit-application-passwords"><div class="input-group"><label for="reg-password">密码</label><input id="reg-password" type="password" placeholder="至少 6 位"></div><div class="input-group"><label for="reg-password-confirm">确认密码</label><input id="reg-password-confirm" type="password" placeholder="再次输入密码"></div></div><div data-unit-admin-fields><div class="input-group"><label for="reg-organization-name">村居/社区名称</label><input id="reg-organization-name" type="text" placeholder="例如：陆庄社区"></div><div class="input-group"><label for="reg-region">所在地区</label><input id="reg-region" type="text" placeholder="例如：晓店街道"></div></div><div class="input-group hidden" data-member-fields><label for="reg-invite-code">邀请码</label><input id="reg-invite-code" type="text" placeholder="扫描二维码后自动填入，或手工输入"></div><div id="regErrorContainer" class="login-error" style="visibility:hidden"><span id="regErrorText"></span></div></div><div class="unit-application-actions"><button id="backToLoginBtn" type="button" class="btn btn-outline">返回登录</button><button id="doRegisterBtn" type="button" class="btn btn-primary"><span>提交申请</span></button></div>`;
+    panel.innerHTML = `<div class="login-header unit-application-heading"><div class="login-logo-container"><img src="logo.png" alt="Logo" style="width:60px;height:60px;object-fit:contain;"></div><h1>开户注册申请</h1><p class="subtitle">填写资料后，由平台管理员审核开通</p></div><div class="unit-application-kind" role="radiogroup" aria-label="申请类型"><label class="unit-application-kind-option is-selected"><input type="radio" name="application-kind" value="unit-admin" checked><span>申请成为单位管理员</span></label><label class="unit-application-kind-option"><input type="radio" name="application-kind" value="member"><span>邀请码加入单位</span></label></div><div class="login-form unit-application-scroll"><div class="input-group"><label for="reg-name">姓名</label><input id="reg-name" type="text" placeholder="请输入真实姓名"></div><div class="input-group"><label for="reg-phone">手机号</label><input id="reg-phone" type="text" placeholder="请输入手机号"></div><div class="unit-application-passwords"><div class="input-group"><label for="reg-password">密码</label><input id="reg-password" type="password" placeholder="至少 6 位"></div><div class="input-group"><label for="reg-password-confirm">确认密码</label><input id="reg-password-confirm" type="password" placeholder="再次输入密码"></div></div><div data-unit-admin-fields><div class="input-group"><label for="reg-organization-name">村居/社区名称</label><input id="reg-organization-name" type="text" placeholder="例如：陆庄社区"></div><div class="input-group"><label for="reg-region">所在地区</label><input id="reg-region" type="text" placeholder="例如：晓店街道"></div></div><div class="input-group hidden" data-member-fields><label for="reg-invite-code">邀请码</label><input id="reg-invite-code" type="text" placeholder="扫描二维码后自动填入，或手工输入"></div><div id="regErrorContainer" class="login-error" style="visibility:hidden"><span id="regErrorText"></span></div><button id="openRemoteServerSettings" type="button" class="remote-server-settings-btn" hidden>设置账号服务器</button></div><div class="unit-application-actions"><button id="backToLoginBtn" type="button" class="btn btn-outline">返回登录</button><button id="doRegisterBtn" type="button" class="btn btn-primary"><span>提交申请</span></button></div>`;
     const updateKind = () => { const member = panel.querySelector('input[name="application-kind"]:checked')?.value === 'member'; panel.querySelector('[data-unit-admin-fields]').classList.toggle('hidden', member); panel.querySelector('[data-member-fields]').classList.toggle('hidden', !member); panel.querySelectorAll('.unit-application-kind-option').forEach((option) => option.classList.toggle('is-selected', option.querySelector('input').checked)); };
     panel.querySelectorAll('input[name="application-kind"]').forEach(input => input.addEventListener('change', updateKind));
     panel.querySelector('#backToLoginBtn').addEventListener('click', () => forceLoginPanel());
+    panel.querySelector('#openRemoteServerSettings').addEventListener('click', openRemoteServerModal);
     bindButton('doRegisterBtn', submitRegister);
     const loginForm = document.querySelector('#panel-login .login-form');
     if (!document.getElementById('unitApplicationEntry') && loginForm) {

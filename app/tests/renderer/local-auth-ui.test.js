@@ -52,6 +52,19 @@ test('unit application panel separates scrollable fields from fixed actions', as
   assert.match(style, /@media\s*\(max-width:\s*640px\)/u);
 });
 
+test('login startup checks the previous account entitlement before showing a reminder', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
+  const start = source.indexOf('async function prepareAuthorizedStartup()');
+  const end = source.indexOf('async function enterDashboard(status)');
+  const startupSource = source.slice(start, end);
+
+  assert.match(startupSource, /installShortLivedTrialRemoval\(\);/u);
+  assert.match(startupSource, /showExpiryReminder\(startupSummary\.entitlement\);/u);
+  assert.match(source, /function friendlyRemoteError\(error\)/u);
+  assert.match(source, /openRemoteServerSettings/u);
+  assert.match(source, /setError\('reg', friendlyRemoteError\(error\)\)/u);
+});
+
 test('personnel Excel import is loaded after legacy UI and persists through the preload bridge', async () => {
   const [adapter, importer] = await Promise.all([
     fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),

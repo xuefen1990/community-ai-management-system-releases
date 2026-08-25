@@ -12,6 +12,7 @@ function createEmptyAuthState() {
     rememberedAccountId: null,
     lastLoginPhone: '',
     remoteServerUrl: '',
+    lastKnownEntitlement: null,
   };
 }
 

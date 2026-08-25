@@ -64,6 +64,7 @@ class RemoteAuthService {
     state.remoteAccount = null;
     state.lastLoginPhone = '';
     state.rememberedAccountId = null;
+    state.lastKnownEntitlement = null;
     await this.store.write(state);
     this.baseUrl = normalizedBaseUrl;
     this.session = null;
@@ -150,6 +151,7 @@ class RemoteAuthService {
     state.remoteAccount = result.user;
     state.lastLoginPhone = result.user.phone;
     state.rememberedAccountId = remember ? result.user.id : null;
+    state.lastKnownEntitlement = null;
     await this.store.write(state);
     await this.updateRememberedLogin({ phone: result.user.phone, password, remember });
   }
@@ -165,7 +167,17 @@ class RemoteAuthService {
 
   async entitlement() {
     if (!this.session) return { type: 'none' };
-    return toEntitlement(await this.request('/auth/entitlement'));
+    const entitlement = toEntitlement(await this.request('/auth/entitlement'));
+    const state = await this.store.read();
+    state.lastKnownEntitlement = {
+      accountId: this.session.user.id,
+      phone: this.session.user.phone,
+      plan: entitlement.plan || null,
+      expiresAt: entitlement.expiresAt || null,
+      observedAt: new Date().toISOString(),
+    };
+    await this.store.write(state);
+    return entitlement;
   }
 
   async getStatus() {
@@ -190,7 +202,21 @@ class RemoteAuthService {
   async getStartupEntitlement() {
     const state = await this.store.read();
     const account = state.remoteAccount || null;
-    return { hasPreviousAccount: Boolean(account), account: account ? { phone: account.phone } : null, entitlement: { type: 'none' } };
+    const snapshot = state.lastKnownEntitlement;
+    const isMatchingAccount = account && snapshot
+      && snapshot.accountId === account.id
+      && snapshot.phone === account.phone;
+    const hasUsableSnapshot = isMatchingAccount
+      && typeof snapshot.plan === 'string'
+      && snapshot.plan.length > 0;
+    const entitlement = hasUsableSnapshot
+      ? toEntitlement({
+        valid: snapshot.plan === 'permanent' || (snapshot.expiresAt && new Date(snapshot.expiresAt).getTime() > Date.now()),
+        plan: snapshot.plan,
+        expiresAt: snapshot.expiresAt,
+      })
+      : { type: 'none' };
+    return { hasPreviousAccount: Boolean(account), account: account ? { phone: account.phone } : null, entitlement };
   }
 
   async logout() {
@@ -209,6 +235,8 @@ class RemoteAuthService {
     const state = await this.store.read();
     state.rememberedAccountId = null;
     state.lastLoginPhone = '';
+    state.remoteAccount = null;
+    state.lastKnownEntitlement = null;
     await this.store.write(state);
     await this.rememberedLoginStore?.clear();
     return { ok: true };

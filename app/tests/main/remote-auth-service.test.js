@@ -68,3 +68,72 @@ test('远程登录在账号服务器无响应时会超时返回', async () => {
     /账号服务器响应超时/u,
   );
 });
+
+test('启动时使用上次成功登录账号保存的体验版有效期', async () => {
+  const expiresAt = new Date(Date.now() + 6 * 86400000).toISOString();
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com',
+    machineId: 'mac-test-startup-trial',
+    store: {
+      read: async () => ({
+        version: 2,
+        accounts: [],
+        remoteAccount: { id: 'user-1', phone: '13900139000' },
+        lastLoginPhone: '13900139000',
+        lastKnownEntitlement: { accountId: 'user-1', phone: '13900139000', plan: 'trial', expiresAt },
+      }),
+      write: async () => {},
+    },
+    fetchImpl: async () => { throw new Error('启动检查不应访问网络'); },
+  });
+
+  const startup = await service.getStartupEntitlement();
+  assert.equal(startup.hasPreviousAccount, true);
+  assert.equal(startup.account.phone, '13900139000');
+  assert.equal(startup.entitlement.type, 'trial');
+  assert.equal(startup.entitlement.plan, 'trial');
+  assert.equal(startup.entitlement.expiresAt, expiresAt);
+});
+
+test('启动时会把已过期的上次账号有效期识别为到期', async () => {
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com',
+    machineId: 'mac-test-startup-expired',
+    store: {
+      read: async () => ({
+        version: 2,
+        accounts: [],
+        remoteAccount: { id: 'user-2', phone: '13800138000' },
+        lastLoginPhone: '13800138000',
+        lastKnownEntitlement: { accountId: 'user-2', phone: '13800138000', plan: 'annual', expiresAt: '2020-01-01T00:00:00.000Z' },
+      }),
+      write: async () => {},
+    },
+    fetchImpl: async () => { throw new Error('启动检查不应访问网络'); },
+  });
+
+  const startup = await service.getStartupEntitlement();
+  assert.equal(startup.entitlement.type, 'expired');
+  assert.equal(startup.entitlement.plan, 'annual');
+});
+
+test('启动时忽略缺少授权类型的旧有效期记录', async () => {
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com',
+    machineId: 'mac-test-startup-legacy',
+    store: {
+      read: async () => ({
+        version: 2,
+        accounts: [],
+        remoteAccount: { id: 'user-3', phone: '13700137000' },
+        lastLoginPhone: '13700137000',
+        lastKnownEntitlement: { accountId: 'user-3', phone: '13700137000', expiresAt: new Date(Date.now() + 20 * 86400000).toISOString() },
+      }),
+      write: async () => {},
+    },
+    fetchImpl: async () => { throw new Error('启动检查不应访问网络'); },
+  });
+
+  const startup = await service.getStartupEntitlement();
+  assert.equal(startup.entitlement.type, 'none');
+});
