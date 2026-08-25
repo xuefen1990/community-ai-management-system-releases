@@ -12,6 +12,7 @@
     "build:arm64": "node ../scripts/build-arm64-dmg.mjs",
     "build:ci:arm64": "node ../scripts/build-ci-arm64-dmg.mjs",
     "release:sync": "node ../scripts/release-sync.mjs",
+    "release:sync-local": "node ../scripts/sync-local-update.mjs",
     "github:verify": "node ../scripts/verify-github-credential.mjs"
   },
   "dependencies": {
