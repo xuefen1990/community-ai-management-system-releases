@@ -1,6 +1,6 @@
 {
   "name": "community-ai-management-system",
-  "version": "0.3.12",
+  "version": "0.3.13",
   "description": "社区AI管理系统 Apple 芯片 Mac 版",
   "main": "src/main/index.js",
   "author": "社区AI管理系统",
