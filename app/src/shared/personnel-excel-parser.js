@@ -3,7 +3,7 @@
 (function exposePersonnelExcelParser(root) {
   const FIELD_DEFINITIONS = [
     { key: 'name', label: '姓名', aliases: ['姓名', '村民姓名', '人员姓名', '名字'] },
-    { key: 'idCard', label: '身份证号', aliases: ['身份证号', '身份证号码', '公民身份号码', '证件号码'], required: true },
+    { key: 'idCard', label: '身份证号', aliases: ['身份证号', '身份证号码', '公民身份号码', '公民身份证号码', '证件号码'], required: true },
     { key: 'gender', label: '性别', aliases: ['性别'] },
     { key: 'birth_date', label: '出生日期', aliases: ['出生日期', '出生年月', '生日'] },
     { key: 'phone', label: '联系电话', aliases: ['联系电话', '手机号码', '手机号', '电话', '联系方式'] },

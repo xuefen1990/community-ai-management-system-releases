@@ -31,6 +31,15 @@ test('keeps a standard first-row header and rejects a grid without a personnel h
   assert.throws(() => parsePersonnelExcelGrid([['青山村人员名册'], ['张三', '11010519491231002X']]), /未识别到人员表头/u);
 });
 
+test('recognizes the public identity-card header used by party member spreadsheets', () => {
+  const result = parsePersonnelExcelGrid([
+    ['姓名', '公民身份证号码', '加入党组织日期'],
+    ['张三', '11010519491231002X', '2007/07/01'],
+  ]);
+  assert.equal(result.idCardColumn, '公民身份证号码');
+  assert.equal(result.total, 1);
+});
+
 test('rejects a recognized header that has no valid personnel rows', () => {
   assert.throws(() => parsePersonnelExcelGrid([
     ['姓名', '身份证号'],

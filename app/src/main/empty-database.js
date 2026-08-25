@@ -8,6 +8,7 @@ function createEmptyDatabase() {
       appSubtitle: '社区AI管理系统',
     },
     personnel: [],
+    specialPersonnelProfiles: [],
     households: [],
     partyMembers: [],
     partyActivists: [],

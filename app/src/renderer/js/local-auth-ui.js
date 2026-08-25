@@ -800,14 +800,26 @@ function loadPersonnelImportMerge() {
   loadPersonnelExcelImport();
 }
 
+function loadSpecialPersonnelProfiles() {
+  if (!document.querySelector('script[data-special-personnel-profiles]')) {
+    const specialPersonnelProfilesScript = document.createElement('script');
+    specialPersonnelProfilesScript.src = '../shared/special-personnel-profiles.js?v=1.0.0';
+    specialPersonnelProfilesScript.dataset.specialPersonnelProfiles = 'true';
+    specialPersonnelProfilesScript.addEventListener('load', loadPersonnelImportMerge, { once: true });
+    document.head.appendChild(specialPersonnelProfilesScript);
+    return;
+  }
+  loadPersonnelImportMerge();
+}
+
 if (!document.querySelector('script[data-personnel-excel-parser]')) {
   const personnelExcelParserScript = document.createElement('script');
   personnelExcelParserScript.src = '../shared/personnel-excel-parser.js?v=1.0.0';
   personnelExcelParserScript.dataset.personnelExcelParser = 'true';
-  personnelExcelParserScript.addEventListener('load', loadPersonnelImportMerge, { once: true });
+  personnelExcelParserScript.addEventListener('load', loadSpecialPersonnelProfiles, { once: true });
   document.head.appendChild(personnelExcelParserScript);
 } else {
-  loadPersonnelImportMerge();
+  loadSpecialPersonnelProfiles();
 }
 
 // Keep personnel search independent from the legacy renderer so imported field
