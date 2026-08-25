@@ -1,5 +1,6 @@
 # Local brainstorming previews
 .superpowers/
+.worktrees/
 
 # Original installers and extracted binary baseline
 *.dmg
