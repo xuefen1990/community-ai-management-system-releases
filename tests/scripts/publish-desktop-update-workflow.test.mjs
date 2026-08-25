@@ -44,3 +44,10 @@ test('credential verification is non-interactive so a new window never triggers 
   assert.match(source, /git', \['ls-remote', '--exit-code', 'origin', 'HEAD'\]/);
   assert.match(source, /GITHUB_TOKEN/);
 });
+
+test('release sync publishes GitHub assets even when backend configuration is absent', async () => {
+  const source = await readFile(path.join(projectRoot, 'scripts', 'release-sync.mjs'), 'utf8');
+  assert.match(source, /function hasBackendPublishConfig\(\)/u);
+  assert.match(source, /if \(hasBackendPublishConfig\(\)\)/u);
+  assert.match(source, /backendSynced: Boolean\(backendRelease\)/u);
+});
