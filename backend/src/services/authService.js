@@ -137,6 +137,15 @@ function reviewMemberApplication(actor, applicationId, { approve, reviewNote = '
 }
 function listUnitMembers(actor) { if (!isUnitAdmin(actor)) throw failure(403, '只有单位管理员可以查看成员账号'); return db.findAll('users', user => user.organization_id === actor.organization_id && user.role === 'member').map(sanitizeUser); }
 function updateMemberPermissions(actor, memberId, requestedPermissions) { if (!isUnitAdmin(actor)) throw failure(403, '只有单位管理员可以分配成员权限'); const member = db.findById('users', memberId); if (!member || member.organization_id !== actor.organization_id || member.role !== 'member') throw failure(404, '未找到本单位成员'); const granted = permissions(requestedPermissions); db.updateById('users', member.id, { permissions: granted, updated_at: db.now() }); writeAuditLog(actor.id, 'update_member_permissions', member.id, JSON.stringify(granted)); return getUserById(member.id); }
+function updateMemberStatus(actor, memberId, isActive) {
+  if (!isUnitAdmin(actor)) throw failure(403, '只有单位管理员可以调整成员状态');
+  if (typeof isActive !== 'boolean') throw failure(400, '成员状态参数无效');
+  const member = db.findById('users', memberId);
+  if (!member || member.organization_id !== actor.organization_id || member.role !== 'member') throw failure(404, '未找到本单位成员');
+  db.updateById('users', member.id, { is_active: isActive ? 1 : 0, account_status: isActive ? 'active' : 'disabled', updated_at: db.now() });
+  writeAuditLog(actor.id, isActive ? 'enable_unit_member' : 'disable_unit_member', member.id);
+  return getUserById(member.id);
+}
 
 function login({ phone, password, machineId }) {
   const user = db.findOne('users', item => item.phone === normalizePhone(phone)); if (!user || !verifyPassword(password, user.password_hash)) throw failure(401, '手机号或密码错误');
@@ -151,4 +160,4 @@ function updateEntitlement(userId, { planType, planExpiresAt, isActive }) { cons
 function bindMachine(userId, machineId) { db.updateById('users', userId, { machine_id: machineId, updated_at: db.now() }); return getUserById(userId); }
 function checkEntitlement(user) { const current = user?.id ? db.findById('users', user.id) || user : user; const status = getAccessStatus(current); return status.valid ? { valid: true, plan: status.plan, expiresAt: status.expiresAt || null } : status; }
 
-module.exports = { bindMachine, changePassword, checkEntitlement, createInvite, deactivateInvite, getAccessStatus, getUserById, getUserByPhone, isPlatformAdmin, isUnitAdmin, listInvites, listMemberApplications, listUnitAdminApplications, listUnitMembers, listUsers, login, normalizePhone, resetPassword, reviewMemberApplication, reviewUnitAdminApplication, sanitizeUser, submitMemberApplication, submitUnitAdminApplication, updateEntitlement, updateMemberPermissions, updateProfile, writeAuditLog };
+module.exports = { bindMachine, changePassword, checkEntitlement, createInvite, deactivateInvite, getAccessStatus, getUserById, getUserByPhone, isPlatformAdmin, isUnitAdmin, listInvites, listMemberApplications, listUnitAdminApplications, listUnitMembers, listUsers, login, normalizePhone, resetPassword, reviewMemberApplication, reviewUnitAdminApplication, sanitizeUser, submitMemberApplication, submitUnitAdminApplication, updateEntitlement, updateMemberPermissions, updateMemberStatus, updateProfile, writeAuditLog };
