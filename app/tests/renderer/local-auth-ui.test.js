@@ -37,6 +37,21 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });
 
+test('unit application panel separates scrollable fields from fixed actions', async () => {
+  const [source, style] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
+  ]);
+  assert.match(source, /unit-application-panel/u);
+  assert.match(source, /unit-application-scroll/u);
+  assert.match(source, /unit-application-actions/u);
+  assert.match(source, /unit-application-passwords/u);
+  assert.match(style, /\.unit-application-panel\s*\{/u);
+  assert.match(style, /\.unit-application-scroll\s*\{/u);
+  assert.match(style, /\.unit-application-actions\s*\{/u);
+  assert.match(style, /@media\s*\(max-width:\s*640px\)/u);
+});
+
 test('personnel Excel import is loaded after legacy UI and persists through the preload bridge', async () => {
   const [adapter, importer] = await Promise.all([
     fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),

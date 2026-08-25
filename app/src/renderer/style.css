@@ -5101,6 +5101,97 @@ body.dark-theme .tour-popover {
 .auth-panel {
   transition: all 0.3s ease;
 }
+.unit-application-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: min(800px, calc(100vh - 150px));
+  overflow: hidden;
+}
+.unit-application-panel .unit-application-heading {
+  margin-bottom: 18px;
+}
+.unit-application-panel .unit-application-heading .login-logo-container {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 10px;
+}
+.unit-application-panel .unit-application-heading h1 {
+  font-size: 22px;
+}
+.unit-application-kind {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 5px;
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--bg-body);
+}
+.unit-application-kind-option {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  margin: 0 !important;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  transition: var(--transition-fast);
+}
+.unit-application-kind-option input {
+  width: auto !important;
+  margin: 0;
+  padding: 0 !important;
+  accent-color: var(--primary);
+}
+.unit-application-kind-option.is-selected {
+  color: var(--primary);
+  background: var(--bg-card);
+  box-shadow: 0 2px 8px rgba(28, 67, 107, 0.1);
+}
+.unit-application-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 2px 8px 0 2px;
+  scrollbar-gutter: stable;
+}
+.unit-application-panel .input-group {
+  margin-bottom: 15px;
+}
+.unit-application-passwords {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.unit-application-actions {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.8fr) minmax(0, 1.35fr);
+  gap: 10px;
+  flex-shrink: 0;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-card);
+}
+.unit-application-actions .btn {
+  min-height: 44px;
+}
+@media (max-width: 640px) {
+  .unit-application-panel {
+    max-height: calc(100vh - 92px);
+  }
+  .unit-application-kind,
+  .unit-application-passwords,
+  .unit-application-actions {
+    grid-template-columns: 1fr;
+  }
+}
 .auth-switch-links a {
   color: var(--primary);
   text-decoration: none;
