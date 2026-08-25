@@ -109,6 +109,14 @@
     }
   }
 
+  function setManualCheckButtonState(button, checking) {
+    button.disabled = checking;
+    button.classList.toggle('is-checking', checking);
+    button.setAttribute('aria-busy', String(checking));
+    button.title = checking ? '正在检查软件新版本' : '检查软件新版本';
+    button.innerHTML = `<span class="sidebar-update-btn__icon" aria-hidden="true">⟳</span><span>${checking ? '检查中' : '检查更新'}</span>`;
+  }
+
   function addManualCheckButton() {
     if (document.getElementById('manualUpdateCheckBtn')) return;
     const row = document.querySelector('.sidebar-secondary-actions');
@@ -118,19 +126,21 @@
     button.className = 'sidebar-update-btn';
     button.type = 'button';
     button.title = '检查软件新版本';
-    button.textContent = '检查更新';
+    setManualCheckButtonState(button, false);
     button.addEventListener('click', async () => {
-      button.disabled = true;
-      const previousText = button.textContent;
-      button.textContent = '检查中';
-      const result = await api.checkForAppUpdate();
-      if (result.disabled) showToast('当前为本机测试版，暂不检查线上更新', 'info');
-      else if (result.installRequired) showToast(result.error || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
-      else if (result.backendUnavailable) showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
-      else if (!result.ok) showToast(result.error || '检查更新失败', 'error');
-      else if (!result.hasUpdate) showToast('当前已是最新版本', 'success');
-      else setTimeout(() => { if (button.textContent === '检查中') button.textContent = previousText; }, 1200);
-      button.disabled = false;
+      setManualCheckButtonState(button, true);
+      try {
+        const result = await api.checkForAppUpdate();
+        if (result.disabled) showToast('当前为本机测试版，暂不检查线上更新', 'info');
+        else if (result.installRequired) showToast(result.error || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
+        else if (result.backendUnavailable) showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
+        else if (!result.ok) showToast(result.error || '检查更新失败', 'error');
+        else if (!result.hasUpdate) showToast('当前已是最新版本', 'success');
+      } catch (error) {
+        showToast(error?.message || '检查更新失败', 'error');
+      } finally {
+        setManualCheckButtonState(button, false);
+      }
     });
     row.appendChild(button);
   }

@@ -27,7 +27,7 @@ test('sidebar footer compacts four actions into a two-row layout', async () => {
   assert.match(localAuthUi, /primaryActions\.append\(refreshButton, logoutButton\)/u);
   assert.match(localAuthUi, /secondaryActions\.append\(privacyButton\)/u);
   assert.match(updateUi, /document\.querySelector\('\.sidebar-secondary-actions'\)/u);
-  assert.match(updateUi, /button\.textContent = '检查更新'/u);
+  assert.match(updateUi, /setManualCheckButtonState\(button, false\)/u);
   assert.match(style, /\.sidebar-primary-actions\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/su);
   assert.match(style, /\.sidebar-secondary-actions\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) auto/su);
   assert.match(style, /\.sidebar-security-btn::after\s*\{\s*content:\s*'安全保护中'/su);

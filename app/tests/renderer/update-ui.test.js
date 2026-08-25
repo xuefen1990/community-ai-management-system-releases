@@ -21,3 +21,18 @@ test('update UI uses the preload bridge and waits for user confirmation before d
   assert.match(source, /拖入“应用程序”/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });
+
+test('manual update check shows a loading state and always restores the button', async () => {
+  const [source, style] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'update-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
+  ]);
+
+  assert.match(source, /function setManualCheckButtonState\(/u);
+  assert.match(source, /button\.classList\.toggle\('is-checking', checking\)/u);
+  assert.match(source, /button\.setAttribute\('aria-busy', String\(checking\)\)/u);
+  assert.match(source, /try\s*\{[\s\S]*api\.checkForAppUpdate\(\)[\s\S]*\}\s*finally\s*\{[\s\S]*setManualCheckButtonState\(button, false\)/u);
+  assert.match(style, /\.sidebar-update-btn:hover\s*\{[\s\S]*transform:\s*translateY\(-2px\)/u);
+  assert.match(style, /\.sidebar-update-btn\.is-checking\s+\.sidebar-update-btn__icon\s*\{[\s\S]*animation:/u);
+  assert.match(style, /@media\s*\(prefers-reduced-motion:\s*reduce\)/u);
+});
