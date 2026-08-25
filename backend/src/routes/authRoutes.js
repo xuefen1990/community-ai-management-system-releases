@@ -105,6 +105,13 @@ router.put('/unit/members/:memberId/permissions', authRequired, unitAdminRequire
   } catch (err) { next(err); }
 });
 
+router.put('/unit/members/:memberId/status', authRequired, unitAdminRequired, (req, res, next) => {
+  try {
+    const user = authService.updateMemberStatus(req.user, req.params.memberId, req.body.isActive);
+    res.json({ user });
+  } catch (err) { next(err); }
+});
+
 router.get('/unit/invites', authRequired, unitAdminRequired, (req, res) => {
   res.json({ invites: authService.listInvites(req.user) });
 });

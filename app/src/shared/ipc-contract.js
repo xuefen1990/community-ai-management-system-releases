@@ -45,6 +45,7 @@ const INVOKE_CHANNELS = Object.freeze({
   reviewUnitMemberApplication: 'review-unit-member-application',
   listUnitMembers: 'list-unit-members',
   updateUnitMemberPermissions: 'update-unit-member-permissions',
+  updateUnitMemberStatus: 'update-unit-member-status',
   listUnitInvites: 'list-unit-invites',
   createUnitInvite: 'create-unit-invite',
   deactivateUnitInvite: 'deactivate-unit-invite',

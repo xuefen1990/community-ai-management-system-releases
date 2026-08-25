@@ -203,12 +203,53 @@
     } catch (error) { content.textContent = error.message || '无法加载成员管理信息'; }
   }
 
+  function closeMemberPermissionsPage() {
+    document.getElementById('memberPermissionsPage')?.remove();
+  }
+
+  async function openMemberPermissionsPage() {
+    if (!api.listUnitMemberApplications || currentStatus?.account?.role !== 'unit_admin') return;
+    closeMemberPermissionsPage();
+    const page = document.createElement('section');
+    page.id = 'memberPermissionsPage';
+    page.className = 'member-permissions-page';
+    page.innerHTML = `<div class="member-permissions-page__panel"><header class="member-permissions-page__header"><div><p class="member-permissions-page__eyebrow">单位管理</p><h2>成员与权限</h2><p>统一授权：${escapeHtml(formatEntitlement(currentStatus?.entitlement))}</p></div><button type="button" class="btn btn-outline" data-close-member-page>返回工作台</button></header><main data-member-page-content class="member-permissions-page__content">正在加载成员信息…</main></div>`;
+    document.body.appendChild(page);
+    page.querySelector('[data-close-member-page]').addEventListener('click', closeMemberPermissionsPage);
+    const content = page.querySelector('[data-member-page-content]');
+    try {
+      const [applicationsResult, membersResult, invitesResult] = await Promise.all([api.listUnitMemberApplications(), api.listUnitMembers(), api.listUnitInvites()]);
+      const applications = applicationsResult.applications || [];
+      const members = membersResult.members || [];
+      const invites = invitesResult.invites || [];
+      const pendingApplications = applications.filter((item) => item.status === 'pending');
+      content.innerHTML = `<section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>单位成员</h3><p>${members.length} 个账号，成员有效期自动跟随单位管理员。</p></div></div>${members.length ? members.map((member) => `<article class="member-permissions-page__member"><div class="member-permissions-page__member-summary"><div><strong>${escapeHtml(member.name || '未命名成员')}</strong><span>${escapeHtml(member.phone || '')}</span></div><div><span class="member-status member-status--${member.isActive ? 'active' : 'disabled'}">${member.isActive ? '正常使用' : '已停用'}</span><small>最后登录：${escapeHtml(member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleString('zh-CN') : '尚未登录')}</small></div></div>${permissionChoices(member.permissions)}<div class="member-permissions-page__actions"><button class="btn btn-primary" data-save-member="${escapeHtml(member.id)}">保存权限</button><button class="btn btn-outline" data-clear-member="${escapeHtml(member.id)}">清空权限</button><button class="btn ${member.isActive ? 'btn-outline member-permissions-page__danger' : 'btn-primary'}" data-toggle-member="${escapeHtml(member.id)}" data-next-active="${member.isActive ? 'false' : 'true'}">${member.isActive ? '停用成员' : '恢复成员'}</button></div></article>`).join('') : '<p class="member-permissions-page__empty">暂无已加入的成员。</p>'}</section><section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>待审核申请</h3><p>${pendingApplications.length} 个账号等待单位管理员处理。</p></div></div>${pendingApplications.length ? pendingApplications.map((item) => `<article class="member-permissions-page__member"><div class="member-permissions-page__member-summary"><div><strong>${escapeHtml(item.applicant?.name || '未命名申请人')}</strong><span>${escapeHtml(item.applicant?.phone || '')}</span></div><small>申请时间：${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN') : '')}</small></div>${permissionChoices()}<div class="member-permissions-page__actions"><button class="btn btn-primary" data-approve-member="${escapeHtml(item.id)}">通过并授权</button><button class="btn btn-outline member-permissions-page__danger" data-reject-member="${escapeHtml(item.id)}">拒绝申请</button></div></article>`).join('') : '<p class="member-permissions-page__empty">暂无待审核申请。</p>'}</section><section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>邀请码</h3><p>通过邀请码申请加入后，仍需单位管理员审核。</p></div></div><div class="member-permissions-page__invite-form"><label>有效至<input id="unitInviteExpiry" type="date"></label><label>可使用人数<input id="unitInviteMaxUses" type="number" min="1" max="1000" value="20"></label><button class="btn btn-primary" id="createUnitInviteBtn">生成邀请码</button></div><div id="unitInviteCreated" class="member-permissions-page__invite-code"></div>${invites.length ? `<div class="member-permissions-page__invite-list">${invites.map((item) => `<article><span>${escapeHtml(item.expiresAt?.slice(0, 10) || '')} 前有效 · 已用 ${item.usedCount}/${item.maxUses}</span>${item.isActive ? `<button class="btn btn-outline" data-deactivate-invite="${escapeHtml(item.id)}">停用邀请码</button>` : '<span class="member-status member-status--disabled">已停用</span>'}</article>`).join('')}</div>` : '<p class="member-permissions-page__empty">尚未生成邀请码。</p>'}</section>`;
+      const refresh = () => openMemberPermissionsPage();
+      const runAction = async (action) => { try { await action(); } catch (error) { window.showToast?.(error.message || '操作未完成，请稍后重试', 'error'); } };
+      content.querySelectorAll('[data-approve-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.approveMember, approve: true, permissions: selectedPermissions(button.closest('article')) }); window.showToast?.('成员已通过审核', 'success'); await refresh(); })));
+      content.querySelectorAll('[data-reject-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.rejectMember, approve: false }); window.showToast?.('已拒绝该申请', 'success'); await refresh(); })));
+      content.querySelectorAll('[data-save-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.updateUnitMemberPermissions({ memberId: button.dataset.saveMember, permissions: selectedPermissions(button.closest('article')) }); window.showToast?.('成员权限已保存', 'success'); })));
+      content.querySelectorAll('[data-clear-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.updateUnitMemberPermissions({ memberId: button.dataset.clearMember, permissions: {} }); window.showToast?.('成员权限已清空', 'success'); await refresh(); })));
+      content.querySelectorAll('[data-toggle-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { const isActive = button.dataset.nextActive === 'true'; await api.updateUnitMemberStatus({ memberId: button.dataset.toggleMember, isActive }); window.showToast?.(isActive ? '成员已恢复使用' : '成员已停用', 'success'); await refresh(); })));
+      content.querySelector('#createUnitInviteBtn')?.addEventListener('click', () => runAction(async () => { const expiresAt = content.querySelector('#unitInviteExpiry').value; const maxUses = content.querySelector('#unitInviteMaxUses').value; const result = await api.createUnitInvite({ expiresAt: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined, maxUses }); content.querySelector('#unitInviteCreated').textContent = `请仅通过可信渠道发送邀请码：${result.code}`; window.showToast?.('邀请码已生成', 'success'); }));
+      content.querySelectorAll('[data-deactivate-invite]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.deactivateUnitInvite({ inviteId: button.dataset.deactivateInvite }); window.showToast?.('邀请码已停用', 'success'); await refresh(); })));
+    } catch (error) {
+      content.innerHTML = `<p class="member-permissions-page__error">${escapeHtml(error.message || '无法加载成员管理信息')}</p>`;
+    }
+  }
+
   function ensureUnitManagementEntry(status) {
     if (status?.account?.role !== 'unit_admin' || document.getElementById('unitManagementEntry')) return;
-    const actions = document.querySelector('.sidebar-secondary-actions') || document.querySelector('.sidebar-footer-actions');
+    const actions = document.querySelector('.sidebar-secondary-actions');
     if (!actions) return;
     const button = document.createElement('button');
-    button.id = 'unitManagementEntry'; button.type = 'button'; button.className = 'btn btn-outline'; button.textContent = '成员与权限'; button.addEventListener('click', openUnitManagementModal); actions.prepend(button);
+    button.id = 'unitManagementEntry';
+    button.type = 'button';
+    button.className = 'sidebar-member-btn';
+    button.textContent = '成员与权限';
+    button.title = '管理单位成员、权限、申请和邀请码';
+    button.addEventListener('click', openMemberPermissionsPage);
+    actions.append(button);
   }
 
   async function submitLogin() {
@@ -690,23 +731,14 @@
     const refreshButton = document.getElementById('syncTokenBtn');
     const logoutButton = document.getElementById('logoutBtn');
     const privacyButton = legacyRow?.querySelector('button[onclick*="showPrivacyAgreementModal"]');
-    if (!footer || !actions || !legacyRow || !refreshButton || !logoutButton || !privacyButton) return;
+    if (!footer || !actions || !legacyRow || !refreshButton || !logoutButton) return;
 
     footer.classList.add('sidebar-footer-compact');
-    privacyButton.id = 'privacyPolicyBtn';
-    privacyButton.classList.add('sidebar-security-btn');
-    privacyButton.removeAttribute('style');
-    privacyButton.removeAttribute('onmouseover');
-    privacyButton.removeAttribute('onmouseout');
-
-    const primaryActions = document.createElement('div');
-    primaryActions.className = 'sidebar-primary-actions';
     const secondaryActions = document.createElement('div');
     secondaryActions.className = 'sidebar-secondary-actions';
-
-    primaryActions.append(refreshButton, logoutButton);
-    secondaryActions.append(privacyButton);
-    actions.replaceChildren(primaryActions, secondaryActions);
+    privacyButton?.remove();
+    secondaryActions.append(refreshButton, logoutButton);
+    actions.replaceChildren(secondaryActions);
   }
 
   async function initialize() {

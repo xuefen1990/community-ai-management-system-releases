@@ -120,6 +120,7 @@ class RemoteAuthService {
   async reviewMemberApplication({ applicationId, approve, reviewNote, permissions }) { return this.request(`/auth/unit/member-applications/${applicationId}/review`, { method: 'POST', body: { approve, reviewNote, permissions } }); }
   async listUnitMembers() { return this.request('/auth/unit/members'); }
   async updateMemberPermissions({ memberId, permissions }) { return this.request(`/auth/unit/members/${memberId}/permissions`, { method: 'PUT', body: { permissions } }); }
+  async updateMemberStatus({ memberId, isActive }) { return this.request(`/auth/unit/members/${memberId}/status`, { method: 'PUT', body: { isActive } }); }
   async listInvites() { return this.request('/auth/unit/invites'); }
   async createInvite({ expiresAt, maxUses }) { return this.request('/auth/unit/invites', { method: 'POST', body: { expiresAt, maxUses } }); }
   async deactivateInvite({ inviteId }) { return this.request(`/auth/unit/invites/${inviteId}`, { method: 'DELETE' }); }

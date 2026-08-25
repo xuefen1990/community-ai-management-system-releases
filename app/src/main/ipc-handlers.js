@@ -119,6 +119,7 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.reviewUnitMemberApplication, async (_event, value) => authService.reviewMemberApplication(value));
     handle(INVOKE_CHANNELS.listUnitMembers, async () => authService.listUnitMembers());
     handle(INVOKE_CHANNELS.updateUnitMemberPermissions, async (_event, value) => authService.updateMemberPermissions(value));
+    handle(INVOKE_CHANNELS.updateUnitMemberStatus, async (_event, value) => authService.updateMemberStatus(value));
     handle(INVOKE_CHANNELS.listUnitInvites, async () => authService.listInvites());
     handle(INVOKE_CHANNELS.createUnitInvite, async (_event, value) => authService.createInvite(value));
     handle(INVOKE_CHANNELS.deactivateUnitInvite, async (_event, value) => authService.deactivateInvite(value));
