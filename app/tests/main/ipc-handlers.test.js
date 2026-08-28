@@ -34,6 +34,20 @@ test('registers the work attachment channel', () => {
   assert.equal(handlers.has(INVOKE_CHANNELS.importWorkAttachments), true);
 });
 
+test('contract fee file channels delegate to the dedicated service', async () => {
+  const calls = [];
+  const contractFeeFileService = {
+    selectAndReadExcel: async () => { calls.push('read'); return { ok: true, data: { rows: [] } }; },
+    importAttachments: async () => { calls.push('attachments'); return { ok: true, data: [] }; },
+    exportGroupedFiles: async (value) => { calls.push(value); return { ok: true, files: [] }; },
+  };
+  const { callbacks } = makeHandlers({ contractFeeFileService });
+  assert.equal((await callbacks.get(INVOKE_CHANNELS.selectAndReadContractFeeExcel)({})).ok, true);
+  assert.equal((await callbacks.get(INVOKE_CHANNELS.importContractFeeAttachments)({})).ok, true);
+  assert.equal((await callbacks.get(INVOKE_CHANNELS.exportContractFeeGroupFiles)({}, { groups: [] })).ok, true);
+  assert.deepEqual(calls, ['read', 'attachments', { groups: [] }]);
+});
+
 test('Excel selection and preview handlers return a selected local sheet', async () => {
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([

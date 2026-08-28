@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 91);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 94);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 5);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -48,6 +48,9 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.getWritingProfile, 'get-writing-profile');
   assert.equal(INVOKE_CHANNELS.exportDraftDocument, 'export-draft-document');
   assert.equal(INVOKE_CHANNELS.importWorkAttachments, 'import-work-attachments');
+  assert.equal(INVOKE_CHANNELS.selectAndReadContractFeeExcel, 'select-and-read-contract-fee-excel');
+  assert.equal(INVOKE_CHANNELS.importContractFeeAttachments, 'import-contract-fee-attachments');
+  assert.equal(INVOKE_CHANNELS.exportContractFeeGroupFiles, 'export-contract-fee-group-files');
   assert.equal(EVENT_CHANNELS.onMobileVoiceConfirmSave, 'mobile-voice-confirm-save');
   assert.equal(EVENT_CHANNELS.onUnitWorkspaceChanged, 'unit-workspace-changed');
   assert.equal(EVENT_CHANNELS.onAppUpdateStatus, 'app-update-status');

@@ -6,7 +6,7 @@ function clone(value) { return structuredClone(value); }
 function normalize(value) {
   const empty = createEmptyDatabase();
   if (!value || typeof value !== 'object' || Array.isArray(value)) return empty;
-  const result = { ...empty, ...value, settings: { ...empty.settings, ...(value.settings || {}) } };
+  const result = { ...empty, ...value, version: empty.version, settings: { ...empty.settings, ...(value.settings || {}) } };
   for (const key of Object.keys(empty)) if (Array.isArray(empty[key]) && !Array.isArray(result[key])) result[key] = [];
   return result;
 }

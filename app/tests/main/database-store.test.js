@@ -24,6 +24,11 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.equal(database.settings.appSubtitle, '社区AI管理系统');
   assert.deepEqual(database.personnel, []);
   assert.deepEqual(database.landParcel, []);
+  assert.deepEqual(database.resourceContracts, []);
+  assert.deepEqual(database.contractFeeLedgers, []);
+  assert.deepEqual(database.contractFeeBatches, []);
+  assert.deepEqual(database.contractFeeReceipts, []);
+  assert.deepEqual(database.contractFeeAdvances, []);
   assert.deepEqual(database.documentDrafts, []);
   assert.deepEqual(database.documentVersions, []);
   assert.deepEqual(database.documentReferences, []);
@@ -35,7 +40,7 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.deepEqual(database.workProgressRecords, []);
   assert.deepEqual(database.workResourceEntries, []);
   assert.deepEqual(database.workAcceptances, []);
-  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 3);
+  assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 4);
 });
 
 test('older empty databases are normalized for the compatibility renderer', async (t) => {
@@ -46,7 +51,9 @@ test('older empty databases are normalized for the compatibility renderer', asyn
   const database = await store.read();
   assert.deepEqual(database.landParcel, [{ id: 'land-1' }]);
   assert.deepEqual(database.operationLogs, []);
-  assert.equal(database.version, 3);
+  assert.equal(database.version, 4);
+  assert.deepEqual(database.resourceContracts, []);
+  assert.deepEqual(database.contractFeeBatches, []);
   assert.deepEqual(database.documentDrafts, []);
   assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);

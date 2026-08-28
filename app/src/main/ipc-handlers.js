@@ -7,6 +7,7 @@ const XLSX = require('xlsx');
 const { INVOKE_CHANNELS } = require('../shared/ipc-contract');
 const { parsePersonnelExcelGrid } = require('../shared/personnel-excel-parser');
 const { JsonDatabaseStore } = require('./database-store');
+const { ContractFeeFileService } = require('./contract-fee-file-service');
 
 function registerCompatibilityHandlers({
   app,
@@ -25,9 +26,11 @@ function registerCompatibilityHandlers({
   writingProfileService,
   documentExportService,
   updateService,
+  contractFeeFileService,
 }) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
+  const contractFeeFiles = contractFeeFileService || new ContractFeeFileService({ userDataPath: app.getPath('userData'), dialog });
 
   function handle(channel, callback) {
     ipcMain.handle(channel, callback);
@@ -100,6 +103,15 @@ function registerCompatibilityHandlers({
     } catch (error) {
       return { columns: [], rows: [], error: error.message };
     }
+  });
+  handle(INVOKE_CHANNELS.selectAndReadContractFeeExcel, async () => {
+    try { return await contractFeeFiles.selectAndReadExcel(); } catch (error) { return { ok: false, error: error.message }; }
+  });
+  handle(INVOKE_CHANNELS.importContractFeeAttachments, async () => {
+    try { return await contractFeeFiles.importAttachments(); } catch (error) { return { ok: false, error: error.message, data: [] }; }
+  });
+  handle(INVOKE_CHANNELS.exportContractFeeGroupFiles, async (_event, value) => {
+    try { return await contractFeeFiles.exportGroupedFiles(value || {}); } catch (error) { return { ok: false, error: error.message, files: [] }; }
   });
   handle(INVOKE_CHANNELS.getLanShareInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.getMobileUploadInfo, async () => ({ enabled: false, url: null }));
