@@ -22,10 +22,16 @@ class RemoteDatabaseStore {
     this.stopSubscription = null;
   }
 
-  async isAuthenticated() { return Boolean((await this.authService.getStatus()).authenticated); }
+  async getWorkspaceStatus() {
+    const status = await this.authService.getStatus();
+    return {
+      authenticated: Boolean(status?.authenticated),
+      hasSharedWorkspace: Boolean(status?.authenticated && status?.account?.organizationId),
+    };
+  }
 
   async read() {
-    if (!(await this.isAuthenticated())) return this.localStore.read();
+    if (!(await this.getWorkspaceStatus()).hasSharedWorkspace) return this.localStore.read();
     await this.ensureSubscription();
     const response = await this.authService.request('/unit/workspace/data');
     this.version = response.version;
@@ -40,7 +46,7 @@ class RemoteDatabaseStore {
   async write(value) {
     const snapshot = normalize(value);
     this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
-      if (!(await this.isAuthenticated())) return this.localStore.write(snapshot);
+      if (!(await this.getWorkspaceStatus()).hasSharedWorkspace) return this.localStore.write(snapshot);
       if (this.version === null) await this.read();
       const response = await this.authService.request('/unit/workspace/data', { method: 'PUT', body: { data: snapshot, version: this.version } });
       this.version = response.version;
