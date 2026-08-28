@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const db = require('../database');
-const { hashPassword, verifyPassword, signToken, randomCode } = require('../utils/crypto');
+const { hashPassword, verifyPassword, needsPasswordUpgrade, signToken, randomCode } = require('../utils/crypto');
 const logger = require('../utils/logger');
 const PLAN_TYPES = new Set(['trial', 'expires', 'permanent']);
 
@@ -150,7 +150,7 @@ function updateMemberStatus(actor, memberId, isActive) {
 function login({ phone, password, machineId }) {
   const user = db.findOne('users', item => item.phone === normalizePhone(phone)); if (!user || !verifyPassword(password, user.password_hash)) throw failure(401, '手机号或密码错误');
   const access = getAccessStatus(user); if (!access.valid) throw failure(403, access.reason);
-  const now = db.now(); db.updateById('users', user.id, { last_login_at: now, ...(machineId && !user.machine_id ? { machine_id: machineId } : {}), updated_at: now }); logger.info('用户登录', { userId: user.id }); return { token: signToken({ userId: user.id, role: user.role, organizationId: user.organization_id || null }), user: getUserById(user.id) };
+  const now = db.now(); db.updateById('users', user.id, { last_login_at: now, ...(machineId && !user.machine_id ? { machine_id: machineId } : {}), ...(needsPasswordUpgrade(user.password_hash) ? { password_hash: hashPassword(password) } : {}), updated_at: now }); logger.info('用户登录', { userId: user.id }); return { token: signToken({ userId: user.id, role: user.role, organizationId: user.organization_id || null }), user: getUserById(user.id) };
 }
 function listUsers({ keyword = '', isActive, page = 1, pageSize = 20 } = {}) { const word = String(keyword).trim().toLowerCase(); const current = Math.max(1, Number.parseInt(page, 10) || 1); const size = Math.min(100, Math.max(1, Number.parseInt(pageSize, 10) || 20)); let users = db.findAll('users'); if (word) users = users.filter(user => [user.phone, user.name, user.village_name].some(value => String(value || '').toLowerCase().includes(word))); if (isActive !== undefined && isActive !== '') users = users.filter(user => Boolean(user.is_active) === ['true', '1'].includes(String(isActive))); users = users.sort((a, b) => b.created_at.localeCompare(a.created_at)).map(sanitizeUser); return { users: users.slice((current - 1) * size, current * size), pagination: { page: current, pageSize: size, total: users.length, totalPages: Math.max(1, Math.ceil(users.length / size)) } }; }
 function updateProfile(userId, { name, phone }) { const user = db.findById('users', userId); if (!user) throw failure(404, '用户不存在'); const patch = { updated_at: db.now() }; if (name !== undefined) patch.name = text(name, '姓名', 50); if (phone && phone !== user.phone) { const normalized = assertPhone(phone); if (db.findOne('users', item => item.phone === normalized && item.id !== userId)) throw failure(409, '该手机号已被其他用户使用'); patch.phone = normalized; } db.updateById('users', userId, patch); return getUserById(userId); }

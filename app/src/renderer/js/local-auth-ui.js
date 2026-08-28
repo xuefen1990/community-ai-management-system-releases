@@ -9,6 +9,7 @@
   let loginSubmission = null;
   let startupLoginGuardTimer = null;
   let footerActionInFlight = false;
+  let localBackendReady = !api.getLocalBackendStatus;
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
@@ -25,7 +26,7 @@
   function setLoading(buttonId, loading, normalText) {
     const button = document.getElementById(buttonId);
     if (!button) return;
-    button.disabled = loading;
+    button.disabled = loading || (buttonId === 'doLoginBtn' && !localBackendReady);
     const label = button.querySelector('span');
     if (label) label.textContent = loading ? '处理中...' : normalText;
   }
@@ -256,6 +257,13 @@
     if (loginSubmission) return loginSubmission;
     loginSubmission = (async () => {
       setError('login');
+      if (!localBackendReady) {
+        await refreshLocalBackendStatus();
+        if (!localBackendReady) {
+          setError('login', '本机账号服务尚未就绪，请点击下方重试');
+          return;
+        }
+      }
       setLoading('doLoginBtn', true, '登录进入工作台');
       try {
         const phone = document.getElementById('login-phone')?.value || '';
@@ -481,6 +489,70 @@
       : `账号服务器：${config?.baseUrl || '尚未设置（将使用本机默认地址）'}`;
   }
 
+  function ensureLocalBackendStatus() {
+    let status = document.getElementById('localBackendStatus');
+    if (status) return status;
+    status = document.createElement('div');
+    status.id = 'localBackendStatus';
+    status.className = 'local-backend-status is-starting';
+    status.setAttribute('role', 'status');
+    status.setAttribute('aria-live', 'polite');
+    document.getElementById('remoteServerEntry')?.after(status);
+    return status;
+  }
+
+  function renderLocalBackendStatus(status) {
+    const element = ensureLocalBackendStatus();
+    if (!element) return;
+    const state = status?.state || 'failed';
+    localBackendReady = ['ready', 'external'].includes(state);
+    element.className = `local-backend-status ${localBackendReady ? 'is-ready' : state === 'starting' || state === 'idle' ? 'is-starting' : 'is-error'}`;
+    element.replaceChildren();
+    const label = document.createElement('span');
+    label.textContent = state === 'ready'
+      ? '账号服务已就绪'
+      : state === 'external'
+        ? '正在使用局域网账号服务'
+        : state === 'starting' || state === 'idle'
+          ? '账号服务启动中…'
+          : (status?.message || '本机账号服务启动失败');
+    element.appendChild(label);
+    if (!localBackendReady && !['starting', 'idle'].includes(state)) {
+      const retry = document.createElement('button');
+      retry.type = 'button';
+      retry.className = 'local-backend-retry';
+      retry.textContent = '重试';
+      retry.addEventListener('click', () => refreshLocalBackendStatus({ retry: true }));
+      element.appendChild(retry);
+    }
+    const loginButton = document.getElementById('doLoginBtn');
+    if (loginButton && !loginSubmission) loginButton.disabled = !localBackendReady;
+  }
+
+  async function refreshLocalBackendStatus({ retry = false } = {}) {
+    if (!api.getLocalBackendStatus) {
+      localBackendReady = true;
+      return { state: 'external' };
+    }
+    renderLocalBackendStatus({ state: 'starting' });
+    try {
+      let status = retry && api.retryLocalBackend
+        ? await api.retryLocalBackend()
+        : await api.getLocalBackendStatus();
+      if (!retry && status?.state === 'idle' && api.retryLocalBackend) status = await api.retryLocalBackend();
+      for (let attempt = 0; ['idle', 'starting'].includes(status?.state) && attempt < 60; attempt += 1) {
+        await new Promise(resolve => window.setTimeout(resolve, 150));
+        status = await api.getLocalBackendStatus();
+      }
+      renderLocalBackendStatus(status);
+      return status;
+    } catch (error) {
+      const status = { state: 'failed', message: error.message || '本机账号服务启动失败' };
+      renderLocalBackendStatus(status);
+      return status;
+    }
+  }
+
   async function refreshRemoteServerSummary() {
     if (!api.getRemoteServerConfig) return;
     try {
@@ -537,6 +609,7 @@
       try {
         const config = await api.setRemoteServerConfig({ baseUrl: serverUrl() });
         setRemoteServerSummary(config);
+        await refreshLocalBackendStatus();
         setLoginHint('账号服务器已更新，请使用该服务器上的账号手动登录');
         closeRemoteServerModal();
       } catch (error) {
@@ -579,6 +652,7 @@
     button.addEventListener('click', openRemoteServerModal);
     entry.append(summary, button);
     actionRow.after(entry);
+    ensureLocalBackendStatus();
   }
 
   function closeActivationModal() {
@@ -768,6 +842,7 @@
     showLoginScreen();
     installStartupLoginGuard();
     await refreshRemoteServerSummary();
+    await refreshLocalBackendStatus();
     await hydrateLoginPrefill();
     const rememberLabel = document.querySelector('label[for="remember-me"]');
     if (rememberLabel) rememberLabel.textContent = '记住登录';

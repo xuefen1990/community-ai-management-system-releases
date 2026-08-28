@@ -8,6 +8,8 @@ const { registerCompatibilityHandlers } = require('./ipc-handlers');
 const { AuthStore } = require('./auth-store');
 const { RememberedLoginStore } = require('./remembered-login-store');
 const { RemoteAuthService } = require('./remote-auth-service');
+const { prepareBackendData } = require('./backend-data-migrator');
+const { LocalBackendManager } = require('./local-backend-manager');
 const { createMachineId } = require('./machine-id');
 const { LocalModelCatalog } = require('./local-model-catalog');
 const { AiSettingsStore } = require('./ai-settings-store');
@@ -28,6 +30,7 @@ app.setName('社区AI管理系统');
 app.setPath('userData', path.join(app.getPath('appData'), '社区AI管理系统'));
 
 let mainWindow = null;
+let localBackendManager = null;
 
 function createMainWindow() {
   mainWindow = new BrowserWindow(createWindowOptions(path.resolve(__dirname, '..', '..')));
@@ -44,6 +47,23 @@ app.whenReady().then(() => {
     machineId,
     baseUrl: process.env.COMMUNITY_AI_BACKEND_URL || 'http://127.0.0.1:3000',
   });
+  const projectRoot = path.resolve(__dirname, '..', '..', '..');
+  const backendEntry = app.isPackaged
+    ? path.join(process.resourcesPath, 'backend', 'src', 'index.js')
+    : path.join(projectRoot, 'backend', 'src', 'index.js');
+  localBackendManager = new LocalBackendManager({
+    backendEntry,
+    prepareData: () => prepareBackendData({
+      userDataPath: app.getPath('userData'),
+      legacyBackendPaths: [
+        process.env.COMMUNITY_AI_LEGACY_BACKEND_DB,
+        path.join(projectRoot, 'backend', 'data', 'backend.db'),
+      ].filter(Boolean),
+    }),
+  });
+  authService.getServerConfig()
+    .then(config => localBackendManager.ensureReady(config))
+    .catch(() => {});
   const modelCatalog = new LocalModelCatalog({ userDataPath: app.getPath('userData') });
   const aiSettingsStore = new AiSettingsStore({ userDataPath: app.getPath('userData'), safeStorage });
   const onlineClient = new OpenAiCompatibleClient();
@@ -82,6 +102,7 @@ app.whenReady().then(() => {
     writingProfileService,
     documentExportService,
     updateService,
+    localBackendManager,
   });
   ipcMain.on(SEND_CHANNELS.startWindowDrag, () => {});
   createMainWindow();
@@ -96,4 +117,8 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('before-quit', () => {
+  localBackendManager?.stop().catch(() => {});
 });

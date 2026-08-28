@@ -103,7 +103,8 @@ test('registers local account entitlement management channels', () => {
     listAccountEntitlements: async () => [], setAccountEntitlement: async () => [],
     getServerConfig: async () => ({}), setServerConfig: async () => ({}), checkServerConnection: async () => ({}),
   };
-  const { handlers } = makeHandlers({ authService });
+  const localBackendManager = { getStatus: () => ({ state: 'ready' }), ensureReady: async () => ({ state: 'ready' }), retry: async () => ({ state: 'ready' }) };
+  const { handlers } = makeHandlers({ authService, localBackendManager });
   assert.equal(handlers.has(INVOKE_CHANNELS.listLocalAccountEntitlements), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.setLocalAccountEntitlement), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.getLoginPrefill), true);
@@ -112,6 +113,21 @@ test('registers local account entitlement management channels', () => {
   assert.equal(handlers.has(INVOKE_CHANNELS.getRemoteServerConfig), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.setRemoteServerConfig), true);
   assert.equal(handlers.has(INVOKE_CHANNELS.checkRemoteServerConnection), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.getLocalBackendStatus), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.retryLocalBackend), true);
+});
+
+test('login waits for the managed account service before requesting authentication', async () => {
+  const calls = [];
+  const authService = {
+    getServerConfig: async () => ({ baseUrl: 'http://127.0.0.1:3000', configured: false }),
+    login: async () => { calls.push('login'); return { authenticated: true }; },
+  };
+  const localBackendManager = { ensureReady: async () => { calls.push('backend'); return { state: 'ready' }; }, getStatus: () => ({ state: 'idle' }), retry: async () => ({ state: 'ready' }) };
+  const { callbacks } = makeHandlers({ authService, localBackendManager });
+  const result = await callbacks.get(INVOKE_CHANNELS.loginLocalAccount)({}, { phone: '18888190901', password: 'secret88' });
+  assert.equal(result.authenticated, true);
+  assert.deepEqual(calls, ['backend', 'login']);
 });
 
 test('registers application update channels', () => {

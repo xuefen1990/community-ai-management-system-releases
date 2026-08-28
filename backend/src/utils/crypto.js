@@ -12,7 +12,21 @@ function hashPassword(password) {
 }
 
 function verifyPassword(password, hash) {
+  if (hash && typeof hash === 'object' && hash.algorithm === 'scrypt' && hash.salt && hash.hash) {
+    try {
+      const actual = Buffer.from(hash.hash, 'base64url');
+      const expected = crypto.scryptSync(password, hash.salt, actual.length);
+      return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+    } catch {
+      return false;
+    }
+  }
+  if (typeof hash !== 'string') return false;
   return bcrypt.compareSync(password, hash);
+}
+
+function needsPasswordUpgrade(hash) {
+  return Boolean(hash && typeof hash === 'object' && hash.algorithm === 'scrypt');
 }
 
 // ===== JWT =====
@@ -76,6 +90,7 @@ function randomCode(prefix = '') {
 module.exports = {
   hashPassword,
   verifyPassword,
+  needsPasswordUpgrade,
   signToken,
   verifyToken,
   encrypt,

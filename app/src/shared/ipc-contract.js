@@ -65,6 +65,8 @@ const INVOKE_CHANNELS = Object.freeze({
   getRemoteServerConfig: 'get-remote-server-config',
   setRemoteServerConfig: 'set-remote-server-config',
   checkRemoteServerConnection: 'check-remote-server-connection',
+  getLocalBackendStatus: 'get-local-backend-status',
+  retryLocalBackend: 'retry-local-backend',
   checkForAppUpdate: 'check-for-app-update',
   downloadAppUpdate: 'download-app-update',
   installAppUpdate: 'install-app-update',

@@ -27,6 +27,7 @@ function registerCompatibilityHandlers({
   documentExportService,
   updateService,
   contractFeeFileService,
+  localBackendManager,
 }) {
   const store = databaseStore || new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const handlerNames = new Set();
@@ -120,9 +121,10 @@ function registerCompatibilityHandlers({
     ? localAiRuntime.getStatus()
     : ({ running: false }));
   if (authService) {
+    const ensureAccountService = async () => localBackendManager?.ensureReady(await authService.getServerConfig());
     handle(INVOKE_CHANNELS.registerLocalAccount, async () => { throw new Error('请使用单位管理员申请或加入单位入口注册'); });
-    handle(INVOKE_CHANNELS.submitUnitAdminApplication, async (_event, value) => authService.submitUnitAdminApplication(value));
-    handle(INVOKE_CHANNELS.submitMemberApplication, async (_event, value) => authService.submitMemberApplication(value));
+    handle(INVOKE_CHANNELS.submitUnitAdminApplication, async (_event, value) => { await ensureAccountService(); return authService.submitUnitAdminApplication(value); });
+    handle(INVOKE_CHANNELS.submitMemberApplication, async (_event, value) => { await ensureAccountService(); return authService.submitMemberApplication(value); });
     handle(INVOKE_CHANNELS.listUnitMemberApplications, async () => authService.listMemberApplications());
     handle(INVOKE_CHANNELS.reviewUnitMemberApplication, async (_event, value) => authService.reviewMemberApplication(value));
     handle(INVOKE_CHANNELS.listUnitMembers, async () => authService.listUnitMembers());
@@ -132,7 +134,7 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.createUnitInvite, async (_event, value) => authService.createInvite(value));
     handle(INVOKE_CHANNELS.deactivateUnitInvite, async (_event, value) => authService.deactivateInvite(value));
     handle(INVOKE_CHANNELS.importLocalDataToUnit, async () => store.importLocalDataToUnit());
-    handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => authService.login(value));
+    handle(INVOKE_CHANNELS.loginLocalAccount, async (_event, value) => { await ensureAccountService(); return authService.login(value); });
     handle(INVOKE_CHANNELS.logoutLocalAccount, async () => authService.logout());
     handle(INVOKE_CHANNELS.getLocalAuthStatus, async () => authService.getStatus());
     handle(INVOKE_CHANNELS.getStartupEntitlement, async () => authService.getStartupEntitlement());
@@ -142,8 +144,14 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.listLocalAccountEntitlements, async () => authService.listAccountEntitlements());
     handle(INVOKE_CHANNELS.setLocalAccountEntitlement, async (_event, value) => authService.setAccountEntitlement(value));
     handle(INVOKE_CHANNELS.getRemoteServerConfig, async () => authService.getServerConfig());
-    handle(INVOKE_CHANNELS.setRemoteServerConfig, async (_event, value) => authService.setServerConfig(value || {}));
+    handle(INVOKE_CHANNELS.setRemoteServerConfig, async (_event, value) => {
+      const config = await authService.setServerConfig(value || {});
+      await localBackendManager?.ensureReady(config);
+      return config;
+    });
     handle(INVOKE_CHANNELS.checkRemoteServerConnection, async (_event, value) => authService.checkServerConnection(value || {}));
+    handle(INVOKE_CHANNELS.getLocalBackendStatus, async () => localBackendManager?.getStatus() || ({ state: 'external', managed: false, message: '账号服务由外部配置管理' }));
+    handle(INVOKE_CHANNELS.retryLocalBackend, async () => localBackendManager?.retry(await authService.getServerConfig()) || ({ state: 'external', managed: false }));
   }
   if (updateService) {
     handle(INVOKE_CHANNELS.checkForAppUpdate, async () => updateService.check());

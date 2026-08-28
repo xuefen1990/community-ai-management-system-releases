@@ -52,6 +52,19 @@ test('unit application panel separates scrollable fields from fixed actions', as
   assert.match(style, /@media\s*\(max-width:\s*640px\)/u);
 });
 
+test('login layout keeps the logo reachable and scrolls short viewports instead of clipping the form', async () => {
+  const [source, style] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
+  ]);
+  assert.match(style, /\.login-container\s*\{[^}]*max-height:\s*calc\(100(?:dvh|vh)\s*-\s*\d+px\)/su);
+  assert.match(style, /\.login-form-section\s*\{[^}]*overflow-y:\s*auto/su);
+  assert.match(style, /@media\s*\(max-height:\s*\d+px\)[\s\S]*?\.login-form-section\s*\{[^}]*align-items:\s*flex-start/su);
+  assert.match(source, /getLocalBackendStatus/u);
+  assert.match(source, /retryLocalBackend/u);
+  assert.match(source, /账号服务启动中|账号服务已就绪/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');

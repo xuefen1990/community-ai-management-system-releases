@@ -45,6 +45,8 @@ if (!templateAppArgument || !projectAppArgument) {
   const bundledAsar = path.join(resourcesDirectory, 'app.asar');
   const preservedAsar = path.join(resourcesDirectory, 'app.asar.original');
   const runtimeSource = path.join(resourcesDirectory, 'app');
+  const backendSource = path.resolve(projectApp, '..', 'backend');
+  const backendRuntime = path.join(resourcesDirectory, 'backend');
   const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
   const packageManifest = JSON.parse(await readFile(path.join(projectApp, 'package.json'), 'utf8'));
   const appVersion = packageManifest.version;
@@ -62,6 +64,14 @@ if (!templateAppArgument || !projectAppArgument) {
   await mkdir(runtimeSource, { recursive: true });
   await cp(path.join(projectApp, 'package.json'), path.join(runtimeSource, 'package.json'));
   await cp(path.join(projectApp, 'src'), path.join(runtimeSource, 'src'), { recursive: true });
+  await mkdir(backendRuntime, { recursive: true });
+  await cp(path.join(backendSource, 'package.json'), path.join(backendRuntime, 'package.json'));
+  await cp(path.join(backendSource, 'src'), path.join(backendRuntime, 'src'), { recursive: true });
+  await cp(path.join(backendSource, 'node_modules'), path.join(backendRuntime, 'node_modules'), {
+    recursive: true,
+    preserveTimestamps: true,
+    verbatimSymlinks: true,
+  });
   const baselineNodeModules = path.resolve(projectApp, '..', 'source-original', 'app-asar', 'node_modules');
   await cp(baselineNodeModules, path.join(runtimeSource, 'node_modules'), {
     recursive: true,

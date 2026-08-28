@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 94);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 96);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 5);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -33,6 +33,8 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.getRemoteServerConfig, 'get-remote-server-config');
   assert.equal(INVOKE_CHANNELS.setRemoteServerConfig, 'set-remote-server-config');
   assert.equal(INVOKE_CHANNELS.checkRemoteServerConnection, 'check-remote-server-connection');
+  assert.equal(INVOKE_CHANNELS.getLocalBackendStatus, 'get-local-backend-status');
+  assert.equal(INVOKE_CHANNELS.retryLocalBackend, 'retry-local-backend');
   assert.equal(INVOKE_CHANNELS.checkForAppUpdate, 'check-for-app-update');
   assert.equal(INVOKE_CHANNELS.downloadAppUpdate, 'download-app-update');
   assert.equal(INVOKE_CHANNELS.installAppUpdate, 'install-app-update');
