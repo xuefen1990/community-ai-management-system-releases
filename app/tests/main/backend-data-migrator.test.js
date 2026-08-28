@@ -28,7 +28,7 @@ test('copies a complete legacy backend database only when the managed database i
   assert.equal(JSON.parse(await fs.readFile(repeated.dbPath, 'utf8')).users[0].phone, '18888190901');
 });
 
-test('imports the old local owner as a permanent platform administrator without exposing the password', async (t) => {
+test('imports every old local account with its password and entitlement, without exposing plaintext passwords', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-local-owner-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const userDataPath = path.join(directory, 'user-data');
@@ -42,13 +42,42 @@ test('imports the old local owner as a permanent platform administrator without 
   const prepared = await prepareBackendData({ userDataPath, legacyAuthPath, legacyBackendPaths: [] });
   const migrated = JSON.parse(await fs.readFile(prepared.dbPath, 'utf8'));
   assert.equal(prepared.migrationSource, 'legacy-local-owner');
-  assert.equal(migrated.users.length, 1);
-  assert.deepEqual(migrated.users[0].password_hash, password);
-  assert.equal(migrated.users[0].phone, '18888190901');
-  assert.equal(migrated.users[0].role, 'admin');
-  assert.equal(migrated.users[0].plan_type, 'permanent');
-  assert.equal(migrated.users[0].is_active, 1);
-  assert.equal(Object.hasOwn(migrated.users[0], 'password'), false);
+  assert.equal(migrated.users.length, 2);
+  const owner = migrated.users.find(user => user.phone === '18888190901');
+  const member = migrated.users.find(user => user.phone === '18888190902');
+  assert.deepEqual(owner.password_hash, password);
+  assert.equal(owner.role, 'admin');
+  assert.equal(owner.plan_type, 'permanent');
+  assert.equal(owner.is_active, 1);
+  assert.equal(member.role, 'admin');
+  assert.equal(member.plan_type, 'trial');
+  assert.match(member.plan_expires_at, /^2026-09-19T/u);
+  assert.equal(Object.hasOwn(owner, 'password'), false);
+});
+
+test('adds local accounts that were missed by an earlier backend migration without duplicating existing users', async (t) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-local-account-merge-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const userDataPath = path.join(directory, 'user-data');
+  const dbPath = path.join(userDataPath, 'backend', 'backend.db');
+  const legacyAuthPath = path.join(directory, 'local-auth.json');
+  const password = { algorithm: 'scrypt', salt: 'legacy-salt', hash: crypto.scryptSync('secret88', 'legacy-salt', 64).toString('base64url') };
+  await fs.mkdir(path.dirname(dbPath), { recursive: true });
+  await fs.writeFile(dbPath, JSON.stringify({ _meta: { version: 1 }, users: [{ id: 'owner-1', phone: '18888190901', password_hash: password, role: 'admin' }] }));
+  await fs.writeFile(legacyAuthPath, JSON.stringify({ version: 2, accounts: [
+    { id: 'owner-1', phone: '18888190901', password, role: 'owner', entitlement: { plan: 'permanent' } },
+    { id: 'member-1', phone: '17505270901', password, entitlement: { plan: 'trial', startedAt: '2026-08-21T00:00:00.000Z' } },
+  ] }));
+
+  const prepared = await prepareBackendData({ userDataPath, legacyAuthPath });
+  const merged = JSON.parse(await fs.readFile(prepared.dbPath, 'utf8'));
+  assert.equal(prepared.migrationSource, 'legacy-local-accounts');
+  assert.equal(merged.users.length, 2);
+  assert.deepEqual(merged.users.find(user => user.phone === '17505270901').password_hash, password);
+
+  await prepareBackendData({ userDataPath, legacyAuthPath });
+  const repeated = JSON.parse(await fs.readFile(prepared.dbPath, 'utf8'));
+  assert.equal(repeated.users.length, 2);
 });
 
 test('rejects a corrupt legacy backend instead of replacing it with an empty database', async (t) => {

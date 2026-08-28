@@ -43,36 +43,68 @@ function validateBackend(value, errorMessage = '历史账号数据库损坏，�
   return value;
 }
 
-function backendFromLocalOwner(state) {
+function localAccountPlan(account, now) {
+  const entitlement = account?.entitlement || {};
+  if (entitlement.plan === 'permanent') return { plan_type: 'permanent', plan_expires_at: null };
+  if (entitlement.plan === 'expires' && !Number.isNaN(new Date(entitlement.expiresAt).getTime())) {
+    return { plan_type: 'expires', plan_expires_at: new Date(entitlement.expiresAt).toISOString() };
+  }
+  const startedAt = entitlement.startedAt || account?.trialStartedAt || account?.createdAt || now;
+  const started = new Date(startedAt);
+  const expiresAt = Number.isNaN(started.getTime())
+    ? new Date(now).getTime() + 30 * 24 * 60 * 60 * 1000
+    : started.getTime() + 30 * 24 * 60 * 60 * 1000;
+  return { plan_type: 'trial', plan_expires_at: new Date(expiresAt).toISOString() };
+}
+
+function backendUsersFromLocalAccounts(state) {
   if (!state || typeof state !== 'object' || !Array.isArray(state.accounts)) {
     throw new Error('旧本机账号文件损坏，已保留原文件，请检查后重试');
   }
-  const owner = state.accounts.find(account => account?.role === 'owner') || null;
-  if (!owner?.phone || !owner.password) return null;
   const now = new Date().toISOString();
-  const createdAt = owner.createdAt || now;
+  return state.accounts
+    .filter(account => account?.phone && account?.password)
+    .map((account) => {
+      const createdAt = account.createdAt || now;
+      return {
+        id: account.id || crypto.randomUUID(),
+        phone: String(account.phone),
+        password_hash: structuredClone(account.password),
+        name: account.name || '本机账号',
+        // 旧版本机账号并没有区分线上角色；迁移后均保留本机完整使用权限。
+        role: 'admin',
+        account_status: 'active',
+        organization_id: null,
+        permissions: {},
+        village_name: '',
+        ...localAccountPlan(account, now),
+        trial_started_at: account.trialStartedAt || createdAt,
+        machine_id: '',
+        is_active: 1,
+        last_login_at: null,
+        created_at: createdAt,
+        updated_at: now,
+      };
+    });
+}
+
+function backendFromLocalOwner(state) {
+  const users = backendUsersFromLocalAccounts(state);
+  if (!users.length) return null;
+  const now = new Date().toISOString();
   const data = Object.fromEntries(BACKEND_COLLECTIONS.map(name => [name, []]));
   data._meta = { version: 1, createdAt: now, migratedFrom: 'local-auth' };
-  data.users.push({
-    id: owner.id || crypto.randomUUID(),
-    phone: String(owner.phone),
-    password_hash: structuredClone(owner.password),
-    name: '系统管理员',
-    role: 'admin',
-    account_status: 'active',
-    organization_id: null,
-    permissions: {},
-    village_name: '',
-    plan_type: owner.entitlement?.plan === 'permanent' ? 'permanent' : (owner.entitlement?.plan || 'permanent'),
-    plan_expires_at: owner.entitlement?.expiresAt || null,
-    trial_started_at: owner.trialStartedAt || null,
-    machine_id: '',
-    is_active: 1,
-    last_login_at: null,
-    created_at: createdAt,
-    updated_at: now,
-  });
+  data.users.push(...users);
   return data;
+}
+
+function mergeLegacyLocalAccounts(database, state) {
+  const existingPhones = new Set(database.users.map(user => String(user?.phone || '')));
+  const additions = backendUsersFromLocalAccounts(state)
+    .filter(user => !existingPhones.has(user.phone));
+  if (!additions.length) return false;
+  database.users.push(...additions);
+  return true;
 }
 
 async function atomicWrite(filePath, content, fsImpl, mode = 0o600) {
@@ -111,9 +143,10 @@ async function prepareBackendData({
   await fsImpl.mkdir(updatesDir, { recursive: true });
 
   let migrationSource = 'existing';
+  let database;
   if (await exists(dbPath, fsImpl)) {
     const managedDatabaseError = '本机账号数据库损坏，已保留原文件，请检查后重试';
-    validateBackend(parseJson(await fsImpl.readFile(dbPath, 'utf8'), managedDatabaseError), managedDatabaseError);
+    database = validateBackend(parseJson(await fsImpl.readFile(dbPath, 'utf8'), managedDatabaseError), managedDatabaseError);
   } else {
     const legacyBackend = await readFirstLegacyBackend(legacyBackendPaths, fsImpl);
     if (legacyBackend) {
@@ -134,6 +167,18 @@ async function prepareBackendData({
     await atomicWrite(markerPath, `${JSON.stringify({ source: migrationSource, completedAt: new Date().toISOString() }, null, 2)}\n`, fsImpl);
   }
 
+  if (legacyAuthPath && await exists(legacyAuthPath, fsImpl)) {
+    const legacyState = parseJson(
+      await fsImpl.readFile(legacyAuthPath, 'utf8'),
+      '旧本机账号文件损坏，已保留原文件，请检查后重试',
+    );
+    if (!database) database = validateBackend(parseJson(await fsImpl.readFile(dbPath, 'utf8')));
+    if (mergeLegacyLocalAccounts(database, legacyState)) {
+      await atomicWrite(dbPath, `${JSON.stringify(database, null, 2)}\n`, fsImpl);
+      migrationSource = migrationSource === 'existing' ? 'legacy-local-accounts' : migrationSource;
+    }
+  }
+
   let secret;
   if (await exists(secretPath, fsImpl)) {
     secret = (await fsImpl.readFile(secretPath, 'utf8')).trim();
@@ -145,4 +190,10 @@ async function prepareBackendData({
   return { backendDirectory, dbPath, updatesDir, secretPath, secret, markerPath, migrationSource };
 }
 
-module.exports = { BACKEND_COLLECTIONS, backendFromLocalOwner, prepareBackendData };
+module.exports = {
+  BACKEND_COLLECTIONS,
+  backendFromLocalOwner,
+  backendUsersFromLocalAccounts,
+  mergeLegacyLocalAccounts,
+  prepareBackendData,
+};

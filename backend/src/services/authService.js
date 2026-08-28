@@ -25,6 +25,14 @@ function checkUnitAdminPlan(user) {
   return { valid: true, plan: user.plan_type === 'trial' ? 'trial' : 'expires', expiresAt };
 }
 
+function checkPlatformPlan(user) {
+  // 早期平台管理员没有单独的有效期字段，保持其原有的永久授权行为。
+  if (!user.plan_type || user.plan_type === 'permanent') return { valid: true, plan: 'permanent', expiresAt: null };
+  const expiresAt = iso(user.plan_expires_at);
+  if (!expiresAt || new Date(expiresAt) <= new Date()) return { valid: false, reason: '账号有效期已到，请联系管理员续期' };
+  return { valid: true, plan: user.plan_type === 'trial' ? 'trial' : 'expires', expiresAt };
+}
+
 function getAccessStatus(user) {
   if (!user) return { valid: false, reason: '未登录' };
   if (!user.is_active || user.account_status === 'disabled') return { valid: false, reason: '账号已被停用，请联系管理员' };
@@ -32,7 +40,7 @@ function getAccessStatus(user) {
     const messages = { pending_platform_review: '单位管理员申请尚未通过平台审核', pending_unit_review: '加入单位申请尚未通过单位管理员审核', rejected: '申请未获审核通过，请联系管理员' };
     return { valid: false, reason: messages[user.account_status] || '账号当前不可用' };
   }
-  if (isPlatformAdmin(user)) return { valid: true, plan: 'permanent', scope: 'platform' };
+  if (isPlatformAdmin(user)) return { ...checkPlatformPlan(user), scope: 'platform' };
   const organization = organizationOf(user);
   if (!organization || organization.status !== 'active') return { valid: false, reason: '所属单位当前未启用，请联系平台管理员' };
   const unitAdmin = unitAdminOf(organization);

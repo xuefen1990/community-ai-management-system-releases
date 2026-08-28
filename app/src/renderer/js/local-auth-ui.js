@@ -21,6 +21,10 @@
     const text = document.getElementById(`${kind}ErrorText`);
     if (text) text.textContent = message;
     if (container) container.style.visibility = message ? 'visible' : 'hidden';
+    if (kind === 'login' && message) {
+      container?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+      window.showToast?.(message, 'error');
+    }
   }
 
   function setLoading(buttonId, loading, normalText) {
