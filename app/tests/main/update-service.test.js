@@ -72,7 +72,7 @@ test('release notes are normalized without rendering remote HTML', () => {
   assert.equal(normalizeReleaseNotes(null), '');
 });
 
-test('only prompts when the backend record and GitHub release are synchronized', async () => {
+test('uses the backend update feed when its published record is available', async () => {
   const updater = makeUpdater();
   const statuses = [];
   updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.1', releaseNotes: 'GitHub notes' });
@@ -91,6 +91,21 @@ test('only prompts when the backend record and GitHub release are synchronized',
   assert.deepEqual(await service.check(), { ok: true });
   assert.deepEqual(statuses.at(-1), { type: 'available', version: '0.3.1', releaseNotes: '同步发行说明', releaseDate: null });
   assert.deepEqual(updater.feedUrl, { provider: 'generic', url: 'http://backend.test/api/update/electron/' });
+});
+
+test('falls back to the bundled GitHub update feed when the account backend is unavailable', async () => {
+  const updater = makeUpdater();
+  const statuses = [];
+  updater.checkForUpdates = async () => updater.emit('update-available', { version: '0.3.18', releaseNotes: 'GitHub release notes' });
+  const service = new UpdateService({
+    updater,
+    isPackaged: () => true,
+    backendUpdateClient: { check: async () => { throw new Error('本机账号服务未发布更新'); } },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  assert.deepEqual(await service.check(), { ok: true });
+  assert.deepEqual(statuses.at(-1), { type: 'available', version: '0.3.18', releaseNotes: 'GitHub release notes', releaseDate: null });
 });
 
 test('does not download a GitHub release older than the backend record', async () => {

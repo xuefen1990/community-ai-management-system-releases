@@ -25,10 +25,17 @@ test('CI packaging is independent from local templates and still creates compati
   assert.doesNotMatch(source, /\/Applications\/村务通管理系统\.app/);
   assert.doesNotMatch(source, /source-original/);
   assert.match(source, /electron-builder', '--mac', 'dir', '--arm64'/);
+  assert.match(source, /path\.join\(releaseDirectory, 'mac-arm64'\)/);
   assert.match(source, /community-ai-management-system-\$\{version\}-arm64\.zip/);
   assert.match(source, /app-update\.yml/);
   assert.match(source, /latest-mac\.yml/);
   assert.match(source, /codesign/);
+});
+
+test('the Electron Builder configuration writes CI output where the release builder expects it', async () => {
+  const manifest = JSON.parse(await readFile(path.join(projectRoot, 'app', 'package.json'), 'utf8'));
+  assert.equal(manifest.build.directories.output, 'release');
+  assert.equal(manifest.build.directories.buildResources, 'build');
 });
 
 test('release validation ties a tag and release notes to the desktop version', async () => {

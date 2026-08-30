@@ -101,22 +101,19 @@ class UpdateService {
       try {
         this.backendRelease = await this.backendUpdateClient.check({ currentVersion: this.currentVersion() });
       } catch (error) {
+        // GitHub Release is the durable fallback for standalone installs.
+        // A local or LAN account backend must not prevent normal App updates.
         this.backendRelease = null;
-        this.logger.warn?.('后端更新检查失败', error);
-        this.emit('backend-unavailable', { message: error?.message || '更新服务器暂时不可用' });
-        return { ok: false, backendUnavailable: true, error: error?.message || '更新服务器暂时不可用' };
+        this.logger.warn?.('后端更新检查失败，改用 GitHub 更新源', error);
       }
-
-      if (!this.backendRelease.hasUpdate) {
-        this.emit('not-available', { version: this.backendRelease.latestVersion || this.currentVersion(), source: 'backend' });
-        return { ok: true, hasUpdate: false, source: 'backend' };
-      }
-      try {
-        const feedUrl = await this.backendUpdateClient.getElectronFeedUrl();
-        this.updater.setFeedURL({ provider: 'generic', url: feedUrl });
-      } catch (error) {
-        this.emit('backend-unavailable', { message: error?.message || '更新服务器暂时不可用' });
-        return { ok: false, backendUnavailable: true, error: error?.message || '更新服务器暂时不可用' };
+      if (this.backendRelease?.hasUpdate) {
+        try {
+          const feedUrl = await this.backendUpdateClient.getElectronFeedUrl();
+          this.updater.setFeedURL({ provider: 'generic', url: feedUrl });
+        } catch (error) {
+          this.backendRelease = null;
+          this.logger.warn?.('后端更新源不可用，改用 GitHub 更新源', error);
+        }
       }
     }
 

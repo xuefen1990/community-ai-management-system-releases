@@ -1,6 +1,6 @@
 {
   "name": "community-ai-management-system",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "description": "社区AI管理系统 Apple 芯片 Mac 版",
   "main": "src/main/index.js",
   "author": "社区AI管理系统",
@@ -28,6 +28,10 @@
   "build": {
     "appId": "com.community.ai.management",
     "productName": "社区AI管理系统",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
     "extraResources": [
       {
         "from": "../backend",
