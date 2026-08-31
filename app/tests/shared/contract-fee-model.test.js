@@ -49,6 +49,17 @@ test('creates a ledger and keeps completed batch snapshots unchanged after repla
   assert.equal(batch.items[0].bankCard, '6222');
 });
 
+test('uses the explicitly selected contract fee allocation rule instead of inferring another field', () => {
+  const matches = model.matchImportedRows({ rows: [{ id: 'r1', name: '张三', population: 3, acreage: 1.5, unitPrice: 100 }], personnel: people, selectedGroups: ['一组'] });
+  const acreageLedger = model.createLedger({ contractId: 'c-1', matches, calculationType: 'acreage' }, { now, id: 'l-acreage' });
+  assert.equal(acreageLedger.items[0].calculationType, 'acreage');
+  assert.equal(acreageLedger.items[0].quantity, 1.5);
+  const populationLedger = model.createLedger({ contractId: 'c-1', matches, calculationType: 'population' }, { now, id: 'l-population' });
+  assert.equal(populationLedger.items[0].calculationType, 'population');
+  assert.equal(populationLedger.items[0].quantity, 3);
+  assert.throws(() => model.createLedger({ contractId: 'c-1', matches: model.matchImportedRows({ rows: [{ id: 'r2', name: '张三', population: 3, unitPrice: 100 }], personnel: people, selectedGroups: ['一组'] }), calculationType: 'acreage' }, { now }), /缺少亩数数据/u);
+});
+
 test('requires adjustment and contract difference explanations before review', () => {
   const batch = {
     batchDate: '2026-09-01', contractAmountCents: 30000,

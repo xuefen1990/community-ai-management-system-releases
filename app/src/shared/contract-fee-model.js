@@ -87,13 +87,19 @@
     });
   }
 
-  function ledgerItemFromMatch(match, now = new Date()) {
+  function ledgerItemFromMatch(match, now = new Date(), requestedCalculationType = '') {
     if (!match?.person) throw new Error('发放台账存在未匹配居民');
     const population = numberValue(match.population);
     const acreage = numberValue(match.acreage);
     const unitPrice = text(match.unitPrice);
-    let calculationType = 'direct'; let quantity = 0;
-    if (population > 0) { calculationType = 'population'; quantity = population; }
+    let calculationType = requestedCalculationType || 'direct'; let quantity = 0;
+    if (calculationType === 'population') {
+      if (population <= 0) throw new Error(`${personName(match.person)}缺少人口数据，不能按人口分配`);
+      quantity = population;
+    } else if (calculationType === 'acreage') {
+      if (acreage <= 0) throw new Error(`${personName(match.person)}缺少亩数数据，不能按亩数分配`);
+      quantity = acreage;
+    } else if (population > 0) { calculationType = 'population'; quantity = population; }
     else if (acreage > 0) { calculationType = 'acreage'; quantity = acreage; }
     const calculatedAmountCents = calculateAmount({ calculationType, quantity, unitPrice, directAmount: match.amount });
     const importedAmountCents = amountToCents(match.amount);
@@ -129,13 +135,14 @@
     };
   }
 
-  function createLedger({ contractId, matches, source = {} }, { now = new Date(), id } = {}) {
+  function createLedger({ contractId, matches, source = {}, calculationType = '' }, { now = new Date(), id } = {}) {
     if (!text(contractId)) throw new Error('必须选择对应合同');
-    const items = matches.map((match) => ledgerItemFromMatch(match, now));
+    if (calculationType && !['population', 'acreage'].includes(calculationType)) throw new Error('承包费分配方式只能选择按人口或按亩数');
+    const items = matches.map((match) => ledgerItemFromMatch(match, now, calculationType));
     if (!items.length) throw new Error('台账中至少需要一名居民');
     return {
       id: id || identifier('contract-fee-ledger', now instanceof Date ? now.getTime() : Date.now()), contractId: text(contractId),
-      items, source: { fileName: text(source.fileName), sheetName: text(source.sheetName), importedAt: nowIso(now) },
+      calculationType: calculationType || '', items, source: { fileName: text(source.fileName), sheetName: text(source.sheetName), importedAt: nowIso(now) },
       createdAt: nowIso(now), updatedAt: nowIso(now),
     };
   }

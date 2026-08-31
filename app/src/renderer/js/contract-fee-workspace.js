@@ -230,6 +230,7 @@
     openModal('首次导入承包费发放台账', `<div class="cf-form-grid">
       ${field('对应合同 *', `<select id="cf-import-contract">${available.map((contract) => `<option value="${contract.id}"${selected(contract.id, preselectedContractId)}>${escapeHtml(contract.name)}（${escapeHtml(contract.startDate)} 至 ${escapeHtml(contract.endDate)}）</option>`).join('')}</select>`, true)}
       ${field('表格涉及的组别 *', `<div class="cf-check-grid">${groups.map((group) => `<label class="cf-check"><input type="checkbox" name="cf-import-group" value="${escapeHtml(group)}">${escapeHtml(group)}</label>`).join('') || '<span class="cf-error">居民档案中没有可用组别，请先完善居民档案。</span>'}</div>`, true)}
+      ${field('本次分配规则 *', '<div class="cf-check-grid"><label class="cf-check"><input type="radio" name="cf-import-calculation" value="acreage" checked>按地亩数分配</label><label class="cf-check"><input type="radio" name="cf-import-calculation" value="population">按全组人口平均分配</label></div><small class="cf-hint">选择后只使用对应的亩数或人口字段；缺少该字段的表格行不能建立台账。</small>', true)}
       <div class="cf-hint cf-field full">Excel 仅用于第一次建立台账。系统会在所选组别内按姓名匹配居民；之后每年直接从台账生成发放批次。</div>
     </div>`, { small: true, footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="choose-import-excel">选择并识别 Excel</button>' });
   }
@@ -237,11 +238,13 @@
   async function chooseImportExcel() {
     const contractId = document.getElementById('cf-import-contract').value;
     const groups = [...document.querySelectorAll('[name="cf-import-group"]:checked')].map((input) => input.value);
+    const calculationType = document.querySelector('[name="cf-import-calculation"]:checked')?.value;
     if (!groups.length) throw new Error('请至少选择一个组别');
+    if (!calculationType) throw new Error('请选择本次承包费分配规则');
     const result = await api.selectAndReadContractFeeExcel();
     if (!result?.ok) return;
     const matches = model.matchImportedRows({ rows: result.data.rows, personnel: state.database.personnel, selectedGroups: groups });
-    state.importDraft = { contractId, groups, source: result.data, matches };
+    state.importDraft = { contractId, groups, calculationType, source: result.data, matches };
     renderImportPreview();
   }
 
@@ -252,10 +255,13 @@
       const options = eligible.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), model.personId(match.person))}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person))}</option>`).join('');
       const status = match.matchStatus === 'matched' ? statusBadge('completed') : `<span class="cf-badge ${match.matchStatus === 'missing' ? 'danger' : 'warn'}">${match.matchStatus === 'missing' ? '未匹配' : '姓名重复'}</span>`;
       const cardConfirmation = match.bankCard ? `<label class="cf-check"><input type="checkbox" data-cf-bank-confirm="${match.id}"${checked(!match.bankCardConflict)}>确认使用表格卡号</label>${match.bankCardConflict ? `<br><small class="cf-error">现有：${escapeHtml(match.existingBankCard)}</small>` : ''}` : '—';
-      return `<tr class="${match.matchStatus === 'missing' ? 'cf-danger-row' : match.matchStatus === 'ambiguous' || match.bankCardConflict ? 'cf-warning-row' : ''}"><td>${match.sourceRowNumber || ''}</td><td>${escapeHtml(match.name)}</td><td>${status}</td><td><select class="cf-inline-select" data-cf-resolution="${match.id}"><option value="">请选择居民</option>${options}</select></td><td>${escapeHtml(match.population || match.acreage || '—')}</td><td>${escapeHtml(match.unitPrice || '—')}</td><td>${escapeHtml(match.amount || '—')}</td><td>${escapeHtml(match.bankCard || '—')}</td><td>${cardConfirmation}</td></tr>`;
+      const quantity = draft.calculationType === 'population' ? match.population : match.acreage;
+      return `<tr class="${match.matchStatus === 'missing' ? 'cf-danger-row' : match.matchStatus === 'ambiguous' || match.bankCardConflict ? 'cf-warning-row' : ''}"><td>${match.sourceRowNumber || ''}</td><td>${escapeHtml(match.name)}</td><td>${status}</td><td><select class="cf-inline-select" data-cf-resolution="${match.id}"><option value="">请选择居民</option>${options}</select></td><td>${escapeHtml(quantity || '—')}</td><td>${escapeHtml(match.unitPrice || '—')}</td><td>${escapeHtml(match.amount || '—')}</td><td>${escapeHtml(match.bankCard || '—')}</td><td>${cardConfirmation}</td></tr>`;
     }).join('');
     state.modal = { type: 'import-preview' };
-    openModal('核对 Excel 识别与居民匹配', `<div class="cf-hint">文件：${escapeHtml(draft.source.fileName)}；工作表：${escapeHtml(draft.source.sheetName)}。未匹配或重名必须手动指定居民；卡号冲突必须明确确认。</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>行</th><th>表内姓名</th><th>匹配</th><th>居民档案</th><th>人口/亩数</th><th>单价</th><th>金额</th><th>卡号</th><th>冲突处理</th></tr></thead><tbody>${rows}</tbody></table></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-import-ledger">确认建立长期台账</button>' });
+    const calculationLabel = draft.calculationType === 'population' ? '按全组人口平均分配' : '按地亩数分配';
+    const quantityLabel = draft.calculationType === 'population' ? '人口' : '面积（亩）';
+    openModal('核对 Excel 识别与居民匹配', `<div class="cf-hint">文件：${escapeHtml(draft.source.fileName)}；工作表：${escapeHtml(draft.source.sheetName)}；分配规则：<strong>${calculationLabel}</strong>。未匹配或重名必须手动指定居民；卡号冲突必须明确确认。</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>行</th><th>表内姓名</th><th>匹配</th><th>居民档案</th><th>${quantityLabel}</th><th>单价</th><th>金额</th><th>卡号</th><th>冲突处理</th></tr></thead><tbody>${rows}</tbody></table></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-import-ledger">确认建立长期台账</button>' });
   }
 
   async function saveImportedLedger() {
@@ -270,7 +276,7 @@
       if (match.bankCardConflict && !confirmation?.checked) throw new Error(`${match.name}的银行卡号与居民档案不一致，请确认后再保存`);
       if (match.bankCard) model.setDefaultBankCard(match.person, match.bankCard);
     }
-    const ledger = model.createLedger({ contractId: state.importDraft.contractId, matches, source: state.importDraft.source });
+    const ledger = model.createLedger({ contractId: state.importDraft.contractId, matches, calculationType: state.importDraft.calculationType, source: state.importDraft.source });
     state.database.contractFeeLedgers.push(ledger);
     await saveDatabase(`已建立长期台账，共 ${ledger.items.length} 人`);
     state.importDraft = null; closeModal(); state.view = 'ledger'; renderShell();
