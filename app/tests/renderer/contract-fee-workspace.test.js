@@ -27,6 +27,8 @@ test('workspace module keeps the unified disbursement screens outside the legacy
   assert.match(script, /subsidyRecordListModal/u);
   assert.match(script, /save-subsidy-record/u);
   assert.match(script, /document\.getElementById\('cf-modal-overlay'\)\?\.remove\(\)/u);
+  assert.match(script, /overlay\.addEventListener\('click'/u);
+  assert.match(script, /event\.stopPropagation\(\)/u);
   assert.match(script, /selectAndReadContractFeeExcel/u);
   assert.match(script, /exportContractFeeGroupFiles/u);
 });

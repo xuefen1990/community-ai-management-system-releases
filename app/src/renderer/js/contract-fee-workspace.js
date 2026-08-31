@@ -161,6 +161,16 @@
     overlay.className = 'cf-modal-overlay';
     overlay.id = 'cf-modal-overlay';
     overlay.innerHTML = `<div class="cf-modal${small ? ' small' : ''}"><div class="cf-modal-head"><h3>${escapeHtml(title)}</h3><button class="cf-close" data-cf-action="close-modal">×</button></div><div class="cf-modal-body">${body}</div>${footer ? `<div class="cf-modal-foot">${footer}</div>` : ''}</div>`;
+    // Modal buttons also bind locally. This keeps actions such as “编辑主表” available
+    // when a surrounding page listener is delayed or replaced during a large-table render.
+    overlay.addEventListener('click', async (event) => {
+      const actionElement = event.target.closest('[data-cf-action]');
+      if (!actionElement || !overlay.contains(actionElement)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      try { await handleAction(actionElement.dataset.cfAction, actionElement); }
+      catch (error) { notify(error.message || '操作失败', 'error'); }
+    });
     document.body.appendChild(overlay);
   }
 
