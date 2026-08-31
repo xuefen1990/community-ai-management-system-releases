@@ -88,6 +88,15 @@ test('light glass controls keep primary and disabled labels readable and never e
   assert.match(style, /A visible full-window canvas/u);
 });
 
+test('disabled workspace primary actions use the familiar green background with gray labels', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /Restore the familiar green disabled action state/u);
+  assert.match(style, /button\.btn\.btn-primary:disabled/u);
+  assert.match(style, /color:\s*#596560\s*!important/u);
+  assert.match(style, /#c8eadb/u);
+  assert.match(style, /button\.btn\.btn-primary:disabled svg/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
