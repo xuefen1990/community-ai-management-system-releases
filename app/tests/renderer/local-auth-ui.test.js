@@ -107,6 +107,18 @@ test('light theme protects every disabled action from white text on a pale backg
   assert.match(style, /fill:\s*currentColor/u);
 });
 
+test('light theme gives every workspace primary action a green surface after the generic glass button rule', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  const genericButtonSurface = style.indexOf('body.light-theme .btn,');
+  const workspacePrimarySurface = style.indexOf('Give\n * every main-workspace primary action');
+  assert.ok(genericButtonSurface >= 0);
+  assert.ok(workspacePrimarySurface > genericButtonSurface);
+  assert.match(style, /body\.light-theme \.app-main \.btn\.btn-primary/u);
+  assert.match(style, /#tab-personnel \.header-actions \.btn\.btn-primary \{/u);
+  assert.match(style, /color:\s*#4d5b56\s*!important/u);
+  assert.match(style, /#afe0c8/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
