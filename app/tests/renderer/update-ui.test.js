@@ -53,3 +53,13 @@ test('light theme keeps modal primary actions readable and hides legacy onboardi
   assert.match(style, /#appUpdateModal #appUpdateNotes/u);
   assert.match(style, /\.btn\.btn-guide,\s*\.sidebar-tour-btn\s*\{[\s\S]*?display:\s*none\s*!important/u);
 });
+
+test('light theme gives every custom dialog button a visible green surface', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /cf-modal dialogs/u);
+  assert.match(style, /\.cf-modal button:not\(\.cf-close\)/u);
+  assert.match(style, /\.modal-overlay \.modal-card button:not\(\.close-modal-btn\):not\(\.btn-close\)/u);
+  assert.match(style, /background:\s*linear-gradient\(135deg, #c6ead3 0%, #a9d9ba 100%\)\s*!important/u);
+  assert.match(style, /\.cf-modal button:not\(\.cf-close\):disabled/u);
+  assert.match(style, /opacity:\s*1\s*!important/u);
+});
