@@ -7725,7 +7725,40 @@ body.dark-theme .document-prompt-examples button, body.dark-theme .document-refe
   align-items: center;
   justify-content: space-between;
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.08) 0%, rgba(5, 150, 105, 0.03) 100%);
+  cursor: grab;
+  user-select: none;
 }
+.ai-copilot-drawer.ai-assistant-dragging { cursor: grabbing; transition: none; }
+.ai-copilot-drawer.ai-assistant-dragged { transform-origin: center; }
+.ai-drawer-header button { cursor: pointer; }
+.ai-records-link {
+  margin-left: 8px;
+  padding: 4px 7px;
+  border: 1px solid rgba(5, 150, 105, 0.25);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #047857;
+  font-size: 11px;
+  font-weight: 700;
+}
+.ai-operation-center {
+  margin: 22px;
+  padding: 22px;
+  border: 1px solid var(--border-color, #d7e4df);
+  border-radius: 16px;
+  background: var(--bg-card, #ffffff);
+  box-shadow: 0 10px 30px rgba(15, 118, 110, 0.08);
+}
+.ai-operation-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.ai-operation-header h2 { margin: 0; color: var(--text-primary, #1f2937); font-size: 22px; }
+.ai-operation-header p { margin: 6px 0 0; color: var(--text-secondary, #64748b); font-size: 13px; }
+.ai-operation-list { display: flex; flex-direction: column; gap: 10px; }
+.ai-operation-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 16px; border: 1px solid var(--border-color, #d7e4df); border-radius: 12px; background: rgba(240, 253, 244, 0.58); }
+.ai-operation-row strong, .ai-operation-row span { display: block; }
+.ai-operation-row strong { color: var(--text-primary, #1f2937); font-size: 14px; }
+.ai-operation-row span { margin-top: 5px; color: var(--text-secondary, #64748b); font-size: 12px; }
+.ai-operation-undo { white-space: nowrap; }
+.ai-operation-empty { margin: 0; padding: 28px; border: 1px dashed var(--border-color, #d7e4df); border-radius: 12px; color: var(--text-secondary, #64748b); text-align: center; }
 .btn-close-ai {
   width: 32px;
   height: 32px;

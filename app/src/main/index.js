@@ -16,6 +16,7 @@ const { AiSettingsStore } = require('./ai-settings-store');
 const { OpenAiCompatibleClient } = require('./openai-compatible-client');
 const { LocalAiRuntime } = require('./local-ai-runtime');
 const { AiRouter } = require('./ai-router');
+const { AiAssistantService } = require('./ai-assistant-service');
 const { JsonDatabaseStore } = require('./database-store');
 const { RemoteDatabaseStore } = require('./remote-database-store');
 const { DocumentDraftingService } = require('./document-drafting-service');
@@ -71,6 +72,7 @@ app.whenReady().then(() => {
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient });
   const localDatabaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore, onChanged: (payload) => mainWindow?.webContents.send('unit-workspace-changed', payload) });
+  const aiAssistantService = new AiAssistantService({ databaseStore, aiRouter });
   const getCurrentAccount = async () => (await authService.getStatus()).account;
   const documentDraftingService = new DocumentDraftingService({ databaseStore, getCurrentAccount, aiRouter });
   const writingProfileService = new WritingProfileService({ databaseStore, getCurrentAccount });
@@ -97,6 +99,7 @@ app.whenReady().then(() => {
     onlineClient,
     localAiRuntime,
     aiRouter,
+    aiAssistantService,
     databaseStore,
     documentDraftingService,
     writingProfileService,

@@ -197,6 +197,19 @@ if (typeof module !== 'undefined' && module.exports) {
     return bubble;
   }
 
+  function runAssistantAction(action) {
+    if (!action || action.type !== 'navigate') return;
+    if (typeof window.switchTab !== 'function') {
+      notify(`未能打开${action.label || '目标页面'}，请从左侧菜单进入。`, 'error');
+      return;
+    }
+    window.switchTab(action.target);
+    const menuItem = document.querySelector(`.sidebar-menu .menu-item[data-target="${action.target}"]`);
+    if (menuItem) {
+      document.querySelectorAll('.sidebar-menu .menu-item').forEach((item) => item.classList.toggle('active', item === menuItem));
+    }
+  }
+
   async function sendAiMessage() {
     const input = document.getElementById('aiDesktopInputText');
     const button = document.getElementById('aiDesktopSendBtn');
@@ -208,12 +221,15 @@ if (typeof module !== 'undefined' && module.exports) {
     button.disabled = true;
     const pending = appendChatBubble('bot', '正在思考...');
     try {
-      const response = await api.chatWithAi(conversation.slice(-12));
+      const response = api.converseWithAiAssistant
+        ? await api.converseWithAiAssistant(conversation.slice(-12))
+        : await api.chatWithAi(conversation.slice(-12));
       pending.remove();
       appendChatBubble('bot', response.content);
       conversation.push({ role: 'assistant', content: response.content });
+      runAssistantAction(response.action);
       const drawerStatus = document.getElementById('aiDrawerModelStatus');
-      if (drawerStatus) drawerStatus.textContent = response.provider === 'local' ? '本地 AI 已回复' : '在线 AI 已回复';
+      if (drawerStatus) drawerStatus.textContent = response.provider === 'system' ? '系统数据已核对' : response.provider === 'local' ? '本地 AI 已回复' : '在线 AI 已回复';
     } catch (error) {
       pending.querySelector('p').textContent = `请求失败：${error.message}`;
     } finally {
@@ -221,7 +237,160 @@ if (typeof module !== 'undefined' && module.exports) {
     }
   }
 
+  function configureDesktopAssistant() {
+    const toggle = document.getElementById('aiCopilotToggleBtn');
+    const drawer = document.getElementById('aiCopilotDrawer');
+    if (!toggle || !drawer) return;
+    const toggleText = toggle.querySelector('.ai-btn-text');
+    if (toggleText) toggleText.textContent = 'AI 助理';
+    toggle.title = '快捷唤起 AI 助理 (Ctrl+K)';
+
+    const heading = drawer.querySelector('.ai-drawer-header h3');
+    if (heading) heading.textContent = 'AI 助理';
+    const drawerIdentity = drawer.querySelector('.ai-drawer-header > div');
+    if (drawerIdentity && !drawer.querySelector('[data-ai-assistant-records-link]')) {
+      const recordsLink = document.createElement('button');
+      recordsLink.type = 'button'; recordsLink.className = 'ai-records-link'; recordsLink.dataset.aiAssistantRecordsLink = 'true';
+      recordsLink.textContent = '操作记录';
+      recordsLink.addEventListener('click', openAssistantOperations);
+      drawerIdentity.appendChild(recordsLink);
+    }
+    const chat = document.getElementById('aiDesktopChatContainer');
+    if (chat) {
+      chat.innerHTML = `<div class="chat-bubble bot"><p style="font-size:13px;line-height:1.6;margin:0;color:var(--text-primary);">您好，我是 AI 助理。我可以核对系统中的数据、带您跳转到对应功能，并在执行修改前向您确认。</p><p style="font-size:11.5px;line-height:1.55;margin:8px 0 0;color:var(--text-secondary);">例如：<strong>张三这年度共计发了多少钱？</strong> 同名、年度或对象不明确时，我会先请您确认，不会猜测。</p></div>`;
+    }
+    const input = document.getElementById('aiDesktopInputText');
+    if (input) input.placeholder = '例如：张三这年度共计发了多少钱？';
+    const chipDefinitions = [
+      ['📊 年度发放查询', '张三这年度共计发了多少钱？'],
+      ['👥 查询村民', '查询一组张三的村民档案'],
+      ['💰 资金发放', '打开资金发放中心'],
+    ];
+    const chips = drawer.querySelector('.ai-drawer-footer > div:first-child');
+    if (chips) {
+      chips.replaceChildren(...chipDefinitions.map(([label, prompt]) => {
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'ai-chip'; button.textContent = label;
+        button.addEventListener('click', () => { if (input) { input.value = prompt; input.focus(); } });
+        return button;
+      }));
+    }
+    installDrawerDrag(drawer);
+  }
+
+  function switchToAssistantOperations() {
+    const target = 'tab-ai-assistant-records';
+    if (typeof window.switchTab === 'function') window.switchTab(target);
+    const button = document.querySelector(`.sidebar-menu .menu-item[data-target="${target}"]`);
+    if (button) document.querySelectorAll('.sidebar-menu .menu-item').forEach((item) => item.classList.toggle('active', item === button));
+  }
+
+  async function openAssistantOperations() {
+    switchToAssistantOperations();
+    const drawer = document.getElementById('aiCopilotDrawer');
+    if (drawer && !drawer.classList.contains('hidden') && typeof window.toggleDesktopAiDrawer === 'function') window.toggleDesktopAiDrawer();
+    await renderAssistantOperations();
+  }
+
+  function formatOperationTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? value : date.toLocaleString('zh-CN', { hour12: false });
+  }
+
+  function operationSummary(operation) {
+    if (operation.type === 'resident_phone_update') return `${operation.object?.name || '居民'}：手机号 ${operation.before?.phone || '未填写'} → ${operation.after?.phone || '未填写'}`;
+    if (operation.type === 'undo') return `${operation.object?.name || '对象'}：已恢复上一项 AI 修改`;
+    return operation.type || 'AI 助理操作';
+  }
+
+  async function renderAssistantOperations() {
+    const section = document.getElementById('tab-ai-assistant-records');
+    const list = section?.querySelector('[data-ai-assistant-operation-list]');
+    if (!section || !list || !api.listAiAssistantOperations) return;
+    list.replaceChildren();
+    try {
+      const operations = await api.listAiAssistantOperations({ limit: 100 });
+      if (!operations.length) {
+        const empty = document.createElement('p'); empty.className = 'ai-operation-empty'; empty.textContent = '还没有由 AI 助理实际执行的操作。查询和页面跳转不会写入这里。'; list.appendChild(empty); return;
+      }
+      for (const operation of operations) {
+        const row = document.createElement('article'); row.className = 'ai-operation-row';
+        const textBlock = document.createElement('div');
+        const title = document.createElement('strong'); title.textContent = operationSummary(operation);
+        const meta = document.createElement('span'); meta.textContent = `${operation.module || 'AI 助理'} · ${formatOperationTime(operation.completedAt || operation.createdAt)} · ${operation.status === 'undone' ? '已撤销' : operation.status === 'cancelled' ? '已取消' : '已完成'}`;
+        textBlock.append(title, meta); row.appendChild(textBlock);
+        if (operation.recoverable && operation.status === 'completed') {
+          const undo = document.createElement('button'); undo.type = 'button'; undo.className = 'btn btn-outline ai-operation-undo'; undo.textContent = '撤销此操作';
+          undo.addEventListener('click', async () => {
+            if (!window.confirm(`确认撤销“${operationSummary(operation)}”吗？系统会恢复到该操作之前的状态。`)) return;
+            undo.disabled = true;
+            try {
+              const result = await api.undoAiAssistantOperation({ operationId: operation.id });
+              notify(result.message || '已撤销该操作'); await renderAssistantOperations();
+            } catch (error) { notify(error.message || '撤销失败，请人工核对后再试', 'error'); undo.disabled = false; }
+          });
+          row.appendChild(undo);
+        }
+        list.appendChild(row);
+      }
+    } catch (error) {
+      const failure = document.createElement('p'); failure.className = 'ai-operation-empty'; failure.textContent = `读取操作记录失败：${error.message || '请稍后重试'}`; list.appendChild(failure);
+    }
+  }
+
+  function injectAssistantOperationsDestination() {
+    if (document.getElementById('tab-ai-assistant-records')) return;
+    const menu = document.querySelector('.sidebar-menu');
+    const reference = menu?.querySelector('[data-target="tab-work-management"]') || menu?.firstElementChild;
+    if (menu) {
+      const button = document.createElement('button'); button.className = 'menu-item'; button.dataset.target = 'tab-ai-assistant-records';
+      button.innerHTML = '<span aria-hidden="true">🤖</span><span>AI 助理记录</span>';
+      button.addEventListener('click', openAssistantOperations);
+      reference?.insertAdjacentElement('afterend', button) || menu.appendChild(button);
+    }
+    const section = document.createElement('section'); section.className = 'tab-content hidden'; section.id = 'tab-ai-assistant-records';
+    section.innerHTML = '<div class="ai-operation-center"><div class="ai-operation-header"><div><h2>AI 助理记录</h2><p>仅保留 AI 实际写入系统或已取消的高风险操作。撤销必须在此页手动确认。</p></div><button type="button" class="btn btn-outline" data-ai-assistant-operation-refresh>刷新</button></div><div class="ai-operation-list" data-ai-assistant-operation-list></div></div>';
+    section.querySelector('[data-ai-assistant-operation-refresh]')?.addEventListener('click', renderAssistantOperations);
+    document.querySelector('.app-main')?.appendChild(section);
+  }
+
+  function installDrawerDrag(drawer) {
+    if (drawer.dataset.dragReady === 'true') return;
+    drawer.dataset.dragReady = 'true';
+    const header = drawer.querySelector('.ai-drawer-header');
+    if (!header) return;
+    let drag = null;
+    const resetPosition = () => {
+      drawer.style.left = ''; drawer.style.top = ''; drawer.style.right = ''; drawer.style.bottom = '';
+      drawer.classList.remove('ai-assistant-dragged');
+    };
+    header.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0 || event.target.closest('button')) return;
+      const rect = drawer.getBoundingClientRect();
+      drag = { offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+      drawer.setPointerCapture?.(event.pointerId);
+      drawer.classList.add('ai-assistant-dragging');
+      event.preventDefault();
+    });
+    header.addEventListener('pointermove', (event) => {
+      if (!drag) return;
+      const width = drawer.offsetWidth; const height = drawer.offsetHeight;
+      const left = Math.max(12, Math.min(window.innerWidth - width - 12, event.clientX - drag.offsetX));
+      const top = Math.max(12, Math.min(window.innerHeight - height - 12, event.clientY - drag.offsetY));
+      drawer.style.left = `${left}px`; drawer.style.top = `${top}px`; drawer.style.right = 'auto'; drawer.style.bottom = 'auto';
+      drawer.classList.add('ai-assistant-dragged');
+    });
+    const finish = () => { drag = null; drawer.classList.remove('ai-assistant-dragging'); };
+    header.addEventListener('pointerup', finish);
+    header.addEventListener('pointercancel', finish);
+    new MutationObserver(() => { if (drawer.classList.contains('hidden')) resetPosition(); })
+      .observe(drawer, { attributes: true, attributeFilter: ['class'] });
+  }
+
   async function initialize() {
+    configureDesktopAssistant();
+    injectAssistantOperationsDestination();
     buildSettingsPanel();
     const settings = await api.getAiSettings();
     document.getElementById('communityAiMode').value = settings.mode;

@@ -34,6 +34,7 @@ function createEmptyDatabase() {
     documentDraftMessages: [],
     documentTemplates: [],
     writingProfiles: [],
+    aiAssistantOperations: [],
     operationLogs: [],
     workItems: [],
     workEvidence: [],

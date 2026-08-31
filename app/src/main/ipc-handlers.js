@@ -22,6 +22,7 @@ function registerCompatibilityHandlers({
   onlineClient,
   localAiRuntime,
   aiRouter,
+  aiAssistantService,
   documentDraftingService,
   writingProfileService,
   documentExportService,
@@ -189,6 +190,11 @@ function registerCompatibilityHandlers({
   }
   if (aiRouter) {
     handle(INVOKE_CHANNELS.chatWithAi, async (_event, value) => aiRouter.chat(value));
+  }
+  if (aiAssistantService) {
+    handle(INVOKE_CHANNELS.converseWithAiAssistant, async (_event, value) => aiAssistantService.converse(value));
+    handle(INVOKE_CHANNELS.listAiAssistantOperations, async (_event, value) => aiAssistantService.listOperations(value));
+    handle(INVOKE_CHANNELS.undoAiAssistantOperation, async (_event, value) => aiAssistantService.undoOperation(value));
   }
 
   function documentResult(callback) {

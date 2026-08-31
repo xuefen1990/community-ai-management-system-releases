@@ -34,6 +34,20 @@ test('registers the work attachment channel', () => {
   assert.equal(handlers.has(INVOKE_CHANNELS.importWorkAttachments), true);
 });
 
+test('registers the dedicated AI assistant conversation channel', async () => {
+  const aiAssistantService = {
+    converse: async (value) => ({ content: `已核对：${value.messages[0].content}` }),
+    listOperations: async () => [{ id: 'operation-1' }],
+    undoOperation: async () => ({ ok: true }),
+  };
+  const { callbacks, handlers } = makeHandlers({ aiAssistantService });
+  assert.equal(handlers.has(INVOKE_CHANNELS.converseWithAiAssistant), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.listAiAssistantOperations), true);
+  assert.equal(handlers.has(INVOKE_CHANNELS.undoAiAssistantOperation), true);
+  const result = await callbacks.get(INVOKE_CHANNELS.converseWithAiAssistant)({}, { messages: [{ role: 'user', content: '张三这年度发了多少钱' }] });
+  assert.match(result.content, /张三/u);
+});
+
 test('contract fee file channels delegate to the dedicated service', async () => {
   const calls = [];
   const contractFeeFileService = {

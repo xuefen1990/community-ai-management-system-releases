@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 98);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 101);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 5);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -41,6 +41,9 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.importLocalModel, 'import-local-model');
   assert.equal(INVOKE_CHANNELS.testOnlineAi, 'test-online-ai');
   assert.equal(INVOKE_CHANNELS.chatWithAi, 'chat-with-ai');
+  assert.equal(INVOKE_CHANNELS.converseWithAiAssistant, 'converse-with-ai-assistant');
+  assert.equal(INVOKE_CHANNELS.listAiAssistantOperations, 'list-ai-assistant-operations');
+  assert.equal(INVOKE_CHANNELS.undoAiAssistantOperation, 'undo-ai-assistant-operation');
   assert.equal(INVOKE_CHANNELS.createDraftDocument, 'create-draft-document');
   assert.equal(INVOKE_CHANNELS.getDraftLayoutDefaults, 'get-draft-layout-defaults');
   assert.equal(INVOKE_CHANNELS.generateDraftDocument, 'generate-draft-document');
