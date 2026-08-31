@@ -8445,3 +8445,398 @@ body.auth-login-required #loginView{display:flex!important}body.auth-login-requi
 .member-permissions-page__empty, .member-permissions-page__error { padding: 14px; border-radius: 9px; background: var(--bg-card); }
 .member-permissions-page__error { color: #c84b55; }
 @media (max-width: 760px) { .member-permissions-page { padding: 12px; } .member-permissions-page__panel { min-height: calc(100vh - 24px); padding: 18px; border-radius: 14px; } .member-permissions-page__header, .member-permissions-page__member-summary { flex-direction: column; } }
+
+/* Apple glass theme — final layer so legacy module styles inherit one visual language. */
+:root {
+  --glass-surface: rgba(16, 28, 48, .70);
+  --glass-surface-strong: rgba(10, 20, 36, .84);
+  --glass-surface-soft: rgba(31, 58, 88, .36);
+  --glass-table-head: rgba(25, 46, 73, .76);
+  --glass-row-hover: rgba(70, 155, 155, .14);
+  --glass-border-strong: rgba(191, 228, 241, .18);
+  --glass-shadow: 0 20px 50px rgba(2, 8, 23, .28);
+  --glass-blur: blur(22px) saturate(145%);
+  --app-aurora: radial-gradient(circle at 12% 8%, rgba(45, 174, 157, .22), transparent 30%), radial-gradient(circle at 86% 7%, rgba(80, 126, 205, .23), transparent 34%), linear-gradient(135deg, #071222 0%, #0b1a2e 52%, #102840 100%);
+  --bg-main: #0b1829;
+  --bg-sidebar: var(--glass-surface-strong);
+  --bg-card: var(--glass-surface);
+  --bg-card-hover: rgba(30, 53, 78, .82);
+  --bg-stat-card: var(--glass-surface-soft);
+  --bg-input: rgba(5, 16, 31, .54);
+  --bg-input-focus: rgba(7, 24, 42, .78);
+  --bg-card-solid: #102039;
+  --bg-card-even-solid: #13263f;
+  --bg-card-hover-solid: #19334d;
+  --bg-header-solid: #10223a;
+  --border-color: rgba(190, 224, 238, .16);
+  --glass-bg: var(--glass-surface);
+  --glass-border: var(--glass-border-strong);
+  --shadow-color: rgba(2, 8, 23, .38);
+  --bg-sidebar-footer: rgba(3, 13, 28, .34);
+  --bg-menu-hover: rgba(190, 236, 228, .09);
+  --text-primary: #eef8fb;
+  --text-secondary: #b8cad9;
+  --text-muted: #7d98ad;
+  --primary: #2bbf9d;
+  --primary-light: #76dfc8;
+  --primary-hover: #55d6ba;
+  --primary-dark: #129979;
+  --primary-glow: rgba(43, 191, 157, .24);
+  --accent: #7db8ff;
+}
+
+body.light-theme {
+  --glass-surface: rgba(255, 255, 255, .62);
+  --glass-surface-strong: rgba(248, 255, 252, .82);
+  --glass-surface-soft: rgba(239, 251, 247, .72);
+  --glass-table-head: rgba(239, 249, 246, .78);
+  --glass-row-hover: rgba(30, 163, 137, .10);
+  --glass-border-strong: rgba(68, 115, 109, .18);
+  --glass-shadow: 0 20px 48px rgba(46, 83, 79, .12);
+  --app-aurora: radial-gradient(circle at 8% 7%, rgba(113, 211, 189, .36), transparent 30%), radial-gradient(circle at 90% 4%, rgba(151, 195, 245, .34), transparent 32%), radial-gradient(circle at 45% 100%, rgba(245, 222, 170, .28), transparent 34%), linear-gradient(135deg, #eef9f6 0%, #e8f3f5 48%, #edf6ef 100%);
+  --bg-main: #eef7f4;
+  --bg-sidebar: var(--glass-surface-strong);
+  --bg-card: var(--glass-surface);
+  --bg-card-hover: rgba(255, 255, 255, .82);
+  --bg-stat-card: var(--glass-surface-soft);
+  --bg-input: rgba(255, 255, 255, .67);
+  --bg-input-focus: rgba(255, 255, 255, .90);
+  --bg-card-solid: #f8fffc;
+  --bg-card-even-solid: #f3fbf8;
+  --bg-card-hover-solid: #eaf8f3;
+  --bg-header-solid: #edf9f5;
+  --border-color: rgba(59, 104, 99, .16);
+  --glass-bg: var(--glass-surface);
+  --glass-border: var(--glass-border-strong);
+  --shadow-color: rgba(46, 83, 79, .14);
+  --bg-sidebar-footer: rgba(239, 250, 246, .60);
+  --bg-menu-hover: rgba(13, 148, 122, .08);
+  --text-primary: #18372f;
+  --text-secondary: #55706a;
+  --text-muted: #78918b;
+  --primary: #078a6a;
+  --primary-light: #19ae8a;
+  --primary-hover: #057258;
+  --primary-dark: #05634d;
+  --primary-glow: rgba(7, 138, 106, .18);
+  --accent: #317cb7;
+}
+
+body.dark-theme {
+  color-scheme: dark;
+}
+
+body,
+.login-view,
+.dashboard-view,
+.app-wrapper {
+  background: var(--app-aurora) !important;
+}
+
+.dashboard-view,
+.app-main,
+.login-view {
+  isolation: isolate;
+}
+
+.dashboard-view::before,
+.login-view::before {
+  background: radial-gradient(circle at 74% 17%, rgba(113, 201, 181, .20), transparent 30%), radial-gradient(circle at 18% 88%, rgba(96, 157, 221, .14), transparent 30%) !important;
+  opacity: 1;
+}
+
+.app-sidebar,
+.sidebar-header,
+.sidebar-footer,
+.main-header,
+.login-container,
+.login-intro-section,
+.login-form-section,
+.login-card,
+.stat-card,
+.main-table-card,
+.table-container,
+.table-wrapper,
+.settings-card,
+.detail-panel,
+.content-card,
+.card,
+.empty-state,
+.modal-card,
+.modal-content,
+.document-history-filters,
+.member-permissions-page__panel,
+.member-permissions-page__section,
+.member-permissions-page .unit-permissions,
+.member-permissions-page__empty,
+.member-permissions-page__error {
+  background: var(--glass-surface) !important;
+  border-color: var(--glass-border-strong) !important;
+  box-shadow: var(--glass-shadow) !important;
+}
+
+.app-sidebar,
+.sidebar-header,
+.sidebar-footer,
+.login-container,
+.login-intro-section,
+.login-form-section,
+.login-card,
+.stat-card,
+.main-table-card,
+.table-container,
+.table-wrapper,
+.settings-card,
+.detail-panel,
+.content-card,
+.card,
+.modal-card,
+.modal-content,
+.member-permissions-page__panel,
+.member-permissions-page__section {
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.app-sidebar {
+  background: var(--glass-surface-strong) !important;
+  border-right: 1px solid var(--glass-border-strong) !important;
+}
+
+.sidebar-header,
+.sidebar-footer {
+  background: rgba(255, 255, 255, .04) !important;
+  border-color: var(--glass-border-strong) !important;
+}
+
+body.light-theme .sidebar-header,
+body.light-theme .sidebar-footer {
+  background: rgba(255, 255, 255, .34) !important;
+}
+
+.nav-item,
+.sidebar-nav-item,
+.menu-item {
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+
+.nav-item:hover,
+.sidebar-nav-item:hover,
+.menu-item:hover {
+  background: var(--bg-menu-hover) !important;
+  border-color: rgba(120, 214, 190, .14);
+}
+
+.nav-item.active,
+.sidebar-nav-item.active,
+.menu-item.active {
+  background: linear-gradient(135deg, rgba(47, 198, 161, .24), rgba(100, 172, 225, .15)) !important;
+  border-color: rgba(73, 209, 174, .28) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .18);
+}
+
+.login-container {
+  overflow: hidden;
+  border: 1px solid var(--glass-border-strong) !important;
+}
+
+.login-intro-section {
+  background: linear-gradient(145deg, rgba(255, 255, 255, .20), rgba(104, 205, 176, .16)) !important;
+}
+
+.login-form-section,
+.login-card {
+  background: rgba(255, 255, 255, .30) !important;
+}
+
+body.light-theme .login-form-section,
+body.light-theme .login-card {
+  background: rgba(255, 255, 255, .54) !important;
+}
+
+.feature-icon-wrapper,
+.login-logo-container,
+.theme-toggle-btn,
+.help-btn {
+  background: rgba(255, 255, 255, .12) !important;
+  border-color: var(--glass-border-strong) !important;
+  box-shadow: 0 8px 22px rgba(17, 47, 50, .10);
+}
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+input[type="date"],
+input[type="month"],
+input[type="datetime-local"],
+select,
+textarea,
+.input-wrapper,
+.cf-field input,
+.cf-field select,
+.cf-field textarea,
+.cf-inline-select {
+  background: var(--bg-input) !important;
+  border-color: var(--glass-border-strong) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .14);
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+select:focus,
+textarea:focus {
+  background: var(--bg-input-focus) !important;
+  box-shadow: 0 0 0 3px var(--primary-glow), inset 0 1px rgba(255, 255, 255, .18) !important;
+}
+
+.btn,
+.btn-outline,
+.btn-secondary,
+.cf-row-actions button,
+.cf-nav,
+.cf-check {
+  border-color: var(--glass-border-strong) !important;
+  background: rgba(255, 255, 255, .08) !important;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .14);
+}
+
+body.light-theme .btn,
+body.light-theme .btn-outline,
+body.light-theme .btn-secondary,
+body.light-theme .cf-row-actions button,
+body.light-theme .cf-nav,
+body.light-theme .cf-check {
+  background: rgba(255, 255, 255, .48) !important;
+}
+
+.btn-primary,
+.login-btn {
+  background: linear-gradient(135deg, #18a982 0%, #087b67 100%) !important;
+  border-color: rgba(255, 255, 255, .18) !important;
+  box-shadow: 0 12px 22px rgba(8, 123, 103, .22), inset 0 1px rgba(255, 255, 255, .28) !important;
+}
+
+.btn-primary:hover,
+.login-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 15px 28px rgba(8, 123, 103, .28), inset 0 1px rgba(255, 255, 255, .30) !important;
+}
+
+.data-table,
+.cf-table {
+  background: transparent !important;
+}
+
+.data-table thead th,
+.data-table th,
+.cf-table th {
+  background: var(--glass-table-head) !important;
+  border-color: var(--glass-border-strong) !important;
+}
+
+.data-table td,
+.cf-table td,
+.data-table tbody tr,
+.cf-table tbody tr {
+  background: transparent !important;
+  border-color: var(--glass-border-strong) !important;
+}
+
+.data-table tbody tr:hover,
+.cf-table tbody tr:hover {
+  background: var(--glass-row-hover) !important;
+}
+
+.modal-overlay,
+.cf-modal-overlay,
+.document-profile-panel,
+.member-permissions-page {
+  background: rgba(7, 21, 33, .42) !important;
+  -webkit-backdrop-filter: blur(14px) saturate(125%);
+  backdrop-filter: blur(14px) saturate(125%);
+}
+
+body.light-theme .modal-overlay,
+body.light-theme .cf-modal-overlay,
+body.light-theme .document-profile-panel,
+body.light-theme .member-permissions-page {
+  background: rgba(230, 245, 241, .46) !important;
+}
+
+.toast,
+.cf-modal,
+.cf-panel,
+.cf-header,
+.cf-stat {
+  background: var(--glass-surface) !important;
+  border-color: var(--glass-border-strong) !important;
+  box-shadow: var(--glass-shadow) !important;
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.cf-panel-head,
+.cf-modal-head,
+.cf-modal-foot {
+  background: rgba(255, 255, 255, .06) !important;
+  border-color: var(--glass-border-strong) !important;
+}
+
+body.light-theme .cf-panel-head,
+body.light-theme .cf-modal-head,
+body.light-theme .cf-modal-foot {
+  background: rgba(255, 255, 255, .38) !important;
+}
+
+.cf-nav button.active {
+  background: rgba(37, 179, 147, .18) !important;
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .app-sidebar,
+  .login-container,
+  .login-intro-section,
+  .login-form-section,
+  .login-card,
+  .stat-card,
+  .main-table-card,
+  .table-container,
+  .table-wrapper,
+  .settings-card,
+  .detail-panel,
+  .content-card,
+  .card,
+  .modal-card,
+  .modal-content,
+  .cf-modal,
+  .cf-panel,
+  .cf-header,
+  .cf-stat { background: var(--bg-card-solid) !important; }
+  body.light-theme .app-sidebar,
+  body.light-theme .login-container,
+  body.light-theme .login-intro-section,
+  body.light-theme .login-form-section,
+  body.light-theme .login-card,
+  body.light-theme .stat-card,
+  body.light-theme .main-table-card,
+  body.light-theme .table-container,
+  body.light-theme .table-wrapper,
+  body.light-theme .settings-card,
+  body.light-theme .detail-panel,
+  body.light-theme .content-card,
+  body.light-theme .card,
+  body.light-theme .modal-card,
+  body.light-theme .modal-content,
+  body.light-theme .cf-modal,
+  body.light-theme .cf-panel,
+  body.light-theme .cf-header,
+  body.light-theme .cf-stat { background: #f8fffc !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}

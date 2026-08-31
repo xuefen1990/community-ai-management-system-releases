@@ -65,6 +65,17 @@ test('login layout keeps the logo reachable and scrolls short viewports instead 
   assert.match(source, /账号服务启动中|账号服务已就绪/u);
 });
 
+test('apple glass theme supplies readable light and dark surfaces with a non-glass fallback', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /Apple glass theme/u);
+  assert.match(style, /body\.light-theme\s*\{[\s\S]*?--glass-surface:\s*rgba\(255,\s*255,\s*255/u);
+  assert.match(style, /:root\s*\{[\s\S]*?--glass-surface:\s*rgba\(16,\s*28,\s*48/u);
+  assert.match(style, /--app-aurora:/u);
+  assert.match(style, /backdrop-filter:\s*var\(--glass-blur\)/u);
+  assert.match(style, /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\)/u);
+  assert.match(style, /prefers-reduced-motion/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
