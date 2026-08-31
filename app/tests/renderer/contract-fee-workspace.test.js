@@ -14,9 +14,9 @@ test('loads the contract fee model, stylesheet and workspace module', () => {
   assert.match(html, /contract-fee-workspace\.js/u);
 });
 
-test('workspace module keeps contract fee screens outside the legacy renderer', () => {
+test('workspace module keeps the unified disbursement screens outside the legacy renderer', () => {
   const script = fs.readFileSync(path.join(rendererDirectory, 'js/contract-fee-workspace.js'), 'utf8');
-  for (const label of ['资金发放中心', '发放总览', '合同发放台账', '发放记录', '待处理事项']) assert.match(script, new RegExp(label, 'u'));
+  for (const label of ['资金发放中心', '汇总看板', '全部发放批次', '承包费历史台账', '管理类别', '新建发放批次']) assert.match(script, new RegExp(label, 'u'));
   assert.match(script, /selectAndReadContractFeeExcel/u);
   assert.match(script, /exportContractFeeGroupFiles/u);
 });

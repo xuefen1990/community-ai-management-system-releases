@@ -22,6 +22,8 @@ function createEmptyDatabase() {
     contractFeeBatches: [],
     contractFeeReceipts: [],
     contractFeeAdvances: [],
+    disbursementCategories: [],
+    disbursementBatches: [],
     certificates: [],
     documents: [],
     documentDrafts: [],

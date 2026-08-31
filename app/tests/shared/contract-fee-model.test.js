@@ -85,3 +85,26 @@ test('requires real dates for receipts and advance lifecycle records', () => {
   assert.throws(() => model.createAdvance({ contractId: 'c1', batchId: 'b1', amount: 100, advancedDate: '' }), /垫付日期/u);
   assert.throws(() => model.reimburseAdvance({ id: 'a1' }, ''), /归还日期/u);
 });
+
+test('creates general disbursement batches without requiring a contract', () => {
+  const categories = model.defaultDisbursementCategories();
+  const subsidy = categories.find((item) => item.code === 'subsidy');
+  const batch = model.createDisbursementBatch({
+    categoryId: subsidy.id, categoryName: subsidy.name, period: '2026 年 9 月', batchDate: '2026-09-01',
+    items: [{ personId: 'p-1', amount: '100' }, { name: '临时保洁员', bankCard: '62220009', amount: '80' }],
+  }, { personnel: people, now, id: 'general-1' });
+  assert.equal(batch.contractId, '');
+  assert.equal(batch.items[0].recipientKind, 'resident');
+  assert.equal(batch.items[1].recipientKind, 'temporary');
+  assert.equal(model.summarizeDisbursementBatch(batch).totalCents, 18000);
+  assert.equal(model.reviewDisbursementBatch(batch, { now }).status, 'reviewed');
+});
+
+test('requires a reason when a general batch is directly marked paid and preserves category totals', () => {
+  const category = model.defaultDisbursementCategories()[2];
+  assert.throws(() => model.createDisbursementBatch({ categoryId: category.id, categoryName: category.name, period: '2026 年 9 月', directPaid: true, items: [{ personId: 'p-1', amount: 1 }] }, { personnel: people, now }), /经办说明/u);
+  const batch = model.createDisbursementBatch({ categoryId: category.id, categoryName: category.name, period: '2026 年 9 月', directPaid: true, directPaymentReason: '临时支出已现场发放', items: [{ personId: 'p-1', amount: 1 }] }, { personnel: people, now });
+  const dashboard = model.summarizeDisbursementDashboard([batch]);
+  assert.equal(dashboard.completed, 1);
+  assert.equal(dashboard.totalsByCategory['固定工资'], 100);
+});

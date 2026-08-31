@@ -3,7 +3,7 @@
 (function contractFeeWorkspace(root) {
   const model = root.ContractFeeModel;
   const api = root.api;
-  const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances'];
+  const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches'];
   const state = { database: null, view: 'overview', modal: null, importDraft: null };
 
   const text = (value) => String(value ?? '').trim();
@@ -29,6 +29,7 @@
   function ensureCollections(database) {
     for (const key of featureKeys) if (!Array.isArray(database[key])) database[key] = [];
     if (!Array.isArray(database.personnel)) database.personnel = [];
+    model.normalizeDisbursementCollections(database);
     return database;
   }
 
@@ -73,13 +74,7 @@
   }
 
   function stats() {
-    const contracts = state.database.resourceContracts;
-    const batches = state.database.contractFeeBatches;
-    const paid = batches.reduce((sum, batch) => sum + batch.items.filter((item) => item.paymentStatus === 'paid').reduce((subtotal, item) => subtotal + Number(item.finalAmountCents || 0), 0), 0);
-    const pending = batches.reduce((sum, batch) => sum + batch.items.filter((item) => item.paymentStatus !== 'paid').reduce((subtotal, item) => subtotal + Number(item.finalAmountCents || 0), 0), 0);
-    const issues = batches.reduce((sum, batch) => sum + batch.items.filter((item) => ['failed', 'unpaid'].includes(item.paymentStatus)).length, 0)
-      + state.database.contractFeeAdvances.filter((item) => item.status === 'pending_reimbursement').length;
-    return { contracts: contracts.length, paid, pending, issues };
+    return model.summarizeDisbursementDashboard(state.database.disbursementBatches);
   }
 
   function renderShell() {
@@ -87,10 +82,10 @@
     if (!section || !state.database) return;
     const summary = stats();
     section.innerHTML = `
-      <div class="cf-header"><div><h2>资金发放中心</h2><p>首期为承包费发放；合同、居民长期台账、年度批次和银行结果分别留痕。</p></div>
-        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="import-ledger">首次导入发放台账</button><button class="btn btn-primary" data-cf-action="new-contract">＋ 新建合同</button></div></div>
-      <div class="cf-stats"><div class="cf-stat"><span>有效合同</span><strong>${summary.contracts}</strong></div><div class="cf-stat"><span>累计已发</span><strong>${money(summary.paid)}</strong></div><div class="cf-stat"><span>待发金额</span><strong>${money(summary.pending)}</strong></div><div class="cf-stat"><span>待处理事项</span><strong>${summary.issues}</strong></div></div>
-      <div class="cf-nav">${[['overview', '发放总览'], ['ledger', '合同发放台账'], ['batches', '发放记录'], ['issues', '待处理事项']].map(([key, label]) => `<button class="${state.view === key ? 'active' : ''}" data-cf-view="${key}">${label}</button>`).join('')}</div>
+      <div class="cf-header"><div><h2>资金发放中心</h2><p>统一管理承包费、补贴、工资和其他资金发放；合同仅在承包费办理时按需关联。</p></div>
+        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="manage-categories">管理类别</button><button class="btn btn-primary" data-cf-action="new-disbursement-batch">＋ 新建发放批次</button></div></div>
+      <div class="cf-stats"><div class="cf-stat"><span>发放总额</span><strong>${money(summary.totalCents)}</strong></div><div class="cf-stat"><span>待审核批次</span><strong>${summary.pendingReview}</strong></div><div class="cf-stat"><span>已发放批次</span><strong>${summary.completed}</strong></div><div class="cf-stat"><span>资金类别</span><strong>${state.database.disbursementCategories.filter((item) => item.active !== false).length}</strong></div></div>
+      <div class="cf-nav">${[['overview', '汇总看板'], ['general-batches', '全部发放批次'], ['ledger', '承包费历史台账'], ['batches', '历史承包费记录']].map(([key, label]) => `<button class="${state.view === key ? 'active' : ''}" data-cf-view="${key}">${label}</button>`).join('')}</div>
       <div id="cf-view"></div>`;
     renderView();
   }
@@ -98,20 +93,23 @@
   function renderView() {
     const target = document.getElementById('cf-view');
     if (!target) return;
-    if (state.view === 'ledger') target.innerHTML = renderLedgers();
+    if (state.view === 'general-batches') target.innerHTML = renderGeneralBatches();
+    else if (state.view === 'ledger') target.innerHTML = renderLedgers();
     else if (state.view === 'batches') target.innerHTML = renderBatches();
     else if (state.view === 'issues') target.innerHTML = renderIssues();
     else target.innerHTML = renderOverview();
   }
 
   function renderOverview() {
-    const rows = state.database.resourceContracts.map((contract) => {
-      const ledger = ledgerForContract(contract.id);
-      const receipt = state.database.contractFeeReceipts.find((item) => item.contractId === contract.id);
-      const batches = state.database.contractFeeBatches.filter((item) => item.contractId === contract.id);
-      return `<tr><td><strong>${escapeHtml(contract.name)}</strong><br><span class="text-secondary">${escapeHtml(contract.contractNumber || '未编号')}</span></td><td>${escapeHtml(contract.startDate)} 至 ${escapeHtml(contract.endDate)}</td><td>${money(contract.amountCents)}</td><td>${receipt ? `<span class="cf-badge ok">已到账</span><br>${escapeHtml(receipt.receivedDate)}` : '<span class="cf-badge warn">未到账</span>'}</td><td>${ledger ? `${ledger.items.length} 人` : '<span class="cf-badge warn">未建台账</span>'}</td><td>${batches.length}</td><td><div class="cf-row-actions"><button data-cf-action="edit-contract" data-id="${contract.id}">合同详情</button><button data-cf-action="receipt" data-id="${contract.id}">${receipt ? '查看到账' : '登记到账'}</button><button data-cf-action="renew" data-id="${contract.id}">续签新合同</button></div></td></tr>`;
-    }).join('');
-    return `<div class="cf-panel"><div class="cf-panel-head"><h3>合同与资金概况</h3><span class="text-secondary">承包人缴费与居民发放相互独立</span></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>合同</th><th>完整期限</th><th>合同金额</th><th>承包人到账</th><th>长期台账</th><th>发放批次</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="cf-empty">还没有合同，请先新建合同。</div></td></tr>'}</tbody></table></div></div>`;
+    const summary = stats();
+    const categoryRows = Object.entries(summary.totalsByCategory).map(([name, total]) => `<tr><td><strong>${escapeHtml(name)}</strong></td><td>${money(total)}</td></tr>`).join('');
+    const recentRows = [...state.database.disbursementBatches].sort((a, b) => text(b.createdAt).localeCompare(text(a.createdAt))).slice(0, 6).map((batch) => { const batchSummary = model.summarizeDisbursementBatch(batch); return `<tr><td><strong>${escapeHtml(batch.categoryName)}</strong><br><span class="text-secondary">${escapeHtml(batch.period)}</span></td><td>${statusBadge(batch.status)}</td><td>${money(batchSummary.totalCents)}</td><td>${batchSummary.recipientCount} 人</td></tr>`; }).join('');
+    return `<div class="cf-panel"><div class="cf-panel-head"><h3>类别发放汇总</h3><span class="text-secondary">按当前已登记的发放批次统计</span></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>资金类别</th><th>发放金额</th></tr></thead><tbody>${categoryRows || '<tr><td colspan="2"><div class="cf-empty">暂无发放数据，可先新建发放批次。</div></td></tr>'}</tbody></table></div></div><div class="cf-panel"><div class="cf-panel-head"><h3>最近发放批次</h3></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>类别 / 期间</th><th>状态</th><th>金额</th><th>收款人</th></tr></thead><tbody>${recentRows || '<tr><td colspan="4"><div class="cf-empty">暂无发放批次。</div></td></tr>'}</tbody></table></div></div>`;
+  }
+
+  function renderGeneralBatches() {
+    const rows = [...state.database.disbursementBatches].sort((a, b) => text(b.createdAt).localeCompare(text(a.createdAt))).map((batch) => { const summary = model.summarizeDisbursementBatch(batch); return `<tr><td><strong>${escapeHtml(batch.categoryName)}</strong><br><span class="text-secondary">${escapeHtml(batch.period)} · ${escapeHtml(batch.batchDate || '未填日期')}</span></td><td>${statusBadge(batch.status)}</td><td>${money(summary.totalCents)}</td><td>${summary.paidCount}/${summary.recipientCount} 人</td><td>${escapeHtml(batch.notes || '—')}</td><td><div class="cf-row-actions">${batch.status === 'draft' ? `<button data-cf-action="review-disbursement" data-id="${batch.id}">审核</button>` : ''}${batch.status !== 'completed' ? `<button data-cf-action="pay-disbursement" data-id="${batch.id}">登记已发放</button>` : ''}<button data-cf-action="view-disbursement" data-id="${batch.id}">查看</button></div></td></tr>`; }).join('');
+    return `<div class="cf-panel"><div class="cf-panel-head"><h3>全部发放批次</h3><span class="text-secondary">承包费、补贴、工资和自定义类别统一查询</span></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>类别 / 期间</th><th>状态</th><th>金额</th><th>收款人</th><th>备注</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="cf-empty">暂无发放批次。</div></td></tr>'}</tbody></table></div></div>`;
   }
 
   function renderLedgers() {
@@ -384,6 +382,62 @@
     openModal('登记垫付款归还', `<div class="cf-form-grid">${field('垫付金额', `<input value="${money(advance.amountCents)}" disabled>`)}${field('实际归还日期 *', `<input id="cf-reimburse-date" type="date" value="${today()}">`)}</div>`, { small: true, footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-reimburse">确认已归还</button>' });
   }
 
+  function categoryModal() {
+    const rows = state.database.disbursementCategories.map((category) => `<tr><td>${escapeHtml(category.name)}</td><td>${category.groupExport ? '支持按组导出' : '整体导出'}</td><td>${category.builtIn ? '系统预置' : '自定义'}</td><td>${category.active === false ? '已停用' : '启用中'}</td></tr>`).join('');
+    state.modal = { type: 'category' };
+    openModal('资金类别管理', `<div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>类别</th><th>导出规则</th><th>来源</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table></div><form id="cf-category-form" class="cf-form-grid" style="margin-top:16px">${field('新增类别名称 *', '<input name="name" placeholder="例如：环境整治劳务费">')}${field('导出方式', '<select name="groupExport"><option value="">整体导出</option><option value="yes">按组导出</option></select>')}</form>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="save-category">新增类别</button>' });
+  }
+
+  async function saveCategory() {
+    const data = Object.fromEntries(new FormData(document.getElementById('cf-category-form')).entries());
+    const category = model.createDisbursementCategory({ name: data.name, groupExport: data.groupExport === 'yes' });
+    if (state.database.disbursementCategories.some((item) => text(item.name) === category.name)) throw new Error('该资金类别已经存在');
+    state.database.disbursementCategories.push(category); await saveDatabase('资金类别已新增'); closeModal(); renderShell();
+  }
+
+  function disbursementBatchModal(batch = null) {
+    const categories = state.database.disbursementCategories.filter((item) => item.active !== false);
+    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}">${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
+    state.modal = { type: 'disbursement-batch', attachments: [...(batch?.attachments || [])] };
+    const itemRow = (item = {}) => `<div class="cf-form-grid cf-disbursement-item"><select name="personId"><option value="">临时收款人（请填写姓名）</option>${state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), item.personId)}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('')}</select><input name="name" value="${escapeHtml(item.name || '')}" placeholder="临时收款人姓名"><input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行卡号"><input name="amount" type="number" min="0" step="0.01" value="${item.amountCents !== undefined ? yuanValue(item.amountCents) : ''}" placeholder="金额（元）"></div>`;
+    openModal(batch ? '查看发放批次' : '新建发放批次', `<form id="cf-disbursement-form" class="cf-form-grid" data-id="${escapeHtml(batch?.id || '')}">
+      ${field('资金类别 *', `<select name="categoryId">${categories.map((item) => `<option value="${item.id}"${selected(item.id, batch?.categoryId)}>${escapeHtml(item.name)}</option>`).join('')}</select>`)}
+      ${field('发放期间 *', `<input name="period" value="${escapeHtml(batch?.period || `${new Date().getFullYear()} 年 ${new Date().getMonth() + 1} 月`)}" placeholder="例如：2026 年 9 月">`)}
+      ${field('实际发放日期', `<input name="batchDate" type="date" value="${escapeHtml(batch?.batchDate || today())}">`)}
+      ${field('关联合同（仅承包费可选）', `<select name="contractId"><option value="">不关联合同</option>${state.database.resourceContracts.map((item) => `<option value="${item.id}"${selected(item.id, batch?.contractId)}>${escapeHtml(item.name)}</option>`).join('')}</select>`)}
+      ${field('备注', `<textarea name="notes">${escapeHtml(batch?.notes || '')}</textarea>`, true)}
+      ${field('可选附件', '<div><button type="button" class="btn btn-outline" data-cf-action="add-attachments">选择附件</button><div id="cf-attachment-list" class="cf-row-actions" style="margin-top:8px">' + attachmentListHtml(state.modal.attachments) + '</div></div>', true)}
+      ${batch ? '' : field('直接登记为已发放', '<label class="cf-check"><input type="checkbox" name="directPaid">临时、小额事项直接完成</label>', true)}
+      ${batch ? '' : field('直接发放经办说明', '<input name="directPaymentReason" placeholder="直接登记已发放时必填">', true)}
+      <div class="cf-field full"><label>收款明细 *</label><div class="cf-row-actions" style="margin-bottom:8px">${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-disbursement-item">＋ 添加收款人</button><button type="button" class="btn btn-outline" data-cf-action="import-disbursement-excel">从 Excel 导入</button>'}</div><div id="cf-disbursement-items">${(batch?.items || [{}]).map(itemRow).join('')}</div><p class="cf-hint">优先选择居民档案；未选择居民时可填写临时收款人。Excel 导入后可继续手工修改。选择居民会自动使用其默认银行卡。</p></div>
+    </form>`, { footer: batch ? '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>' : '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-disbursement">保存批次</button>' });
+  }
+
+  function appendDisbursementItem(item = {}) {
+    const target = document.getElementById('cf-disbursement-items'); if (!target) return;
+    const options = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}">${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
+    target.insertAdjacentHTML('beforeend', `<div class="cf-form-grid cf-disbursement-item"><select name="personId"><option value="">临时收款人（请填写姓名）</option>${options}</select><input name="name" value="${escapeHtml(item.name || '')}" placeholder="临时收款人姓名"><input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行卡号"><input name="amount" type="number" min="0" step="0.01" value="${escapeHtml(item.amount || '')}" placeholder="金额（元）"></div>`);
+  }
+
+  async function importDisbursementExcel() {
+    const result = await api.selectAndReadContractFeeExcel(); if (!result?.ok) return;
+    const rows = result.data?.rows || []; if (!rows.length) throw new Error('表格中没有可导入的发放明细');
+    document.getElementById('cf-disbursement-items').innerHTML = '';
+    rows.forEach((row) => appendDisbursementItem({ name: row.name, bankCard: row.bankCard, amount: row.amount }));
+    notify(`已导入 ${rows.length} 条明细，请核对后保存`);
+  }
+
+  async function saveDisbursementBatch() {
+    const form = document.getElementById('cf-disbursement-form'); const values = Object.fromEntries(new FormData(form).entries());
+    const category = state.database.disbursementCategories.find((item) => item.id === values.categoryId);
+    const items = [...form.querySelectorAll('.cf-disbursement-item')].map((row) => ({ personId: row.querySelector('[name="personId"]').value, name: row.querySelector('[name="name"]').value, bankCard: row.querySelector('[name="bankCard"]').value, amount: row.querySelector('[name="amount"]').value })).filter((item) => item.personId || item.name || item.amount);
+    const batch = model.createDisbursementBatch({ ...values, categoryName: category?.name, items, attachments: state.modal.attachments, directPaid: values.directPaid === 'on' }, { personnel: state.database.personnel });
+    state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存'); closeModal(); state.view = 'general-batches'; renderShell();
+  }
+
+  async function reviewDisbursement(id) { const current = findById('disbursementBatches', id); const next = model.reviewDisbursementBatch(current); state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(current), 1, next); await saveDatabase('批次已审核'); renderShell(); }
+  async function payDisbursement(id) { const current = findById('disbursementBatches', id); const next = model.markDisbursementBatchPaid(current); state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(current), 1, next); await saveDatabase('已登记为发放完成'); renderShell(); }
+
   async function saveReimburse() {
     const advance = findById('contractFeeAdvances', state.modal.advanceId);
     const updated = model.reimburseAdvance(advance, document.getElementById('cf-reimburse-date').value);
@@ -393,6 +447,15 @@
 
   async function handleAction(action, element) {
     if (action === 'close-modal') return closeModal();
+    if (action === 'manage-categories') return categoryModal();
+    if (action === 'save-category') return saveCategory();
+    if (action === 'new-disbursement-batch') return disbursementBatchModal();
+    if (action === 'add-disbursement-item') return appendDisbursementItem();
+    if (action === 'import-disbursement-excel') return importDisbursementExcel();
+    if (action === 'save-disbursement') return saveDisbursementBatch();
+    if (action === 'view-disbursement') return disbursementBatchModal(findById('disbursementBatches', element.dataset.id));
+    if (action === 'review-disbursement') return reviewDisbursement(element.dataset.id);
+    if (action === 'pay-disbursement') return payDisbursement(element.dataset.id);
     if (action === 'new-contract') return contractModal();
     if (action === 'edit-contract') return contractModal(contractFor(element.dataset.id));
     if (action === 'renew') return contractModal({}, contractFor(element.dataset.id));

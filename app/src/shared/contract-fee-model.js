@@ -238,11 +238,54 @@
     return { ...structuredClone(advance), status: 'reimbursed', reimbursedDate: text(reimbursedDate), updatedAt: nowIso(now) };
   }
 
+  const DEFAULT_DISBURSEMENT_CATEGORIES = Object.freeze([
+    { code: 'contract_fee', name: '承包费', groupExport: true, contractOptional: true },
+    { code: 'subsidy', name: '补贴', groupExport: true, contractOptional: false },
+    { code: 'salary', name: '固定工资', groupExport: false, contractOptional: false },
+    { code: 'casual_labor', name: '杂工工资', groupExport: false, contractOptional: false },
+    { code: 'public_service_salary', name: '公共服务运行人员工资', groupExport: false, contractOptional: false },
+  ]);
+
+  function defaultDisbursementCategories() { return DEFAULT_DISBURSEMENT_CATEGORIES.map((item) => ({ ...item, id: `category-${item.code}`, builtIn: true, active: true })); }
+  function normalizeDisbursementCollections(database) {
+    if (!Array.isArray(database.disbursementCategories) || !database.disbursementCategories.length) database.disbursementCategories = defaultDisbursementCategories();
+    if (!Array.isArray(database.disbursementBatches)) database.disbursementBatches = [];
+    return database;
+  }
+  function createDisbursementCategory(value, { now = new Date(), id } = {}) {
+    if (!text(value?.name)) throw new Error('请填写资金类别名称');
+    return { id: id || identifier('disbursement-category', now instanceof Date ? now.getTime() : Date.now()), code: text(value.code) || `custom-${Date.now()}`, name: text(value.name), groupExport: Boolean(value.groupExport), contractOptional: Boolean(value.contractOptional), builtIn: false, active: value.active !== false, createdAt: nowIso(now), updatedAt: nowIso(now) };
+  }
+  function disbursementItem(value, personnel = [], { now = new Date(), id } = {}) {
+    const person = personnel.find((item) => personId(item) === text(value.personId));
+    const name = person ? personName(person) : text(value.name);
+    if (!name) throw new Error('每一笔发放都必须填写收款人');
+    const amountCents = amountToCents(value.amount);
+    if (amountCents < 0) throw new Error('发放金额不能小于零');
+    return { id: id || identifier('disbursement-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : '', recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName), bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard), amountCents, paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), createdAt: nowIso(now), updatedAt: nowIso(now) };
+  }
+  function createDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
+    if (!text(value?.categoryId) || !text(value?.categoryName)) throw new Error('请选择资金类别');
+    if (!text(value?.period)) throw new Error('请填写发放期间');
+    const items = (value.items || []).map((item, index) => disbursementItem(item, personnel, { now, id: `${id || identifier('disbursement-batch', now instanceof Date ? now.getTime() : Date.now())}-item-${index + 1}` }));
+    if (!items.length) throw new Error('请至少添加一名收款人');
+    const directPaid = Boolean(value.directPaid);
+    if (directPaid && !text(value.directPaymentReason)) throw new Error('直接登记为已发放时必须填写经办说明');
+    const batchId = id || identifier('disbursement-batch', now instanceof Date ? now.getTime() : Date.now());
+    return { id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), period: text(value.period), batchDate: text(value.batchDate), contractId: text(value.contractId), status: directPaid ? 'completed' : 'draft', directPaymentReason: text(value.directPaymentReason), items: items.map((item, index) => ({ ...item, id: `${batchId}-item-${index + 1}`, paymentStatus: directPaid ? 'paid' : item.paymentStatus, paidAt: directPaid ? nowIso(now) : null })), attachments: Array.isArray(value.attachments) ? value.attachments : [], notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), reviewedAt: null, completedAt: directPaid ? nowIso(now) : null };
+  }
+  function summarizeDisbursementBatch(batch) { return { totalCents: (batch?.items || []).reduce((sum, item) => sum + Number(item.amountCents || 0), 0), recipientCount: (batch?.items || []).length, paidCount: (batch?.items || []).filter((item) => item.paymentStatus === 'paid').length }; }
+  function reviewDisbursementBatch(batch, { now = new Date() } = {}) { if (!batch?.items?.length) throw new Error('批次没有收款明细'); return { ...structuredClone(batch), status: 'reviewed', reviewedAt: nowIso(now), updatedAt: nowIso(now) }; }
+  function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
+  function summarizeDisbursementDashboard(batches = []) { const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; for (const batch of batches) { const total = summarizeDisbursementBatch(batch).totalCents; totalCents += total; totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total; if (batch.status === 'draft') pendingReview += 1; if (batch.status === 'completed') completed += 1; } return { totalCents, pendingReview, completed, totalsByCategory }; }
+
   const api = {
     amountToCents, centsToYuan, numberValue, normalizeBankCard, personName, personGroup, personStatus, personId,
     bankAccounts, defaultBankCard, setDefaultBankCard, calculateAmount, matchImportedRows, createContract, createLedger,
     copyLedger, replaceLedgerPerson, createBatch, summarizeBatch, validateBatch, deriveBatchStatus, reviewBatch,
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
+    defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
+    summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ContractFeeModel = api;
