@@ -83,6 +83,9 @@ test('light glass controls keep primary and disabled labels readable and never e
   assert.match(style, /body\.light-theme \.btn-primary:disabled[\s\S]*?color:\s*#4d615d\s*!important/u);
   assert.match(style, /Never expose the legacy illustration edges/u);
   assert.match(style, /background-size:\s*100% 100%\s*!important/u);
+  assert.match(style, /#tab-personnel \.header-actions \.btn\.btn-primary:disabled/u);
+  assert.match(style, /background:\s*#c8d9d5\s*!important/u);
+  assert.match(style, /A visible full-window canvas/u);
 });
 
 test('login startup checks the previous account entitlement before showing a reminder', async () => {

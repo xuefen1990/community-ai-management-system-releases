@@ -8885,3 +8885,32 @@ body.dark-theme .login-view {
 .login-view::after {
   pointer-events: none;
 }
+
+/* The personnel toolbar uses a legacy high-specificity selector, so repair it directly. */
+body.light-theme #tab-personnel .header-actions .btn.btn-primary {
+  color: #fff !important;
+  background: linear-gradient(135deg, #12a986 0%, #067c67 100%) !important;
+  border-color: rgba(255, 255, 255, .36) !important;
+  opacity: 1 !important;
+}
+
+body.light-theme #tab-personnel .header-actions .btn.btn-primary:disabled,
+body.light-theme #tab-personnel .header-actions .btn.btn-primary[aria-disabled="true"] {
+  color: #35504a !important;
+  background: #c8d9d5 !important;
+  border-color: #9bb6b0 !important;
+  text-shadow: none !important;
+  opacity: 1 !important;
+}
+
+/* A visible full-window canvas, not a pale image edge, sits behind the login card. */
+body.light-theme .login-view {
+  background-color: #d9efe7 !important;
+  background-image: radial-gradient(ellipse at -6% 98%, rgba(11, 160, 126, .42) 0%, transparent 43%), radial-gradient(ellipse at 105% 4%, rgba(71, 142, 225, .42) 0%, transparent 44%), radial-gradient(ellipse at 48% 0%, rgba(150, 225, 204, .34) 0%, transparent 43%), linear-gradient(135deg, #d9f2e9 0%, #cfe9ef 49%, #d9ecdf 100%) !important;
+}
+
+body.light-theme .login-card-backdrop {
+  background: rgba(242, 251, 248, .08) !important;
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
+}
