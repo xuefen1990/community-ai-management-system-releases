@@ -25,6 +25,9 @@
 .cf-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--text-secondary); font-size: 13px; }
 .cf-pager div { display: flex; gap: 8px; }
 .cf-pager button:disabled { cursor: not-allowed; opacity: .45; }
+.cf-subsidy-search { display: flex; gap: 8px; align-items: center; margin: 14px 0; }
+.cf-subsidy-search input { flex: 1; min-width: 240px; }
+@media (max-width: 720px) { .cf-subsidy-search { align-items: stretch; flex-direction: column; } }
 .cf-empty { padding: 42px 16px; text-align: center; color: var(--text-secondary); }
 .cf-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(59,130,246,.1); color: #2563eb; }
 .cf-badge.ok { background: rgba(16,185,129,.1); color: #059669; }
