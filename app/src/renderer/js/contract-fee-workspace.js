@@ -409,7 +409,7 @@
       ${field('可选附件', '<div><button type="button" class="btn btn-outline" data-cf-action="add-attachments">选择附件</button><div id="cf-attachment-list" class="cf-row-actions" style="margin-top:8px">' + attachmentListHtml(state.modal.attachments) + '</div></div>', true)}
       ${batch ? '' : field('直接登记为已发放', '<label class="cf-check"><input type="checkbox" name="directPaid">临时、小额事项直接完成</label>', true)}
       ${batch ? '' : field('直接发放经办说明', '<input name="directPaymentReason" placeholder="直接登记已发放时必填">', true)}
-      <div class="cf-field full"><label>收款明细 *</label><div class="cf-row-actions" style="margin-bottom:8px">${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-disbursement-item">＋ 添加收款人</button><button type="button" class="btn btn-outline" data-cf-action="import-disbursement-excel">从 Excel 导入</button>'}</div><div id="cf-disbursement-items">${(batch?.items || [{}]).map(itemRow).join('')}</div><p class="cf-hint">优先选择居民档案；未选择居民时可填写临时收款人。Excel 导入后可继续手工修改。选择居民会自动使用其默认银行卡。</p></div>
+      <div class="cf-field full"><label>收款明细 *</label><div class="cf-row-actions" style="margin-bottom:8px">${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-disbursement-item">＋ 添加收款人</button><button type="button" class="btn btn-outline" data-cf-action="import-disbursement-excel">从 Excel 导入</button>'}</div><div id="cf-disbursement-items">${(batch?.items || [{}]).map(itemRow).join('')}</div><p class="cf-hint">优先选择居民档案；未选择居民时可填写临时收款人。Excel 导入后可继续手工修改。选择居民会自动使用其默认银行卡。</p><p id="cf-disbursement-error" class="cf-error" role="alert" style="display:none;margin:8px 0 0"></p></div>
     </form>`, { footer: batch ? '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>' : '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-disbursement">保存批次</button>' });
   }
 
@@ -428,11 +428,24 @@
   }
 
   async function saveDisbursementBatch() {
-    const form = document.getElementById('cf-disbursement-form'); const values = Object.fromEntries(new FormData(form).entries());
-    const category = state.database.disbursementCategories.find((item) => item.id === values.categoryId);
-    const items = [...form.querySelectorAll('.cf-disbursement-item')].map((row) => ({ personId: row.querySelector('[name="personId"]').value, name: row.querySelector('[name="name"]').value, bankCard: row.querySelector('[name="bankCard"]').value, amount: row.querySelector('[name="amount"]').value })).filter((item) => item.personId || item.name || item.amount);
-    const batch = model.createDisbursementBatch({ ...values, categoryName: category?.name, items, attachments: state.modal.attachments, directPaid: values.directPaid === 'on' }, { personnel: state.database.personnel });
-    state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存'); closeModal(); state.view = 'general-batches'; renderShell();
+    const form = document.getElementById('cf-disbursement-form');
+    const errorTarget = document.getElementById('cf-disbursement-error');
+    const button = document.querySelector('[data-cf-action="save-disbursement"]');
+    if (errorTarget) { errorTarget.textContent = ''; errorTarget.style.display = 'none'; }
+    try {
+      if (!form) throw new Error('发放批次表单未加载完成，请关闭后重新新建批次');
+      const values = Object.fromEntries(new FormData(form).entries());
+      const category = state.database.disbursementCategories.find((item) => item.id === values.categoryId);
+      const items = [...form.querySelectorAll('.cf-disbursement-item')].map((row) => ({ personId: row.querySelector('[name="personId"]').value, name: row.querySelector('[name="name"]').value, bankCard: row.querySelector('[name="bankCard"]').value, amount: row.querySelector('[name="amount"]').value })).filter((item) => item.personId || item.name || item.amount);
+      if (!items.length) throw new Error('请至少填写一名收款人和金额');
+      button?.setAttribute('disabled', 'disabled'); if (button) button.textContent = '正在保存…';
+      const batch = model.createDisbursementBatch({ ...values, categoryName: category?.name, items, attachments: state.modal?.attachments || [], directPaid: values.directPaid === 'on' }, { personnel: state.database.personnel });
+      state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存'); closeModal(); state.view = 'general-batches'; renderShell();
+    } catch (error) {
+      if (errorTarget) { errorTarget.textContent = error?.message || '保存批次失败'; errorTarget.style.display = 'block'; }
+      else notify(error?.message || '保存批次失败', 'error');
+      button?.removeAttribute('disabled'); if (button) button.textContent = '保存批次';
+    }
   }
 
   async function reviewDisbursement(id) { const current = findById('disbursementBatches', id); const next = model.reviewDisbursementBatch(current); state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(current), 1, next); await saveDatabase('批次已审核'); renderShell(); }
