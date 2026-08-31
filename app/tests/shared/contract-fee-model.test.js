@@ -108,3 +108,29 @@ test('requires a reason when a general batch is directly marked paid and preserv
   assert.equal(dashboard.completed, 1);
   assert.equal(dashboard.totalsByCategory['固定工资'], 100);
 });
+
+test('creates fixed salary, casual labor and public service records with the approved calculations', () => {
+  const profile = model.normalizeProfile({ templateKey: model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, personId: 'p-2', role: '党小组长', standard: 800 }, people, { now, id: 'profile-1' });
+  assert.equal(profile.standardCents, 80000);
+  const batch = model.createTemplateDisbursementBatch({
+    categoryId: 'category-salary', categoryName: '固定工资', templateKey: model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, period: '2026年1-3月',
+    items: [{ personId: 'p-2', role: '党小组长', unitPrice: 800, months: 3, deductions: 100 }],
+  }, { personnel: people, now, id: 'template-1' });
+  assert.equal(batch.items[0].calculatedAmountCents, 240000);
+  assert.equal(batch.items[0].amountCents, 230000);
+  const labor = model.templateItem({ name: '临时工', workDate: '7.22-7.25', workItem: '清理', workDays: 5.5, unitPrice: 100 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.casualLabor, { now });
+  assert.equal(labor.amountCents, 55000);
+  const service = model.templateItem({ name: '运行人员', responsibilityArea: '东一组庄台', unitPrice: 2100 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.publicService, { now });
+  assert.equal(service.amountCents, 210000);
+});
+
+test('keeps a farmland subsidy master record authoritative and requires correction reasons', () => {
+  const subsidyPeople = [{ id: 'p-4', name: '张三', village_group: '东一组', id_card: '320000199001010011', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] }];
+  const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', bankName: '农商行', bankCard: '62220001', eligibleArea: 2.4, standard: 120 }] }, { personnel: subsidyPeople, now, id: 'subsidy-1' });
+  assert.equal(ledger.records[0].amountCents, 28800);
+  assert.equal(model.validateFarmlandSubsidyLedger(ledger).ok, true);
+  assert.throws(() => model.correctFarmlandSubsidyRecord(ledger, ledger.records[0].id, { eligibleArea: 2.5 }, { personnel: subsidyPeople, now }), /填写原因/u);
+  const corrected = model.correctFarmlandSubsidyRecord(ledger, ledger.records[0].id, { eligibleArea: 2.5, correctionReason: '核实面积' }, { personnel: subsidyPeople, now });
+  assert.equal(corrected.records[0].amountCents, 30000);
+  assert.equal(corrected.corrections.length, 1);
+});

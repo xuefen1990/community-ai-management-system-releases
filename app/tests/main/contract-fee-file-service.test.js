@@ -59,3 +59,15 @@ test('returns cancellation without writing files', async () => {
   const service = new ContractFeeFileService({ userDataPath: '/tmp', dialog: { showOpenDialog: async () => ({ canceled: true, filePaths: [] }) } });
   assert.deepEqual(await service.exportGroupedFiles({ groups: [] }), { ok: false, canceled: true, files: [] });
 });
+
+test('reads a complete farmland subsidy workbook and exports the five connected attachments', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'farmland-subsidy-'));
+  const sourcePath = path.join(directory, '补贴.xlsx'); const source = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(source, XLSX.utils.aoa_to_sheet([['序号', '户主姓名', '补贴金额（元）'], [1, '李四', 120]]), '附件1-4');
+  XLSX.utils.book_append_sheet(source, XLSX.utils.aoa_to_sheet([['序号', '户主姓名', '身份证号', '开户行', '一卡通号', '村', '村民组', '应享受补贴面积（亩）', '补贴标准（元/亩）', '补贴金额（元）', '备注'], [1, '张三', '320000199001010011', '农商行', '62220001', '陆庄', '东一组', 2, 120, 240, ''], [2, '李四', '320000199001010022', '农商行', '62220002', '陆庄', '东一组', 1, 120, 120, '']]), '地力补贴兑付清册');
+  XLSX.writeFile(source, sourcePath); const service = new ContractFeeFileService({ userDataPath: directory }); const imported = service.readFarmlandSubsidyExcel(sourcePath);
+  assert.equal(imported.records.length, 2); assert.equal(imported.records[1].category, 'village_cadre');
+  const exported = await service.exportFarmlandSubsidyWorkbook({ outputDirectory: directory, ledger: { year: 2026, villageName: '陆庄', streetName: '晓店街道', records: imported.records.map((row) => ({ ...row, ownershipArea: row.eligibleArea, excludedArea: 0, standardCents: Math.round(row.standard * 100), amountCents: Math.round(row.amount * 100) })) } });
+  assert.equal(exported.file.sheetNames.length, 5); assert.deepEqual(exported.file.sheetNames, ['附件1-1', '附件1-4', '附件2-1', '附件2-4', '地力补贴兑付清册']);
+  await fs.rm(directory, { recursive: true, force: true });
+});

@@ -19,6 +19,7 @@ test('workspace module keeps the unified disbursement screens outside the legacy
   for (const label of ['资金发放中心', '汇总看板', '全部发放批次', '承包费历史台账', '管理类别', '新建发放批次']) assert.match(script, new RegExp(label, 'u'));
   assert.match(script, /正在保存/u);
   assert.match(script, /cf-disbursement-error/u);
+  for (const label of ['固定人员基础台账', '年度地力补贴关联台账', '岗位工资 / 补贴', '杂工补贴', '导出五张表']) assert.match(script, new RegExp(label, 'u'));
   assert.match(script, /selectAndReadContractFeeExcel/u);
   assert.match(script, /exportContractFeeGroupFiles/u);
 });

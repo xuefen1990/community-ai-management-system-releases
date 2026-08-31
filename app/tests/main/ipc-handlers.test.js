@@ -40,12 +40,16 @@ test('contract fee file channels delegate to the dedicated service', async () =>
     selectAndReadExcel: async () => { calls.push('read'); return { ok: true, data: { rows: [] } }; },
     importAttachments: async () => { calls.push('attachments'); return { ok: true, data: [] }; },
     exportGroupedFiles: async (value) => { calls.push(value); return { ok: true, files: [] }; },
+    selectAndReadFarmlandSubsidyExcel: async () => { calls.push('subsidy-read'); return { ok: true, data: { records: [] } }; },
+    exportFarmlandSubsidyWorkbook: async (value) => { calls.push(value); return { ok: true, file: {} }; },
   };
   const { callbacks } = makeHandlers({ contractFeeFileService });
   assert.equal((await callbacks.get(INVOKE_CHANNELS.selectAndReadContractFeeExcel)({})).ok, true);
   assert.equal((await callbacks.get(INVOKE_CHANNELS.importContractFeeAttachments)({})).ok, true);
   assert.equal((await callbacks.get(INVOKE_CHANNELS.exportContractFeeGroupFiles)({}, { groups: [] })).ok, true);
-  assert.deepEqual(calls, ['read', 'attachments', { groups: [] }]);
+  assert.equal((await callbacks.get(INVOKE_CHANNELS.selectAndReadFarmlandSubsidyExcel)({})).ok, true);
+  assert.equal((await callbacks.get(INVOKE_CHANNELS.exportFarmlandSubsidyWorkbook)({}, { ledger: {} })).ok, true);
+  assert.deepEqual(calls, ['read', 'attachments', { groups: [] }, 'subsidy-read', { ledger: {} }]);
 });
 
 test('Excel selection and preview handlers return a selected local sheet', async () => {

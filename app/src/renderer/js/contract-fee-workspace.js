@@ -3,7 +3,7 @@
 (function contractFeeWorkspace(root) {
   const model = root.ContractFeeModel;
   const api = root.api;
-  const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches'];
+  const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches', 'disbursementProfiles', 'farmlandSubsidyLedgers'];
   const state = { database: null, view: 'overview', modal: null, importDraft: null };
 
   const text = (value) => String(value ?? '').trim();
@@ -83,9 +83,9 @@
     const summary = stats();
     section.innerHTML = `
       <div class="cf-header"><div><h2>资金发放中心</h2><p>统一管理承包费、补贴、工资和其他资金发放；合同仅在承包费办理时按需关联。</p></div>
-        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="manage-categories">管理类别</button><button class="btn btn-primary" data-cf-action="new-disbursement-batch">＋ 新建发放批次</button></div></div>
+        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="manage-categories">管理类别</button><button class="btn btn-outline" data-cf-action="manage-profiles">固定人员台账</button><button class="btn btn-outline" data-cf-action="manage-subsidies">地力补贴台账</button><button class="btn btn-primary" data-cf-action="new-disbursement-batch">＋ 新建发放批次</button></div></div>
       <div class="cf-stats"><div class="cf-stat"><span>发放总额</span><strong>${money(summary.totalCents)}</strong></div><div class="cf-stat"><span>待审核批次</span><strong>${summary.pendingReview}</strong></div><div class="cf-stat"><span>已发放批次</span><strong>${summary.completed}</strong></div><div class="cf-stat"><span>资金类别</span><strong>${state.database.disbursementCategories.filter((item) => item.active !== false).length}</strong></div></div>
-      <div class="cf-nav">${[['overview', '汇总看板'], ['general-batches', '全部发放批次'], ['ledger', '承包费历史台账'], ['batches', '历史承包费记录']].map(([key, label]) => `<button class="${state.view === key ? 'active' : ''}" data-cf-view="${key}">${label}</button>`).join('')}</div>
+      <div class="cf-nav">${[['overview', '汇总看板'], ['general-batches', '全部发放批次'], ['profiles', '固定人员台账'], ['subsidies', '年度地力补贴'], ['ledger', '承包费历史台账'], ['batches', '历史承包费记录']].map(([key, label]) => `<button class="${state.view === key ? 'active' : ''}" data-cf-view="${key}">${label}</button>`).join('')}</div>
       <div id="cf-view"></div>`;
     renderView();
   }
@@ -94,6 +94,8 @@
     const target = document.getElementById('cf-view');
     if (!target) return;
     if (state.view === 'general-batches') target.innerHTML = renderGeneralBatches();
+    else if (state.view === 'profiles') target.innerHTML = renderProfiles();
+    else if (state.view === 'subsidies') target.innerHTML = renderSubsidyLedgers();
     else if (state.view === 'ledger') target.innerHTML = renderLedgers();
     else if (state.view === 'batches') target.innerHTML = renderBatches();
     else if (state.view === 'issues') target.innerHTML = renderIssues();
@@ -110,6 +112,20 @@
   function renderGeneralBatches() {
     const rows = [...state.database.disbursementBatches].sort((a, b) => text(b.createdAt).localeCompare(text(a.createdAt))).map((batch) => { const summary = model.summarizeDisbursementBatch(batch); return `<tr><td><strong>${escapeHtml(batch.categoryName)}</strong><br><span class="text-secondary">${escapeHtml(batch.period)} · ${escapeHtml(batch.batchDate || '未填日期')}</span></td><td>${statusBadge(batch.status)}</td><td>${money(summary.totalCents)}</td><td>${summary.paidCount}/${summary.recipientCount} 人</td><td>${escapeHtml(batch.notes || '—')}</td><td><div class="cf-row-actions">${batch.status === 'draft' ? `<button data-cf-action="review-disbursement" data-id="${batch.id}">审核</button>` : ''}${batch.status !== 'completed' ? `<button data-cf-action="pay-disbursement" data-id="${batch.id}">登记已发放</button>` : ''}<button data-cf-action="view-disbursement" data-id="${batch.id}">查看</button></div></td></tr>`; }).join('');
     return `<div class="cf-panel"><div class="cf-panel-head"><h3>全部发放批次</h3><span class="text-secondary">承包费、补贴、工资和自定义类别统一查询</span></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>类别 / 期间</th><th>状态</th><th>金额</th><th>收款人</th><th>备注</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="cf-empty">暂无发放批次。</div></td></tr>'}</tbody></table></div></div>`;
+  }
+
+  function templateLabel(templateKey) {
+    return ({ position_salary: '岗位工资/补贴（A5）', public_service: '公共服务报酬（A5）', casual_labor: '杂工补贴（A5）', contract_fee: '承包费（A4）' })[templateKey] || '通用发放';
+  }
+
+  function renderProfiles() {
+    const rows = [...state.database.disbursementProfiles].sort((a, b) => text(a.templateKey).localeCompare(text(b.templateKey)) || text(a.name).localeCompare(text(b.name))).map((profile) => `<tr><td>${escapeHtml(templateLabel(profile.templateKey))}</td><td><strong>${escapeHtml(profile.name)}</strong><br><span class="text-secondary">${escapeHtml(profile.groupName || '未分组')}</span></td><td>${escapeHtml(profile.role || profile.responsibilityArea || '—')}</td><td>${money(profile.standardCents)}</td><td>${escapeHtml(profile.bankCard || '未填写')}</td><td>${profile.active === false ? statusBadge('unpaid') : statusBadge('completed')}</td><td><button data-cf-action="edit-profile" data-id="${profile.id}">编辑</button></td></tr>`).join('');
+    return `<div class="cf-panel"><div class="cf-panel-head"><h3>固定人员基础台账</h3><div class="cf-row-actions"><button data-cf-action="import-profiles">从 Excel 导入</button><button class="btn btn-primary" data-cf-action="new-profile">＋ 新增人员</button></div></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>适用模板</th><th>人员</th><th>岗位 / 负责区域</th><th>默认标准</th><th>银行卡</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="7"><div class="cf-empty">先建立村组干部、党小组长、监督委员或公共服务人员台账，后续发放会自动带出标准。</div></td></tr>'}</tbody></table></div></div>`;
+  }
+
+  function renderSubsidyLedgers() {
+    const rows = [...state.database.farmlandSubsidyLedgers].sort((a, b) => text(b.year).localeCompare(text(a.year))).map((ledger) => { const summary = model.summarizeFarmlandSubsidyLedger(ledger); const validation = model.validateFarmlandSubsidyLedger(ledger); return `<tr><td><strong>${escapeHtml(ledger.year)} 年</strong><br><span class="text-secondary">${escapeHtml(ledger.villageName || '未填写单位')}</span></td><td>${ledger.records.length} 人<br><span class="text-secondary">村干部 ${summary.villageCadreRecords.length} 人</span></td><td>${money(summary.totalAmountCents)}</td><td>${validation.ok ? '<span class="cf-badge ok">核对通过</span>' : `<span class="cf-badge warn">${validation.errors.length} 项待处理</span>`}</td><td>${escapeHtml(ledger.corrections?.length || 0)} 次更正</td><td><div class="cf-row-actions"><button data-cf-action="view-subsidy" data-id="${ledger.id}">主表与附件</button><button data-cf-action="export-subsidy" data-id="${ledger.id}">导出五张表</button></div></td></tr>`; }).join('');
+    return `<div class="cf-panel"><div class="cf-panel-head"><h3>年度地力补贴关联台账</h3><div class="cf-row-actions"><button data-cf-action="import-subsidy">导入整套 Excel</button><button class="btn btn-primary" data-cf-action="new-subsidy">＋ 新建年度台账</button></div></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>年度 / 单位</th><th>对象</th><th>补贴金额</th><th>核对</th><th>更正记录</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="cf-empty">可导入含“地力补贴兑付清册”的整套 Excel；附件将和主表自动关联。</div></td></tr>'}</tbody></table></div></div>`;
   }
 
   function renderLedgers() {
@@ -395,6 +411,139 @@
     state.database.disbursementCategories.push(category); await saveDatabase('资金类别已新增'); closeModal(); renderShell();
   }
 
+  const itemValue = (row, name) => row.querySelector(`[name="${name}"]`)?.value || '';
+  const profileFor = (id) => findById('disbursementProfiles', id);
+
+  function profileModal(profile = {}) {
+    state.modal = { type: 'profile', profileId: profile.id || '' };
+    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), profile.personId)}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
+    openModal(profile.id ? '编辑固定人员' : '新增固定人员', `<form id="cf-profile-form" class="cf-form-grid">
+      ${field('适用模板 *', `<select name="templateKey"><option value="position_salary"${selected(profile.templateKey || 'position_salary', 'position_salary')}>岗位工资 / 补贴（A5）</option><option value="public_service"${selected(profile.templateKey, 'public_service')}>公共服务人员报酬（A5）</option></select>`)}
+      ${field('关联居民档案', `<select name="personId"><option value="">不关联，手工填写</option>${people}</select>`)}
+      ${field('姓名 *', `<input name="name" value="${escapeHtml(profile.name || '')}">`)}
+      ${field('所属组别', `<input name="groupName" value="${escapeHtml(profile.groupName || '')}">`)}
+      ${field('岗位', `<input name="role" value="${escapeHtml(profile.role || '')}" placeholder="例如：党小组长、监督委员">`)}
+      ${field('负责区域', `<input name="responsibilityArea" value="${escapeHtml(profile.responsibilityArea || '')}" placeholder="公共服务人员填写">`)}
+      ${field('固定标准（元）', `<input name="standard" type="number" min="0" step="0.01" value="${profile.standardCents === undefined ? '' : yuanValue(profile.standardCents)}">`)}
+      ${field('银行卡号', `<input name="bankCard" value="${escapeHtml(profile.bankCard || '')}">`)}
+      ${field('备注', `<textarea name="notes">${escapeHtml(profile.notes || '')}</textarea>`, true)}
+    </form>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-profile">保存人员</button>' });
+  }
+
+  async function saveProfile() {
+    const form = document.getElementById('cf-profile-form'); const values = Object.fromEntries(new FormData(form).entries()); const existing = profileFor(state.modal.profileId);
+    const profile = model.normalizeProfile(values, state.database.personnel, existing ? { id: existing.id } : {}); if (existing) profile.createdAt = existing.createdAt;
+    if (existing) state.database.disbursementProfiles.splice(state.database.disbursementProfiles.indexOf(existing), 1, profile); else state.database.disbursementProfiles.push(profile);
+    await saveDatabase(existing ? '固定人员已更新' : '固定人员已新增'); closeModal(); state.view = 'profiles'; renderShell();
+  }
+
+  async function importProfiles() {
+    const filePath = await api.selectExcelFile(); if (!filePath) return; const imported = await api.readExcelColumns(filePath); if (imported?.error) throw new Error(imported.error);
+    const pick = (row, aliases) => { const key = Object.keys(row || {}).find((column) => aliases.includes(text(column).replace(/[\s（）()]/gu, ''))); return key ? row[key] : ''; };
+    let count = 0;
+    for (const row of imported?.rows || []) {
+      const name = pick(row, ['姓名', '户主姓名', '人员姓名']); if (!text(name)) continue;
+      const templateKey = /公共服务|庄台|负责区域/u.test(`${pick(row, ['岗位', '职务'])}${pick(row, ['负责区域'])}`) ? 'public_service' : 'position_salary';
+      const profile = model.normalizeProfile({ templateKey, name, role: pick(row, ['岗位', '职务']), responsibilityArea: pick(row, ['负责区域']), bankCard: pick(row, ['银行卡号', '银行账号', '卡号', '一卡通号']), standard: pick(row, ['月工资', '元/月', '实发金额', '标准', '单价']) }, state.database.personnel);
+      const existing = state.database.disbursementProfiles.find((item) => item.templateKey === profile.templateKey && item.name === profile.name);
+      if (existing) state.database.disbursementProfiles.splice(state.database.disbursementProfiles.indexOf(existing), 1, { ...profile, id: existing.id, createdAt: existing.createdAt }); else state.database.disbursementProfiles.push(profile);
+      count += 1;
+    }
+    if (!count) throw new Error('未识别到姓名列，请确认 Excel 包含姓名和岗位或负责区域'); await saveDatabase(`已导入 ${count} 名固定人员`); state.view = 'profiles'; renderShell();
+  }
+
+  function templateChooserModal() {
+    openModal('选择发放模板', `<div class="cf-template-choices"><button data-cf-action="new-template-batch" data-template="position_salary"><strong>岗位工资 / 补贴</strong><span>村组干部、党小组长、监督委员；月标准 × 月数</span><em>A5</em></button><button data-cf-action="new-template-batch" data-template="public_service"><strong>公共服务人员报酬</strong><span>负责区域、账号、金额</span><em>A5</em></button><button data-cf-action="new-template-batch" data-template="casual_labor"><strong>杂工补贴</strong><span>用工日期、事项、工日 × 单价</span><em>A5</em></button><button data-cf-action="new-disbursement-generic"><strong>其他资金发放</strong><span>补贴或其他类别的通用明细</span><em>通用</em></button></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button>' });
+  }
+
+  function templateItemHtml(templateKey, item = {}) {
+    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), item.personId)}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
+    const fixed = templateKey !== 'casual_labor';
+    const fields = templateKey === 'position_salary'
+      ? `<input name="role" value="${escapeHtml(item.role || '')}" placeholder="职务"><input name="quantity" type="number" min="0" step="1" value="${escapeHtml(item.quantity || '')}" placeholder="月份"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="月标准"><input name="deductions" type="number" min="0" step="0.01" value="${item.deductionsCents === undefined ? '' : yuanValue(item.deductionsCents)}" placeholder="扣除款">`
+      : templateKey === 'public_service'
+        ? `<input name="responsibilityArea" value="${escapeHtml(item.responsibilityArea || '')}" placeholder="负责区域"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="实发金额">`
+        : `<input name="workDate" value="${escapeHtml(item.workDate || '')}" placeholder="用工日期"><input name="workItem" value="${escapeHtml(item.workItem || '')}" placeholder="用工事项"><input name="quantity" type="number" min="0" step="0.1" value="${escapeHtml(item.quantity || '')}" placeholder="工日"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="单价">`;
+    return `<div class="cf-template-item"><select name="personId"><option value="">${fixed ? '选择居民档案或手工填写' : '临时人员（可手工填写）'}</option>${people}</select><input name="name" value="${escapeHtml(item.name || '')}" placeholder="姓名">${fields}<input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行账号"><input name="finalAmount" type="number" min="0" step="0.01" value="${item.amountCents === undefined ? '' : yuanValue(item.amountCents)}" placeholder="实发金额（可改）"><input name="remark" value="${escapeHtml(item.remark || '')}" placeholder="备注"></div>`;
+  }
+
+  function templateBatchModal(templateKey, batch = null) {
+    const key = templateKey || batch?.templateKey; const categoryCode = key === 'casual_labor' ? 'casual_labor' : key === 'public_service' ? 'public_service_salary' : 'salary'; const category = state.database.disbursementCategories.find((item) => item.code === categoryCode) || {};
+    const profiles = state.database.disbursementProfiles.filter((item) => item.active !== false && ((key === 'position_salary' && item.templateKey === 'position_salary') || (key === 'public_service' && item.templateKey === 'public_service')));
+    const initialItems = batch?.items || (key === 'casual_labor' ? [{}] : profiles.map((profile) => ({ personId: profile.personId, name: profile.name, groupName: profile.groupName, role: profile.role, responsibilityArea: profile.responsibilityArea, bankCard: profile.bankCard, unitPriceCents: profile.standardCents, quantity: key === 'position_salary' ? 1 : 0 })));
+    state.modal = { type: 'template-batch', templateKey: key, batchId: batch?.id || '' };
+    const title = batch?.title || ({ position_salary: '工资结算单', public_service: '农村公共服务运行维护人员报酬发放表', casual_labor: '村级务工补贴发放表' })[key];
+    openModal(batch ? `查看 ${templateLabel(key)}` : `新建 ${templateLabel(key)}`, `<form id="cf-template-batch-form" class="cf-form-grid"><input type="hidden" name="categoryId" value="${escapeHtml(batch?.categoryId || category.id || '')}"><input type="hidden" name="categoryName" value="${escapeHtml(batch?.categoryName || category.name || '')}">
+      ${field('表格标题 *', `<input name="title" value="${escapeHtml(title)}">`, true)}${field('发放期间 *', `<input name="period" value="${escapeHtml(batch?.period || `${new Date().getFullYear()} 年 ${new Date().getMonth() + 1} 月`)}">`)}${field('发放日期', `<input name="batchDate" type="date" value="${escapeHtml(batch?.batchDate || today())}">`)}${field('编制单位 / 村居', `<input name="villageName" value="${escapeHtml(batch?.villageName || state.database.settings?.villageName || '')}">`)}${field('审批人', `<input name="approver" value="${escapeHtml(batch?.signers?.approver || '')}">`)}${field('制表人', `<input name="maker" value="${escapeHtml(batch?.signers?.maker || '')}">`)}${field('经办人', `<input name="handler" value="${escapeHtml(batch?.signers?.handler || '')}">`)}${field('备注', `<input name="notes" value="${escapeHtml(batch?.notes || '')}">`, true)}
+      <div class="cf-field full"><label>发放明细</label><div id="cf-template-items">${initialItems.map((item) => templateItemHtml(key, item)).join('')}</div>${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-template-item">＋ 添加人员</button>'}<p id="cf-template-error" class="cf-error" role="alert" style="display:none"></p></div></form>`, { footer: batch ? `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="preview-template" data-id="${batch.id}">打印预览</button>` : '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-template-batch">保存并预览</button>' });
+  }
+
+  function addTemplateItem() { const target = document.getElementById('cf-template-items'); if (target) target.insertAdjacentHTML('beforeend', templateItemHtml(state.modal.templateKey, {})); }
+
+  async function saveTemplateBatch() {
+    const form = document.getElementById('cf-template-batch-form'); const error = document.getElementById('cf-template-error'); if (error) error.style.display = 'none';
+    try { const values = Object.fromEntries(new FormData(form).entries()); const items = [...form.querySelectorAll('.cf-template-item')].map((row) => ({ personId: itemValue(row, 'personId'), name: itemValue(row, 'name'), role: itemValue(row, 'role'), responsibilityArea: itemValue(row, 'responsibilityArea'), workDate: itemValue(row, 'workDate'), workItem: itemValue(row, 'workItem'), quantity: itemValue(row, 'quantity'), unitPrice: itemValue(row, 'unitPrice'), deductions: itemValue(row, 'deductions'), bankCard: itemValue(row, 'bankCard'), finalAmount: itemValue(row, 'finalAmount'), remark: itemValue(row, 'remark') })).filter((item) => item.personId || item.name);
+      const batch = model.createTemplateDisbursementBatch({ ...values, templateKey: state.modal.templateKey, items }, { personnel: state.database.personnel }); state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存，请核对打印预览'); templateBatchModal(batch.templateKey, batch); }
+    catch (reason) { if (error) { error.textContent = reason.message || '保存失败'; error.style.display = 'block'; } else throw reason; }
+  }
+
+  function subsidyRecordHtml(record = {}) {
+    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), record.personId)}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
+    return `<tr class="cf-subsidy-record" data-id="${escapeHtml(record.id || '')}"><td><select name="personId"><option value="">手工匹配</option>${people}</select></td><td><input name="name" value="${escapeHtml(record.name || '')}"></td><td><input name="groupName" value="${escapeHtml(record.groupName || '')}"></td><td><select name="category"><option value="household"${selected(record.category, 'household')}>普通农户</option><option value="village_cadre"${selected(record.category, 'village_cadre')}>村干部</option></select></td><td><input name="eligibleArea" type="number" min="0" step="0.01" value="${escapeHtml(record.eligibleArea || '')}"></td><td><input name="standard" type="number" min="0" step="0.01" value="${record.standardCents === undefined ? '' : yuanValue(record.standardCents)}"></td><td><input name="idCard" value="${escapeHtml(record.idCard || '')}"></td><td><input name="bankName" value="${escapeHtml(record.bankName || '')}"></td><td><input name="bankCard" value="${escapeHtml(record.bankCard || '')}"></td></tr>`;
+  }
+
+  function subsidyLedgerModal(ledger = null) {
+    const current = ledger || { year: new Date().getFullYear(), villageName: state.database.settings?.villageName || '', streetName: '', records: [{}] }; const validation = ledger ? model.validateFarmlandSubsidyLedger(ledger) : null;
+    state.modal = { type: 'subsidy-ledger', ledgerId: ledger?.id || '' };
+    openModal(ledger ? `${ledger.year} 年地力补贴主表` : '新建年度地力补贴主表', `<form id="cf-subsidy-form" class="cf-form-grid">${field('补贴年度 *', `<input name="year" value="${escapeHtml(current.year)}">`)}${field('村（居） *', `<input name="villageName" value="${escapeHtml(current.villageName || '')}">`)}${field('街道名称', `<input name="streetName" value="${escapeHtml(current.streetName || '')}">`)}${ledger ? field('本次更正原因', '<input name="correctionReason" placeholder="修改已有数据时必填">') : ''}<div class="cf-field full">${validation && !validation.ok ? `<div class="cf-hint">待处理：${escapeHtml(validation.errors.slice(0, 5).join('；'))}${validation.errors.length > 5 ? '…' : ''}</div>` : ''}<label>年度补贴主表（附件由此表自动生成）</label><div class="cf-table-wrap"><table class="cf-table cf-edit-table"><thead><tr><th>关联居民</th><th>姓名</th><th>组别</th><th>类别</th><th>应补面积</th><th>标准</th><th>身份证号</th><th>开户行</th><th>一卡通号</th></tr></thead><tbody id="cf-subsidy-records">${current.records.map(subsidyRecordHtml).join('')}</tbody></table></div><button type="button" class="btn btn-outline" data-cf-action="add-subsidy-record">＋ 添加人员</button><p id="cf-subsidy-error" class="cf-error" role="alert" style="display:none"></p></div></form>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-subsidy-ledger">保存主表</button>' });
+  }
+
+  function addSubsidyRecord() { document.getElementById('cf-subsidy-records')?.insertAdjacentHTML('beforeend', subsidyRecordHtml({})); }
+
+  function subsidyRowsFromForm(form) {
+    return [...form.querySelectorAll('.cf-subsidy-record')].map((row) => ({ id: row.dataset.id, personId: itemValue(row, 'personId'), name: itemValue(row, 'name'), groupName: itemValue(row, 'groupName'), category: itemValue(row, 'category'), eligibleArea: itemValue(row, 'eligibleArea'), ownershipArea: itemValue(row, 'eligibleArea'), standard: itemValue(row, 'standard'), idCard: itemValue(row, 'idCard'), bankName: itemValue(row, 'bankName'), bankCard: itemValue(row, 'bankCard') })).filter((row) => row.personId || row.name);
+  }
+
+  async function saveSubsidyLedger() {
+    const form = document.getElementById('cf-subsidy-form'); const error = document.getElementById('cf-subsidy-error'); if (error) error.style.display = 'none';
+    try {
+      const values = Object.fromEntries(new FormData(form).entries()); const existing = findById('farmlandSubsidyLedgers', state.modal.ledgerId); const rows = subsidyRowsFromForm(form);
+      if (!existing) { const ledger = model.createFarmlandSubsidyLedger({ ...values, records: rows }, { personnel: state.database.personnel }); state.database.farmlandSubsidyLedgers.push(ledger); await saveDatabase('年度地力补贴主表已保存'); closeModal(); state.view = 'subsidies'; renderShell(); return; }
+      let next = structuredClone(existing); next.year = text(values.year); next.villageName = text(values.villageName); next.streetName = text(values.streetName); const oldById = new Map(existing.records.map((record) => [record.id, record])); const nextRecords = [];
+      for (const row of rows) {
+        const old = oldById.get(row.id); if (!old) { nextRecords.push(model.normalizedSubsidyRecord(row, state.database.personnel)); continue; }
+        const candidate = model.normalizedSubsidyRecord({ ...old, ...row }, state.database.personnel, { id: old.id }); candidate.createdAt = old.createdAt;
+        const changed = ['personId', 'name', 'groupName', 'category', 'eligibleArea', 'standardCents', 'idCard', 'bankName', 'bankCard'].some((key) => String(candidate[key] ?? '') !== String(old[key] ?? ''));
+        if (!changed) nextRecords.push(old); else { next.records = existing.records; next = model.correctFarmlandSubsidyRecord(next, old.id, { ...row, correctionReason: values.correctionReason }, { personnel: state.database.personnel }); nextRecords.push(next.records.find((record) => record.id === old.id)); }
+      }
+      next.records = nextRecords; next.updatedAt = new Date().toISOString(); state.database.farmlandSubsidyLedgers.splice(state.database.farmlandSubsidyLedgers.indexOf(existing), 1, next); await saveDatabase('补贴主表已保存并保留更正记录'); closeModal(); state.view = 'subsidies'; renderShell();
+    } catch (reason) { if (error) { error.textContent = reason.message || '保存失败'; error.style.display = 'block'; } else throw reason; }
+  }
+
+  async function importSubsidyLedger() {
+    const result = await api.selectAndReadFarmlandSubsidyExcel(); if (!result?.ok) return; const imported = result.data; const year = (text(imported.fileName).match(/20\d{2}/u) || [new Date().getFullYear()])[0];
+    const ledger = model.createFarmlandSubsidyLedger({ year, villageName: imported.records[0]?.villageName || state.database.settings?.villageName || '', records: imported.records }, { personnel: state.database.personnel });
+    const existing = state.database.farmlandSubsidyLedgers.find((item) => text(item.year) === text(ledger.year)); if (existing) throw new Error(`${ledger.year} 年补贴台账已存在，请打开后更正，不会覆盖已有数据`);
+    state.database.farmlandSubsidyLedgers.push(ledger); await saveDatabase(`已导入 ${ledger.records.length} 条地力补贴主表记录`); state.view = 'subsidies'; renderShell();
+  }
+
+  async function exportSubsidyLedger(id) {
+    const ledger = findById('farmlandSubsidyLedgers', id); const validation = model.validateFarmlandSubsidyLedger(ledger); if (!validation.ok) throw new Error(`请先处理 ${validation.errors.length} 项关联或资料异常后再导出`);
+    const result = await api.exportFarmlandSubsidyWorkbook({ ledger }); if (!result?.ok) { if (!result?.canceled) throw new Error(result?.error || '导出失败'); return; }
+    await saveDatabase('已导出地力补贴五张关联表'); notify(`已导出：${result.file.fileName}`);
+  }
+
+  function templatePreviewHtml(batch) {
+    const headers = batch.templateKey === 'casual_labor' ? ['序号', '用工日期', '姓名', '用工事项', '工日', '单价', '金额', '银行账号', '备注'] : batch.templateKey === 'public_service' ? ['序号', '姓名', '负责区域', '账号', '金额', '备注'] : ['序号', '姓名', '职务', '元/月', '合计月份', '扣除款', '实发金额', '账号', '备注'];
+    const rows = batch.items.map((item, index) => { const cells = batch.templateKey === 'casual_labor' ? [index + 1, item.workDate, item.name, item.workItem, item.quantity, yuanValue(item.unitPriceCents), yuanValue(item.amountCents), item.bankCard, item.remark] : batch.templateKey === 'public_service' ? [index + 1, item.name, item.responsibilityArea, item.bankCard, yuanValue(item.amountCents), item.remark] : [index + 1, item.name, item.role, yuanValue(item.unitPriceCents), item.quantity, yuanValue(item.deductionsCents), yuanValue(item.amountCents), item.bankCard, item.remark]; return `<tr>${cells.map((cell) => `<td>${escapeHtml(cell || '')}</td>`).join('')}</tr>`; }).join('');
+    const total = model.summarizeDisbursementBatch(batch).totalCents;
+    return `<article class="cf-print-sheet ${batch.templateKey === 'contract_fee' ? 'a4' : 'a5'}"><h1>${escapeHtml(batch.title || templateLabel(batch.templateKey))}</h1><div class="cf-print-meta"><span>编制单位：${escapeHtml(batch.villageName || '')}</span><span>期间：${escapeHtml(batch.period || '')}</span><span>日期：${escapeHtml(batch.batchDate || '')}</span><span>单位：元</span></div><table><thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead><tbody>${rows}<tr><td colspan="${headers.length - 3}">合计</td><td colspan="3">${money(total)}　共 ${batch.items.length} 人</td></tr></tbody></table><div class="cf-print-signers"><span>审批人：${escapeHtml(batch.signers?.approver || '')}</span><span>制表人：${escapeHtml(batch.signers?.maker || '')}</span>${batch.templateKey === 'casual_labor' ? `<span>经办人：${escapeHtml(batch.signers?.handler || '')}</span>` : ''}</div></article>`;
+  }
+
+  function templatePreviewModal(batch) { state.modal = { type: 'template-preview', batchId: batch.id }; openModal('打印预览', `<div id="cf-template-preview">${templatePreviewHtml(batch)}</div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="print-template">打印</button>' }); }
+
+  function printTemplate() { const source = document.getElementById('cf-template-preview')?.innerHTML; if (!source) return; const popup = root.open('', '_blank'); if (!popup) throw new Error('未能打开打印窗口，请允许本软件打开打印预览'); popup.document.write(`<html><head><title>发放表打印</title><style>body{margin:0;font-family:"Songti SC",serif;color:#000}.cf-print-sheet{box-sizing:border-box;margin:0 auto;padding:12mm}.cf-print-sheet.a5{width:148mm;min-height:210mm}.cf-print-sheet.a4{width:210mm;min-height:297mm}.cf-print-sheet h1{text-align:center;font-size:18pt;margin:0 0 8mm}.cf-print-meta,.cf-print-signers{display:flex;justify-content:space-between;gap:8px;margin:4mm 0;font-size:10pt}.cf-print-sheet table{border-collapse:collapse;width:100%;font-size:9pt}.cf-print-sheet th,.cf-print-sheet td{border:1px solid #000;padding:2.2mm 1.5mm;text-align:center;word-break:break-all}@page{size:A5 portrait;margin:0}@media print{.cf-print-sheet{margin:0}.cf-print-sheet.a4{page:landscape}}</style></head><body>${source}<script>window.onload=()=>window.print()<\/script></body></html>`); popup.document.close(); }
+
   function disbursementBatchModal(batch = null) {
     const categories = state.database.disbursementCategories.filter((item) => item.active !== false);
     const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}">${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
@@ -462,11 +611,29 @@
     if (action === 'close-modal') return closeModal();
     if (action === 'manage-categories') return categoryModal();
     if (action === 'save-category') return saveCategory();
-    if (action === 'new-disbursement-batch') return disbursementBatchModal();
+    if (action === 'manage-profiles') { state.view = 'profiles'; return renderShell(); }
+    if (action === 'manage-subsidies') { state.view = 'subsidies'; return renderShell(); }
+    if (action === 'new-profile') return profileModal();
+    if (action === 'edit-profile') return profileModal(profileFor(element.dataset.id));
+    if (action === 'save-profile') return saveProfile();
+    if (action === 'import-profiles') return importProfiles();
+    if (action === 'new-disbursement-batch') return templateChooserModal();
+    if (action === 'new-disbursement-generic') return disbursementBatchModal();
+    if (action === 'new-template-batch') return templateBatchModal(element.dataset.template);
+    if (action === 'add-template-item') return addTemplateItem();
+    if (action === 'save-template-batch') return saveTemplateBatch();
+    if (action === 'preview-template') return templatePreviewModal(findById('disbursementBatches', element.dataset.id));
+    if (action === 'print-template') return printTemplate();
+    if (action === 'new-subsidy') return subsidyLedgerModal();
+    if (action === 'import-subsidy') return importSubsidyLedger();
+    if (action === 'view-subsidy') return subsidyLedgerModal(findById('farmlandSubsidyLedgers', element.dataset.id));
+    if (action === 'add-subsidy-record') return addSubsidyRecord();
+    if (action === 'save-subsidy-ledger') return saveSubsidyLedger();
+    if (action === 'export-subsidy') return exportSubsidyLedger(element.dataset.id);
     if (action === 'add-disbursement-item') return appendDisbursementItem();
     if (action === 'import-disbursement-excel') return importDisbursementExcel();
     if (action === 'save-disbursement') return saveDisbursementBatch();
-    if (action === 'view-disbursement') return disbursementBatchModal(findById('disbursementBatches', element.dataset.id));
+    if (action === 'view-disbursement') { const batch = findById('disbursementBatches', element.dataset.id); return batch?.templateKey ? templateBatchModal(batch.templateKey, batch) : disbursementBatchModal(batch); }
     if (action === 'review-disbursement') return reviewDisbursement(element.dataset.id);
     if (action === 'pay-disbursement') return payDisbursement(element.dataset.id);
     if (action === 'new-contract') return contractModal();

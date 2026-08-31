@@ -279,6 +279,122 @@
   function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
   function summarizeDisbursementDashboard(batches = []) { const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; for (const batch of batches) { const total = summarizeDisbursementBatch(batch).totalCents; totalCents += total; totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total; if (batch.status === 'draft') pendingReview += 1; if (batch.status === 'completed') completed += 1; } return { totalCents, pendingReview, completed, totalsByCategory }; }
 
+  const DISBURSEMENT_TEMPLATE_KEYS = Object.freeze({ positionSalary: 'position_salary', publicService: 'public_service', casualLabor: 'casual_labor', contractFee: 'contract_fee' });
+
+  function normalizeProfile(value, personnel = [], { now = new Date(), id } = {}) {
+    const person = personnel.find((item) => personId(item) === text(value.personId));
+    const name = person ? personName(person) : text(value.name);
+    if (!name) throw new Error('请填写人员姓名');
+    const templateKey = text(value.templateKey) || DISBURSEMENT_TEMPLATE_KEYS.positionSalary;
+    if (![DISBURSEMENT_TEMPLATE_KEYS.positionSalary, DISBURSEMENT_TEMPLATE_KEYS.publicService].includes(templateKey)) throw new Error('固定人员台账仅支持岗位工资或公共服务人员');
+    return {
+      id: id || identifier('disbursement-profile', now instanceof Date ? now.getTime() : Date.now()), templateKey,
+      personId: person ? personId(person) : text(value.personId), name, groupName: person ? personGroup(person) : text(value.groupName),
+      role: text(value.role), responsibilityArea: text(value.responsibilityArea), bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
+      standardCents: amountToCents(value.standard), active: value.active !== false, notes: text(value.notes),
+      createdAt: nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function templateItem(value, personnel = [], templateKey, { now = new Date(), id } = {}) {
+    const person = personnel.find((item) => personId(item) === text(value.personId));
+    const name = person ? personName(person) : text(value.name);
+    if (!name) throw new Error('每一笔发放都必须填写收款人');
+    const unitPriceCents = amountToCents(value.unitPrice || value.standard || 0);
+    const quantity = numberValue(value.quantity || value.months || value.workDays || 0);
+    const deductionsCents = amountToCents(value.deductions || 0);
+    let calculatedAmountCents = amountToCents(value.amount || 0);
+    if (templateKey === DISBURSEMENT_TEMPLATE_KEYS.positionSalary || templateKey === DISBURSEMENT_TEMPLATE_KEYS.casualLabor) calculatedAmountCents = Math.round(quantity * unitPriceCents);
+    if (templateKey === DISBURSEMENT_TEMPLATE_KEYS.publicService && !calculatedAmountCents) calculatedAmountCents = unitPriceCents;
+    const finalAmountCents = value.finalAmount === undefined || text(value.finalAmount) === '' ? calculatedAmountCents - deductionsCents : amountToCents(value.finalAmount);
+    if (finalAmountCents < 0) throw new Error(`${name}的实发金额不能小于零`);
+    return {
+      id: id || identifier('template-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : text(value.personId),
+      recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName),
+      role: text(value.role), responsibilityArea: text(value.responsibilityArea), workDate: text(value.workDate), workItem: text(value.workItem),
+      bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
+      unitPriceCents, quantity, deductionsCents, calculatedAmountCents, amountCents: finalAmountCents,
+      paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), remark: text(value.remark), createdAt: nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function createTemplateDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
+    const templateKey = text(value.templateKey);
+    if (!Object.values(DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey)) throw new Error('请选择发放模板');
+    if (!text(value.period)) throw new Error('请填写发放期间');
+    const batchId = id || identifier('template-disbursement-batch', now instanceof Date ? now.getTime() : Date.now());
+    const items = (value.items || []).map((item, index) => templateItem(item, personnel, templateKey, { now, id: `${batchId}-item-${index + 1}` }));
+    if (!items.length) throw new Error('请至少添加一名收款人');
+    return {
+      id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), templateKey, period: text(value.period), batchDate: text(value.batchDate),
+      title: text(value.title), villageName: text(value.villageName), unitName: text(value.unitName), signers: { approver: text(value.approver), maker: text(value.maker), handler: text(value.handler) },
+      status: 'draft', items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), reviewedAt: null, completedAt: null,
+    };
+  }
+
+  function normalizedSubsidyRecord(value, personnel = [], { now = new Date(), id } = {}) {
+    const idCard = text(value.idCard || value.id_card).toUpperCase();
+    const explicitPerson = personnel.find((person) => personId(person) === text(value.personId));
+    const candidates = explicitPerson ? [explicitPerson] : (idCard ? personnel.filter((person) => text(person.id_card || person.idCard).toUpperCase() === idCard) : personnel.filter((person) => personGroup(person) === text(value.groupName || value.group) && personName(person) === text(value.name)));
+    const person = candidates.length === 1 ? candidates[0] : null;
+    const name = person ? personName(person) : text(value.name);
+    if (!name) throw new Error('补贴记录必须填写姓名');
+    const eligibleArea = numberValue(value.eligibleArea ?? value.eligible_area ?? value.area);
+    const standardCents = value.standardCents === undefined ? amountToCents(value.standard ?? value.unitPrice ?? 0) : Number(value.standardCents || 0);
+    const calculatedAmountCents = Math.round(eligibleArea * standardCents);
+    const amountCents = value.amount === undefined || text(value.amount) === '' ? calculatedAmountCents : amountToCents(value.amount);
+    return {
+      id: id || identifier('farmland-subsidy-record', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : text(value.personId),
+      matchStatus: person ? 'matched' : (candidates.length > 1 ? 'ambiguous' : 'missing'), name, groupName: person ? personGroup(person) : text(value.groupName || value.group),
+      category: text(value.category) === 'village_cadre' ? 'village_cadre' : 'household', idCard, bankName: text(value.bankName || value.bank), bankCard: normalizeBankCard(value.bankCard || value.cardNumber),
+      ownershipArea: numberValue(value.ownershipArea ?? value.ownership_area ?? eligibleArea), excludedArea: numberValue(value.excludedArea ?? value.excluded_area ?? 0), eligibleArea,
+      standardCents, calculatedAmountCents, amountCents, phone: text(value.phone), remark: text(value.remark), adjustmentReason: text(value.adjustmentReason),
+      createdAt: nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function createFarmlandSubsidyLedger(value, { personnel = [], now = new Date(), id } = {}) {
+    if (!text(value.year)) throw new Error('请填写补贴年度');
+    const ledgerId = id || identifier('farmland-subsidy-ledger', now instanceof Date ? now.getTime() : Date.now());
+    const records = (value.records || []).map((item, index) => normalizedSubsidyRecord(item, personnel, { now, id: `${ledgerId}-record-${index + 1}` }));
+    if (!records.length) throw new Error('年度补贴台账至少需要一条记录');
+    return { id: ledgerId, year: text(value.year), villageName: text(value.villageName), streetName: text(value.streetName), status: 'draft', records, corrections: [], createdAt: nowIso(now), updatedAt: nowIso(now) };
+  }
+
+  function summarizeFarmlandSubsidyLedger(ledger) {
+    const records = ledger?.records || []; const groupTotals = {};
+    for (const record of records) {
+      const group = record.groupName || '未分组';
+      const total = groupTotals[group] || { householdCount: 0, ownershipArea: 0, excludedArea: 0, eligibleArea: 0, amountCents: 0 };
+      if (record.category === 'household') { total.householdCount += 1; total.ownershipArea += Number(record.ownershipArea || 0); total.excludedArea += Number(record.excludedArea || 0); total.eligibleArea += Number(record.eligibleArea || 0); total.amountCents += Number(record.amountCents || 0); }
+      groupTotals[group] = total;
+    }
+    const totalAmountCents = records.reduce((sum, record) => sum + Number(record.amountCents || 0), 0);
+    return { totalAmountCents, totalRecords: records.length, groupTotals, villageCadreRecords: records.filter((item) => item.category === 'village_cadre') };
+  }
+
+  function validateFarmlandSubsidyLedger(ledger) {
+    const errors = [];
+    for (const record of ledger?.records || []) {
+      if (record.matchStatus !== 'matched') errors.push(`${record.name}尚未关联居民档案`);
+      if (!text(record.idCard)) errors.push(`${record.name}缺少身份证号`);
+      if (!normalizeBankCard(record.bankCard)) errors.push(`${record.name}缺少一卡通号`);
+      if (Number(record.amountCents) !== Number(record.calculatedAmountCents) && !text(record.adjustmentReason)) errors.push(`${record.name}调整金额后必须填写原因`);
+    }
+    return { ok: errors.length === 0, errors, ...summarizeFarmlandSubsidyLedger(ledger) };
+  }
+
+  function correctFarmlandSubsidyRecord(ledger, recordId, value, { personnel = [], now = new Date() } = {}) {
+    if (!text(value.correctionReason)) throw new Error('更正补贴数据必须填写原因');
+    const current = (ledger?.records || []).find((item) => item.id === recordId);
+    if (!current) throw new Error('未找到补贴记录');
+    const next = structuredClone(ledger); const index = next.records.findIndex((item) => item.id === recordId);
+    const replacement = normalizedSubsidyRecord({ ...current, ...value }, personnel, { now, id: current.id }); replacement.createdAt = current.createdAt;
+    next.records.splice(index, 1, replacement); next.status = 'correcting'; next.updatedAt = nowIso(now);
+    next.corrections.push({ id: identifier('farmland-subsidy-correction', now instanceof Date ? now.getTime() : Date.now()), recordId, reason: text(value.correctionReason), before: current, after: replacement, correctedAt: nowIso(now) });
+    return next;
+  }
+
   const api = {
     amountToCents, centsToYuan, numberValue, normalizeBankCard, personName, personGroup, personStatus, personId,
     bankAccounts, defaultBankCard, setDefaultBankCard, calculateAmount, matchImportedRows, createContract, createLedger,
@@ -286,6 +402,8 @@
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
     defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
+    DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch,
+    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ContractFeeModel = api;

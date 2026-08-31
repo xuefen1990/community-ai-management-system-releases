@@ -114,6 +114,12 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.exportContractFeeGroupFiles, async (_event, value) => {
     try { return await contractFeeFiles.exportGroupedFiles(value || {}); } catch (error) { return { ok: false, error: error.message, files: [] }; }
   });
+  handle(INVOKE_CHANNELS.selectAndReadFarmlandSubsidyExcel, async () => {
+    try { return await contractFeeFiles.selectAndReadFarmlandSubsidyExcel(); } catch (error) { return { ok: false, error: error.message }; }
+  });
+  handle(INVOKE_CHANNELS.exportFarmlandSubsidyWorkbook, async (_event, value) => {
+    try { return await contractFeeFiles.exportFarmlandSubsidyWorkbook(value || {}); } catch (error) { return { ok: false, error: error.message, file: null }; }
+  });
   handle(INVOKE_CHANNELS.getLanShareInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.getMobileUploadInfo, async () => ({ enabled: false, url: null }));
   handle(INVOKE_CHANNELS.scanLocalModels, async () => modelCatalog ? modelCatalog.scan() : []);

@@ -5,6 +5,7 @@ const path = require('node:path');
 const XLSX = require('xlsx');
 
 const { parseContractFeeExcelGrid } = require('../shared/contract-fee-excel-parser');
+const { parseFarmlandSubsidyWorkbook } = require('../shared/farmland-subsidy-excel-parser');
 
 function safeFilePart(value, fallback = '未命名') {
   const cleaned = String(value ?? '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/gu, '-').replace(/\.+$/u, '').slice(0, 80);
@@ -45,6 +46,23 @@ class ContractFeeFileService {
     if (!sheetName) throw new Error('表格中没有可读取的工作表');
     const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
     return { ...parseContractFeeExcelGrid(grid), fileName: path.basename(filePath), sheetName };
+  }
+
+  async selectAndReadFarmlandSubsidyExcel() {
+    if (!this.dialog) throw new Error('当前环境无法选择 Excel 文件');
+    const selected = await this.dialog.showOpenDialog({ title: '选择地力补贴整套 Excel', properties: ['openFile'], filters: [{ name: 'Excel 表格', extensions: ['xlsx', 'xls'] }] });
+    if (selected.canceled || !selected.filePaths[0]) return { ok: false, canceled: true };
+    return { ok: true, data: this.readFarmlandSubsidyExcel(selected.filePaths[0]) };
+  }
+
+  readFarmlandSubsidyExcel(value) {
+    const filePath = requestedPath(value);
+    if (!filePath) throw new TypeError('未指定 Excel 文件');
+    const extension = path.extname(filePath).toLowerCase();
+    if (!['.xlsx', '.xls'].includes(extension)) throw new Error('请选择 .xlsx 或 .xls 地力补贴表格');
+    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false });
+    const sheets = Object.fromEntries(workbook.SheetNames.map((name) => [name, XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: '', raw: false })]));
+    return { ...parseFarmlandSubsidyWorkbook(sheets), fileName: path.basename(filePath) };
   }
 
   async importAttachments() {
@@ -110,6 +128,42 @@ class ContractFeeFileService {
       files.push({ groupName: group.groupName, fileName, path: filePath, rowCount: (group.rows || []).length });
     }
     return { ok: true, files, outputDirectory: resolvedDirectory };
+  }
+
+  async exportFarmlandSubsidyWorkbook(value = {}) {
+    let outputDirectory = requestedPath(value.outputDirectory);
+    if (!outputDirectory) {
+      if (!this.dialog) throw new Error('当前环境无法选择导出文件夹');
+      const selected = await this.dialog.showOpenDialog({ title: '选择地力补贴 Excel 保存文件夹', properties: ['openDirectory', 'createDirectory'] });
+      if (selected.canceled || !selected.filePaths[0]) return { ok: false, canceled: true, file: null };
+      [outputDirectory] = selected.filePaths;
+    }
+    const ledger = value.ledger || {}; const records = ledger.records || [];
+    const households = records.filter((item) => item.category !== 'village_cadre'); const cadres = records.filter((item) => item.category === 'village_cadre');
+    const yuan = (cents) => Number(cents || 0) / 100;
+    const title = `${ledger.streetName || ''}${ledger.year || ''}年耕地地力保护补贴`;
+    const book = XLSX.utils.book_new();
+    const groupedHouseholds = new Map(); for (const row of households) { const key = row.groupName || '未分组'; if (!groupedHouseholds.has(key)) groupedHouseholds.set(key, []); groupedHouseholds.get(key).push(row); }
+    const attachmentRows = [[`${title}分户登记清册`]];
+    for (const [groupName, rows] of groupedHouseholds) {
+      attachmentRows.push([`${ledger.villageName || ''} ${groupName}（盖章）`], ['序号', '户主姓名', '土地确权耕地面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积', '补贴标准（元/亩）', '补贴金额（元）', '联系电话', '户主签字（章）']);
+      rows.forEach((row, index) => attachmentRows.push([index + 1, row.name, row.ownershipArea, row.excludedArea, row.eligibleArea, yuan(row.standardCents), yuan(row.amountCents), row.phone, '']));
+      attachmentRows.push(['合计', '', rows.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), '', rows.reduce((sum, row) => sum + yuan(row.amountCents), 0)], []);
+    }
+    const cadreRows = [[`${title}村干部登记清册`], [`${ledger.villageName || ''}（盖章）`], ['序号', '户主姓名', '补贴依据面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积', '补贴标准（元/亩）', '补贴金额（元）', '联系电话', '户主签字（章）']];
+    cadres.forEach((row, index) => cadreRows.push([index + 1, row.name, row.ownershipArea, row.excludedArea, row.eligibleArea, yuan(row.standardCents), yuan(row.amountCents), row.phone, '']));
+    cadreRows.push(['合计', '', cadres.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), '', cadres.reduce((sum, row) => sum + yuan(row.amountCents), 0)]);
+    const groupSummary = [[`${title}分村汇总表`], [`${ledger.villageName || ''}（盖章）`], ['序号', '村名', '补贴组数（个）', '补贴户数（户）', '土地确权耕地面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积（亩）', '补贴金额（元）', '备注']];
+    [...groupedHouseholds].forEach(([groupName, rows], index) => groupSummary.push([index + 1, ledger.villageName, groupName, rows.length, rows.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), rows.reduce((sum, row) => sum + yuan(row.amountCents), 0), '']));
+    const cadreSummary = [[`${title}村干部分村汇总表`], [`${ledger.villageName || ''}（盖章）`], ['序号', '村名', '补贴户数（个）', '补贴依据面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积（亩）', '补贴金额（元）', '备注'], [1, ledger.villageName, cadres.length, cadres.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), cadres.reduce((sum, row) => sum + yuan(row.amountCents), 0), '']];
+    const paymentRows = [[`${ledger.streetName || ''} ${ledger.year || ''}年耕地地力保护补贴兑付清册`], ['序号', '户主姓名', '身份证号', '开户行', '一卡通号', '村', '村民组', '应享受补贴面积（亩）', '补贴标准（元/亩）', '补贴金额（元）', '备注']];
+    records.forEach((row, index) => paymentRows.push([index + 1, row.name, row.idCard, row.bankName, row.bankCard, ledger.villageName, row.groupName, row.eligibleArea, yuan(row.standardCents), yuan(row.amountCents), row.remark]));
+    for (const [name, rows] of [['附件1-1', attachmentRows], ['附件1-4', cadreRows], ['附件2-1', groupSummary], ['附件2-4', cadreSummary], ['地力补贴兑付清册', paymentRows]]) {
+      const sheet = XLSX.utils.aoa_to_sheet(rows); sheet['!cols'] = Array.from({ length: Math.max(...rows.map((row) => row.length)) }, () => ({ wch: 18 })); XLSX.utils.book_append_sheet(book, sheet, name);
+    }
+    const directory = path.resolve(outputDirectory); await fs.mkdir(directory, { recursive: true });
+    const fileName = `${safeFilePart(`${ledger.year || '年度'}地力补贴`)}.xlsx`; const filePath = await availableFilePath(directory, fileName); XLSX.writeFile(book, filePath);
+    return { ok: true, file: { path: filePath, fileName, sheetNames: book.SheetNames }, outputDirectory: directory };
   }
 }
 
