@@ -76,6 +76,15 @@ test('apple glass theme supplies readable light and dark surfaces with a non-gla
   assert.match(style, /prefers-reduced-motion/u);
 });
 
+test('light glass controls keep primary and disabled labels readable and never expose login artwork edges', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /Glass theme readability repair/u);
+  assert.match(style, /body\.light-theme \.btn-primary\s*,[\s\S]*?color:\s*#fff\s*!important/u);
+  assert.match(style, /body\.light-theme \.btn-primary:disabled[\s\S]*?color:\s*#4d615d\s*!important/u);
+  assert.match(style, /Never expose the legacy illustration edges/u);
+  assert.match(style, /background-size:\s*100% 100%\s*!important/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');

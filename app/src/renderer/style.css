@@ -8840,3 +8840,48 @@ body.light-theme .cf-modal-foot {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* Glass theme readability repair: primary and disabled actions must remain legible. */
+body.light-theme .btn-primary,
+body.light-theme .login-btn {
+  color: #fff !important;
+  text-shadow: 0 1px 1px rgba(3, 83, 65, .18);
+}
+
+body.light-theme .btn-primary:disabled,
+body.light-theme .login-btn:disabled,
+body.light-theme .btn-primary[aria-disabled="true"] {
+  color: #4d615d !important;
+  text-shadow: none;
+  background: rgba(214, 228, 224, .92) !important;
+  border-color: rgba(82, 114, 108, .22) !important;
+  box-shadow: none !important;
+  opacity: 1;
+}
+
+body.light-theme .btn-primary:disabled svg,
+body.light-theme .login-btn:disabled svg,
+body.light-theme .btn-primary[aria-disabled="true"] svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}
+
+/* Never expose the legacy illustration edges behind the login surface. */
+.login-view,
+body.light-theme .login-view {
+  background-color: #eaf6f2 !important;
+  background-image: radial-gradient(circle at 8% 8%, rgba(109, 211, 186, .40), transparent 31%), radial-gradient(circle at 93% 6%, rgba(142, 196, 244, .38), transparent 34%), radial-gradient(circle at 48% 100%, rgba(247, 225, 181, .25), transparent 38%), linear-gradient(135deg, #edf9f6 0%, #e4f2f3 48%, #edf6ef 100%) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 100% 100% !important;
+}
+
+body.dark-theme .login-view {
+  background-color: #0a1729 !important;
+  background-image: radial-gradient(circle at 10% 8%, rgba(42, 181, 158, .26), transparent 31%), radial-gradient(circle at 89% 4%, rgba(76, 126, 211, .30), transparent 35%), linear-gradient(135deg, #071222 0%, #0d1d34 52%, #102941 100%) !important;
+}
+
+.login-view::before,
+.login-view::after {
+  pointer-events: none;
+}
