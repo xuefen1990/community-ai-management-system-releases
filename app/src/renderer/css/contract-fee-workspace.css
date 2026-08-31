@@ -22,12 +22,19 @@
 .cf-sheet-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
 .cf-sheet-tabs button, .cf-pager button { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); padding: 7px 11px; cursor: pointer; }
 .cf-sheet-tabs button.active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
-.cf-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--text-secondary); font-size: 13px; }
-.cf-pager div { display: flex; gap: 8px; }
+.cf-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; color: var(--text-secondary); font-size: 13px; }
+.cf-pager-controls, .cf-pager-pages, .cf-pager-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cf-pager-pages button.active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.cf-pager-tools { padding-left: 10px; border-left: 1px solid var(--border-color); }
+.cf-pager-tools label { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.cf-pager-tools input { width: 48px; min-width: 48px; padding: 6px 7px; text-align: center; }
+.cf-pager-tools select { padding: 6px 8px; }
+.cf-page-ellipsis { padding: 0 2px; font-weight: 700; }
+.cf-pager-empty { justify-content: flex-start; }
 .cf-pager button:disabled { cursor: not-allowed; opacity: .45; }
 .cf-subsidy-search { display: flex; gap: 8px; align-items: center; margin: 14px 0; }
 .cf-subsidy-search input { flex: 1; min-width: 240px; }
-@media (max-width: 720px) { .cf-subsidy-search { align-items: stretch; flex-direction: column; } }
+@media (max-width: 720px) { .cf-subsidy-search { align-items: stretch; flex-direction: column; } .cf-pager-controls, .cf-pager-pages, .cf-pager-tools { width: 100%; } .cf-pager-tools { padding-left: 0; border-left: 0; } }
 .cf-empty { padding: 42px 16px; text-align: center; color: var(--text-secondary); }
 .cf-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(59,130,246,.1); color: #2563eb; }
 .cf-badge.ok { background: rgba(16,185,129,.1); color: #059669; }
