@@ -4,8 +4,8 @@ const path = require('node:path');
 
 function createWindowOptions(appRoot) {
   return {
-    width: 1292,
-    height: 768,
+    width: 1600,
+    height: 900,
     minWidth: 1080,
     minHeight: 680,
     show: false,
@@ -24,4 +24,3 @@ function createWindowOptions(appRoot) {
 }
 
 module.exports = { createWindowOptions };
-

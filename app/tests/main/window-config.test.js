@@ -17,3 +17,10 @@ test('window configuration isolates renderer from Node.js', () => {
   assert.equal(options.webPreferences.preload, path.join(root, 'src', 'preload', 'index.js'));
 });
 
+test('window configuration opens with a comfortable desktop workspace', () => {
+  const options = createWindowOptions(path.resolve('/tmp/community-ai-app'));
+  assert.equal(options.width, 1600);
+  assert.equal(options.height, 900);
+  assert.equal(options.minWidth, 1080);
+  assert.equal(options.minHeight, 680);
+});
