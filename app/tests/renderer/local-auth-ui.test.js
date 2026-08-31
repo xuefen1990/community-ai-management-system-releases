@@ -97,6 +97,16 @@ test('disabled workspace primary actions use the familiar green background with 
   assert.match(style, /button\.btn\.btn-primary:disabled svg/u);
 });
 
+test('light theme protects every disabled action from white text on a pale background', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /One last light-theme guard for every disabled action/u);
+  assert.match(style, /body\.light-theme button:disabled/u);
+  assert.match(style, /input\[type="submit"\]:disabled/u);
+  assert.match(style, /\[role="button"\]\[aria-disabled="true"\]/u);
+  assert.match(style, /button\.disabled/u);
+  assert.match(style, /fill:\s*currentColor/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
