@@ -29,6 +29,7 @@ function run(command, args, { capture = false, cwd = projectRoot } = {}) {
     cwd,
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
+    maxBuffer: 16 * 1024 * 1024,
   });
   if (result.status !== 0) {
     const detail = capture ? result.stderr.trim() : '';

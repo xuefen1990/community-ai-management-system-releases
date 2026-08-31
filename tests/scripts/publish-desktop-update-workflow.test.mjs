@@ -30,6 +30,7 @@ test('CI packaging is independent from local templates and still creates compati
   assert.match(source, /app-update\.yml/);
   assert.match(source, /latest-mac\.yml/);
   assert.match(source, /codesign/);
+  assert.match(source, /maxBuffer:\s*archiveListingBuffer/u);
 });
 
 test('the Electron Builder configuration writes CI output where the release builder expects it', async () => {
@@ -60,6 +61,7 @@ test('release sync publishes GitHub assets even when backend configuration is ab
   assert.match(source, /function verifyUpdateArchive\(\)/u);
   assert.match(source, /function verifyGithubAssetSizes\(localZipBytes\)/u);
   assert.match(source, /GitHub Release 文件大小不一致/u);
+  assert.match(source, /maxBuffer:\s*16 \* 1024 \* 1024/u);
 });
 
 test('local update sync downloads the release zip and publishes it to the configured backend', async () => {

@@ -19,6 +19,7 @@ const outputPath = path.join(releaseDirectory, installerArtifactName);
 const updateArtifactName = `community-ai-management-system-${version}-arm64.zip`;
 const zipOutputPath = path.join(releaseDirectory, updateArtifactName);
 const updateManifestPath = path.join(releaseDirectory, 'latest-mac.yml');
+const archiveListingBuffer = 16 * 1024 * 1024;
 const updateSigningRequirement = 'designated => identifier "com.community.ai.management"';
 const updateVerificationRequirement = 'identifier "com.community.ai.management"';
 const embeddedUpdaterConfigPath = path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml');
@@ -57,7 +58,11 @@ function verifyBundledBackend(applicationPath) {
 
 function verifyUpdateArchive(zipFile) {
   run('unzip', ['-tqq', zipFile]);
-  const result = spawnSync('unzip', ['-Z1', zipFile], { cwd: projectRoot, encoding: 'utf8' });
+  const result = spawnSync('unzip', ['-Z1', zipFile], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    maxBuffer: archiveListingBuffer,
+  });
   if (result.status !== 0) throw new Error(`无法检查应用内更新包：${zipFile}`);
   const requiredPath = 'Contents/Resources/backend/node_modules/iconv-lite/encodings/index.js';
   if (!result.stdout.split(/\r?\n/u).some(entry => entry.endsWith(requiredPath))) {

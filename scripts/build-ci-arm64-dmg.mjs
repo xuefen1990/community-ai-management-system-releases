@@ -18,6 +18,7 @@ const verificationRequirement = `identifier "${applicationIdentifier}"`;
 const dmgPath = path.join(releaseDirectory, `社区AI管理系统-${version}-arm64.dmg`);
 const zipPath = path.join(releaseDirectory, `community-ai-management-system-${version}-arm64.zip`);
 const latestPath = path.join(releaseDirectory, 'latest-mac.yml');
+const archiveListingBuffer = 16 * 1024 * 1024;
 const updateConfig = [
   'provider: github',
   'owner: xuefen1990',
@@ -32,6 +33,7 @@ function run(command, argumentsList, { cwd = projectRoot, env, capture = false }
     env,
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
+    maxBuffer: archiveListingBuffer,
   });
   if (result.status !== 0) throw new Error(`${command} 执行失败（退出码 ${result.status}）`);
   return capture ? result.stdout : '';

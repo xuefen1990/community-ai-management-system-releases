@@ -39,5 +39,6 @@ test('desktop build paths reject an update package missing the login encoding mo
   for (const source of [localBuilder, ciBuilder]) {
     assert.match(source, /unzip.*-tqq/us);
     assert.match(source, /unzip.*-Z1/us);
+    assert.match(source, /maxBuffer:\s*archiveListingBuffer/u);
   }
 });
