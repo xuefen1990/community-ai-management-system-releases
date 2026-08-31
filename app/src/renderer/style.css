@@ -8997,3 +8997,38 @@ body.light-theme #tab-personnel .header-actions .btn.btn-primary svg {
   color: currentColor !important;
   stroke: currentColor !important;
 }
+
+/*
+ * The flexible duty scheduler still carries older, page-local button colors.
+ * They can leave the export control white on a nearly white surface, even
+ * when the normal workspace buttons have already been repaired.  Keep every
+ * scheduler action on the familiar pale-green surface with a gray label.
+ */
+body.light-theme #tab-duty button {
+  color: #4d5b56 !important;
+  background: linear-gradient(135deg, #d9f1e4 0%, #bae2cc 100%) !important;
+  border-color: #9bcdb2 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .58), 0 5px 12px rgba(40, 124, 91, .10) !important;
+  opacity: 1 !important;
+  text-shadow: none !important;
+}
+
+body.light-theme #tab-duty button:hover:not(:disabled):not([aria-disabled="true"]) {
+  color: #34463f !important;
+  background: linear-gradient(135deg, #c8eadb 0%, #afe0c8 100%) !important;
+  border-color: #72bc98 !important;
+}
+
+body.light-theme #tab-duty button:disabled,
+body.light-theme #tab-duty button[aria-disabled="true"],
+body.light-theme #tab-duty button.disabled,
+body.light-theme #tab-duty button.is-disabled {
+  color: #596560 !important;
+  background: linear-gradient(135deg, #c8eadb 0%, #afe0c8 100%) !important;
+  border-color: #8bc9aa !important;
+}
+
+body.light-theme #tab-duty button svg {
+  color: currentColor !important;
+  stroke: currentColor !important;
+}

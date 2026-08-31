@@ -119,6 +119,16 @@ test('light theme gives every workspace primary action a green surface after the
   assert.match(style, /#afe0c8/u);
 });
 
+test('duty scheduler actions keep gray labels on pale green surfaces', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /flexible duty scheduler still carries older, page-local button colors/u);
+  assert.match(style, /body\.light-theme #tab-duty button\s*\{/u);
+  assert.match(style, /body\.light-theme #tab-duty button:disabled/u);
+  assert.match(style, /color:\s*#4d5b56\s*!important/u);
+  assert.match(style, /#bae2cc/u);
+  assert.match(style, /body\.light-theme #tab-duty button svg/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
