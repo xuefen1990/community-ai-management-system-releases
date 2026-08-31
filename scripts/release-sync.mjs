@@ -49,6 +49,32 @@ function hasBackendPublishConfig() {
   return Boolean(backendUrl && adminPhone && adminPassword);
 }
 
+function verifyUpdateArchive() {
+  run('unzip', ['-tqq', zipPath]);
+  const entries = run('unzip', ['-Z1', zipPath], { capture: true });
+  const loginModule = 'Contents/Resources/backend/node_modules/iconv-lite/encodings/index.js';
+  if (!entries.split(/\r?\n/u).some(entry => entry.endsWith(loginModule))) {
+    throw new Error(`应用内更新包缺少登录依赖：${loginModule}`);
+  }
+}
+
+function verifyGithubAssetSizes(localZipBytes) {
+  const assets = JSON.parse(run('gh', ['release', 'view', tag, '--json', 'assets', '--repo', 'xuefen1990/community-ai-management-system-releases'], { capture: true })).assets;
+  const requiredAssets = [
+    [githubInstallerName, dmgPath],
+    [path.basename(zipPath), zipPath],
+    [path.basename(latestPath), latestPath],
+  ];
+  for (const [name, localPath] of requiredAssets) {
+    const asset = assets.find(candidate => candidate.name === name);
+    if (!asset) throw new Error(`GitHub Release 缺少发布文件：${name}`);
+    const localBytes = name === path.basename(zipPath) ? localZipBytes : Number(run('stat', ['-f', '%z', localPath], { capture: true }));
+    if (asset.size !== localBytes) {
+      throw new Error(`GitHub Release 文件大小不一致：${name}（本地 ${localBytes}，线上 ${asset.size}）`);
+    }
+  }
+}
+
 async function publishToBackend({ releaseNotes, githubReleaseUrl }) {
   const loginResponse = await fetch(new URL('/api/auth/login', backendUrl), {
     method: 'POST',
@@ -97,6 +123,7 @@ await Promise.all([
   requireFile(zipPath, '应用内更新包'),
   requireFile(latestPath, '更新清单'),
 ]);
+verifyUpdateArchive();
 
 const notes = await readFile(notesPath, 'utf8');
 const releaseTarget = run('git', ['rev-parse', 'HEAD'], { capture: true });
@@ -116,12 +143,14 @@ if (!skipGithub) {
   }
 }
 
+const zipStats = await stat(zipPath);
+verifyGithubAssetSizes(zipStats.size);
+
 const githubReleaseUrl = run('gh', ['release', 'view', tag, '--json', 'url', '--jq', '.url', '--repo', 'xuefen1990/community-ai-management-system-releases'], { capture: true });
 let backendRelease = null;
 if (hasBackendPublishConfig()) {
   backendRelease = await publishToBackend({ releaseNotes: notes.trim(), githubReleaseUrl });
 }
-const zipStats = await stat(zipPath);
 console.log(JSON.stringify({
   version,
   githubReleaseUrl,

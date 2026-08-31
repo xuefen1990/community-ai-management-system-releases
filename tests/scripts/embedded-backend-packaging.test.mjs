@@ -23,3 +23,21 @@ test('the local runtime builder copies only backend code, manifest, and installe
   assert.doesNotMatch(source, /path\.join\(backendSource, 'data'\)/u);
   assert.doesNotMatch(source, /path\.join\(backendSource, '\.env'\)/u);
 });
+
+test('desktop build paths reject an update package missing the login encoding module', async () => {
+  const [localRuntime, localBuilder, ciBuilder] = await Promise.all([
+    readFile(path.join(projectRoot, 'scripts', 'prepare-local-runtime.mjs'), 'utf8'),
+    readFile(path.join(projectRoot, 'scripts', 'build-arm64-dmg.mjs'), 'utf8'),
+    readFile(path.join(projectRoot, 'scripts', 'build-ci-arm64-dmg.mjs'), 'utf8'),
+  ]);
+  for (const source of [localRuntime, localBuilder, ciBuilder]) {
+    assert.match(source, /iconv-lite/u);
+    assert.match(source, /encodings/u);
+    assert.match(source, /index\.js/u);
+    assert.match(source, /require\('iconv-lite\/encodings'\)/u);
+  }
+  for (const source of [localBuilder, ciBuilder]) {
+    assert.match(source, /unzip.*-tqq/us);
+    assert.match(source, /unzip.*-Z1/us);
+  }
+});

@@ -13,6 +13,29 @@ function copyApplicationTemplate(sourcePath, destinationPath) {
   }
 }
 
+async function requireRuntimeFile(targetPath, label) {
+  try {
+    const stats = await lstat(targetPath);
+    if (!stats.isFile()) throw new Error(`${label}不是文件：${targetPath}`);
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`${label}不存在：${targetPath}`);
+    throw error;
+  }
+}
+
+function verifyBundledBackend(backendRoot) {
+  const result = spawnSync(process.execPath, [
+    '-e',
+    "require('iconv-lite/encodings'); require('body-parser'); require('express');",
+  ], {
+    cwd: backendRoot,
+    encoding: 'utf8',
+  });
+  if (result.status !== 0) {
+    throw new Error(`内置后端依赖无法加载：${result.stderr || result.stdout || '模块检查失败'}`);
+  }
+}
+
 async function makeTreeWritable(targetPath) {
   let stats;
   try {
@@ -72,6 +95,12 @@ if (!templateAppArgument || !projectAppArgument) {
     preserveTimestamps: true,
     verbatimSymlinks: true,
   });
+  // 登录时 body-parser 会通过 iconv-lite 加载编码表；缺少该目录会导致登录服务直接启动失败。
+  await requireRuntimeFile(
+    path.join(backendRuntime, 'node_modules', 'iconv-lite', 'encodings', 'index.js'),
+    '登录所需的 iconv-lite 编码模块',
+  );
+  verifyBundledBackend(backendRuntime);
   const baselineNodeModules = path.resolve(projectApp, '..', 'source-original', 'app-asar', 'node_modules');
   await cp(baselineNodeModules, path.join(runtimeSource, 'node_modules'), {
     recursive: true,

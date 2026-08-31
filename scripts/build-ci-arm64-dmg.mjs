@@ -26,9 +26,46 @@ const updateConfig = [
   '',
 ].join('\n');
 
-function run(command, argumentsList, { cwd = projectRoot, env } = {}) {
-  const result = spawnSync(command, argumentsList, { cwd, env, encoding: 'utf8', stdio: 'inherit' });
+function run(command, argumentsList, { cwd = projectRoot, env, capture = false } = {}) {
+  const result = spawnSync(command, argumentsList, {
+    cwd,
+    env,
+    encoding: 'utf8',
+    stdio: capture ? 'pipe' : 'inherit',
+  });
   if (result.status !== 0) throw new Error(`${command} 执行失败（退出码 ${result.status}）`);
+  return capture ? result.stdout : '';
+}
+
+async function requireFile(filePath, label) {
+  try {
+    const stats = await lstat(filePath);
+    if (!stats.isFile()) throw new Error(`${label}不是文件：${filePath}`);
+  } catch (error) {
+    if (error.code === 'ENOENT') throw new Error(`${label}不存在：${filePath}`);
+    throw error;
+  }
+}
+
+async function verifyEmbeddedBackend(applicationPath) {
+  const backendRoot = path.join(applicationPath, 'Contents', 'Resources', 'backend');
+  await requireFile(
+    path.join(backendRoot, 'node_modules', 'iconv-lite', 'encodings', 'index.js'),
+    '登录所需的 iconv-lite 编码模块',
+  );
+  run(process.execPath, [
+    '-e',
+    "require('iconv-lite/encodings'); require('body-parser'); require('express');",
+  ], { cwd: backendRoot });
+}
+
+function verifyUpdateArchive(zipFile) {
+  run('unzip', ['-tqq', zipFile]);
+  const contents = run('unzip', ['-Z1', zipFile], { capture: true });
+  const requiredPath = 'Contents/Resources/backend/node_modules/iconv-lite/encodings/index.js';
+  if (!contents.split(/\r?\n/u).some(entry => entry.endsWith(requiredPath))) {
+    throw new Error(`应用内更新包缺少登录依赖：${requiredPath}`);
+  }
 }
 
 async function makeTreeWritable(targetPath) {
@@ -72,6 +109,7 @@ run('npx', ['--no-install', 'electron-builder', '--mac', 'dir', '--arm64', '--pu
 });
 
 const runtimeApp = await findBuiltApplication();
+await verifyEmbeddedBackend(runtimeApp);
 await writeFile(path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml'), updateConfig, 'utf8');
 run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
@@ -93,6 +131,7 @@ try {
   await rm(stagingDirectory, { recursive: true, force: true });
 }
 run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', runtimeApp, zipPath]);
+verifyUpdateArchive(zipPath);
 
 const installerDigest = crypto.createHash('sha256').update(await readFile(dmgPath)).digest('hex');
 const zipBuffer = await readFile(zipPath);

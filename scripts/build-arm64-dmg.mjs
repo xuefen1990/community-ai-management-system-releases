@@ -39,6 +39,32 @@ async function requirePath(targetPath, label) {
   }
 }
 
+async function requireFile(targetPath, label) {
+  const stats = await lstat(targetPath);
+  if (!stats.isFile()) throw new Error(`${label}不是文件：${targetPath}`);
+}
+
+function verifyBundledBackend(applicationPath) {
+  const backendRoot = path.join(applicationPath, 'Contents', 'Resources', 'backend');
+  const requiredEncodingModule = path.join(backendRoot, 'node_modules', 'iconv-lite', 'encodings', 'index.js');
+  return requireFile(requiredEncodingModule, '登录所需的 iconv-lite 编码模块').then(() => {
+    run(process.execPath, [
+      '-e',
+      "require('iconv-lite/encodings'); require('body-parser'); require('express');",
+    ], { cwd: backendRoot });
+  });
+}
+
+function verifyUpdateArchive(zipFile) {
+  run('unzip', ['-tqq', zipFile]);
+  const result = spawnSync('unzip', ['-Z1', zipFile], { cwd: projectRoot, encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`无法检查应用内更新包：${zipFile}`);
+  const requiredPath = 'Contents/Resources/backend/node_modules/iconv-lite/encodings/index.js';
+  if (!result.stdout.split(/\r?\n/u).some(entry => entry.endsWith(requiredPath))) {
+    throw new Error(`应用内更新包缺少登录依赖：${requiredPath}`);
+  }
+}
+
 async function makeTreeWritable(targetPath) {
   let stats;
   try {
@@ -56,14 +82,15 @@ async function makeTreeWritable(targetPath) {
   }
 }
 
-function run(command, argumentsList) {
-  const result = spawnSync(command, argumentsList, { cwd: projectRoot, encoding: 'utf8', stdio: 'inherit' });
+function run(command, argumentsList, { cwd = projectRoot } = {}) {
+  const result = spawnSync(command, argumentsList, { cwd, encoding: 'utf8', stdio: 'inherit' });
   if (result.status !== 0) throw new Error(`${command} 执行失败（退出码 ${result.status}）`);
 }
 
 await requirePath(templateApp, '原版 ARM64 应用模板');
 await requirePath(path.join(projectRoot, 'source-original', 'app-asar', 'node_modules'), '已提取的运行依赖');
 run(process.execPath, [path.join(projectRoot, 'scripts', 'prepare-local-runtime.mjs'), templateApp, appProject]);
+await verifyBundledBackend(runtimeApp);
 await writeFile(embeddedUpdaterConfigPath, embeddedUpdaterConfig, 'utf8');
 run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
@@ -97,6 +124,7 @@ try {
 }
 
 run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', runtimeApp, zipOutputPath]);
+verifyUpdateArchive(zipOutputPath);
 
 const installerDigest = crypto.createHash('sha256').update(await readFile(outputPath)).digest('hex');
 const zipBuffer = await readFile(zipOutputPath);

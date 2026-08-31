@@ -57,6 +57,9 @@ test('release sync publishes GitHub assets even when backend configuration is ab
   assert.match(source, /function hasBackendPublishConfig\(\)/u);
   assert.match(source, /if \(hasBackendPublishConfig\(\)\)/u);
   assert.match(source, /backendSynced: Boolean\(backendRelease\)/u);
+  assert.match(source, /function verifyUpdateArchive\(\)/u);
+  assert.match(source, /function verifyGithubAssetSizes\(localZipBytes\)/u);
+  assert.match(source, /GitHub Release 文件大小不一致/u);
 });
 
 test('local update sync downloads the release zip and publishes it to the configured backend', async () => {
