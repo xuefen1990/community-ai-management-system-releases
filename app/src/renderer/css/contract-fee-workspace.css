@@ -19,6 +19,12 @@
 .cf-table th { color: var(--text-secondary); font-weight: 700; background: var(--bg-body); white-space: nowrap; }
 .cf-table tbody tr:last-child td { border-bottom: 0; }
 .cf-table .cf-money { font-variant-numeric: tabular-nums; font-weight: 700; }
+.cf-sheet-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0; }
+.cf-sheet-tabs button, .cf-pager button { border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); color: var(--text-primary); padding: 7px 11px; cursor: pointer; }
+.cf-sheet-tabs button.active { background: var(--primary-color); border-color: var(--primary-color); color: #fff; }
+.cf-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--text-secondary); font-size: 13px; }
+.cf-pager div { display: flex; gap: 8px; }
+.cf-pager button:disabled { cursor: not-allowed; opacity: .45; }
 .cf-empty { padding: 42px 16px; text-align: center; color: var(--text-secondary); }
 .cf-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(59,130,246,.1); color: #2563eb; }
 .cf-badge.ok { background: rgba(16,185,129,.1); color: #059669; }

@@ -156,7 +156,7 @@
   }
 
   function openModal(title, body, { small = false, footer = '' } = {}) {
-    closeModal();
+    document.getElementById('cf-modal-overlay')?.remove();
     const overlay = document.createElement('div');
     overlay.className = 'cf-modal-overlay';
     overlay.id = 'cf-modal-overlay';
@@ -498,6 +498,32 @@
     return `<tr class="cf-subsidy-record" data-id="${escapeHtml(record.id || '')}"><td><select name="personId"><option value="">手工匹配</option>${people}</select></td><td><input name="name" value="${escapeHtml(record.name || '')}"></td><td><input name="groupName" value="${escapeHtml(record.groupName || '')}"></td><td><select name="category"><option value="household"${selected(record.category, 'household')}>普通农户</option><option value="village_cadre"${selected(record.category, 'village_cadre')}>村干部</option></select></td><td><input name="eligibleArea" type="number" min="0" step="0.01" value="${escapeHtml(record.eligibleArea || '')}"></td><td><input name="standard" type="number" min="0" step="0.01" value="${record.standardCents === undefined ? '' : yuanValue(record.standardCents)}"></td><td><input name="idCard" value="${escapeHtml(record.idCard || '')}"></td><td><input name="bankName" value="${escapeHtml(record.bankName || '')}"></td><td><input name="bankCard" value="${escapeHtml(record.bankCard || '')}"></td></tr>`;
   }
 
+  function subsidySheetData(ledger, sheet = 'payment') {
+    const records = ledger.records || [];
+    const households = records.filter((record) => record.category !== 'village_cadre');
+    const cadres = records.filter((record) => record.category === 'village_cadre');
+    const amount = (record) => yuanValue(record.amountCents);
+    const standard = (record) => yuanValue(record.standardCents);
+    const detailRows = (rows) => rows.map((record, index) => [index + 1, record.name, record.groupName || '—', record.ownershipArea, record.excludedArea, record.eligibleArea, standard(record), amount(record), record.phone || '—', '']);
+    const groupSummary = Object.entries(model.summarizeFarmlandSubsidyLedger(ledger).groupTotals).filter(([, summary]) => summary.householdCount > 0).map(([groupName, summary], index) => [index + 1, ledger.villageName || '—', groupName, summary.householdCount, summary.ownershipArea, summary.excludedArea, summary.eligibleArea, yuanValue(summary.amountCents), '']);
+    if (sheet === 'attachment-1-1') return { label: '附件 1-1 · 分户登记清册', headers: ['序号', '户主姓名', '村民组', '确权面积（亩）', '排除面积（亩）', '应补面积（亩）', '标准（元/亩）', '补贴金额（元）', '联系电话', '签字'], rows: detailRows(households) };
+    if (sheet === 'attachment-1-4') return { label: '附件 1-4 · 村干部登记清册', headers: ['序号', '户主姓名', '村民组', '补贴依据面积（亩）', '排除面积（亩）', '应补面积（亩）', '标准（元/亩）', '补贴金额（元）', '联系电话', '签字'], rows: detailRows(cadres) };
+    if (sheet === 'attachment-2-1') return { label: '附件 2-1 · 分村汇总表', headers: ['序号', '村（居）', '村民组', '补贴户数', '确权面积（亩）', '排除面积（亩）', '应补面积（亩）', '补贴金额（元）', '备注'], rows: groupSummary };
+    if (sheet === 'attachment-2-4') {
+      const summary = model.summarizeFarmlandSubsidyLedger(ledger); const area = (key) => cadres.reduce((total, record) => total + Number(record[key] || 0), 0);
+      return { label: '附件 2-4 · 村干部分村汇总表', headers: ['序号', '村（居）', '补贴户数', '补贴依据面积（亩）', '排除面积（亩）', '应补面积（亩）', '补贴金额（元）', '备注'], rows: [[1, ledger.villageName || '—', cadres.length, area('ownershipArea'), area('excludedArea'), area('eligibleArea'), yuanValue(summary.villageCadreRecords.reduce((total, record) => total + Number(record.amountCents || 0), 0)), '']] };
+    }
+    return { label: '地力补贴兑付清册（主表）', headers: ['序号', '户主姓名', '身份证号', '开户行', '一卡通号', '村（居）', '村民组', '应补面积（亩）', '标准（元/亩）', '补贴金额（元）', '备注'], rows: records.map((record, index) => [index + 1, record.name, record.idCard || '—', record.bankName || '—', record.bankCard || '—', ledger.villageName || '—', record.groupName || '—', record.eligibleArea, standard(record), amount(record), record.remark || '']) };
+  }
+
+  function subsidyDetailsModal(ledger, sheet = 'payment', page = 1) {
+    if (!ledger) throw new Error('未找到年度地力补贴台账');
+    const data = subsidySheetData(ledger, sheet); const pageSize = 50; const totalPages = Math.max(1, Math.ceil(data.rows.length / pageSize)); const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages); const first = (currentPage - 1) * pageSize; const rows = data.rows.slice(first, first + pageSize);
+    const tabs = [['payment', '主表'], ['attachment-1-1', '附件 1-1'], ['attachment-1-4', '附件 1-4'], ['attachment-2-1', '附件 2-1'], ['attachment-2-4', '附件 2-4']];
+    state.modal = { type: 'subsidy-detail', ledgerId: ledger.id, sheet, page: currentPage };
+    openModal(`${ledger.year} 年地力补贴 · 主表与附件`, `<div class="cf-hint">${escapeHtml(data.label)}。该页面是查看详情，不会改动已导入的数据；导出 Excel 时使用同一套关联数据。</div><div class="cf-sheet-tabs">${tabs.map(([key, label]) => `<button class="${key === sheet ? 'active' : ''}" data-cf-action="view-subsidy-sheet" data-sheet="${key}">${label}</button>`).join('')}</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr>${data.headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(cell ?? '')}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${data.headers.length}"><div class="cf-empty">本表暂无可显示数据。</div></td></tr>`}</tbody></table></div><div class="cf-pager"><span>共 ${data.rows.length} 条，第 ${currentPage}/${totalPages} 页</span><div><button data-cf-action="view-subsidy-page" data-page="${currentPage - 1}"${currentPage <= 1 ? ' disabled' : ''}>上一页</button><button data-cf-action="view-subsidy-page" data-page="${currentPage + 1}"${currentPage >= totalPages ? ' disabled' : ''}>下一页</button></div></div>`, { footer: `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="edit-subsidy" data-id="${ledger.id}">编辑主表</button>` });
+  }
+
   function subsidyLedgerModal(ledger = null) {
     const current = ledger || { year: new Date().getFullYear(), villageName: state.database.settings?.villageName || '', streetName: '', records: [{}] }; const validation = ledger ? model.validateFarmlandSubsidyLedger(ledger) : null;
     state.modal = { type: 'subsidy-ledger', ledgerId: ledger?.id || '' };
@@ -632,7 +658,10 @@
     if (action === 'print-template') return printTemplate();
     if (action === 'new-subsidy') return subsidyLedgerModal();
     if (action === 'import-subsidy') return importSubsidyLedger();
-    if (action === 'view-subsidy') return subsidyLedgerModal(findById('farmlandSubsidyLedgers', element.dataset.id));
+    if (action === 'view-subsidy') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', element.dataset.id));
+    if (action === 'view-subsidy-sheet') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), element.dataset.sheet);
+    if (action === 'view-subsidy-page') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.sheet, element.dataset.page);
+    if (action === 'edit-subsidy') return subsidyLedgerModal(findById('farmlandSubsidyLedgers', element.dataset.id));
     if (action === 'add-subsidy-record') return addSubsidyRecord();
     if (action === 'save-subsidy-ledger') return saveSubsidyLedger();
     if (action === 'export-subsidy') return exportSubsidyLedger(element.dataset.id);
