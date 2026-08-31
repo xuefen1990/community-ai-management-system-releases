@@ -11,6 +11,22 @@
     return `${(value / (1024 ** index)).toFixed(index ? 1 : 0)} ${units[index]}`;
   }
 
+  function formatReleaseNotes(value) {
+    const source = String(value || '').trim();
+    if (!source) return '';
+    const htmlEntities = { nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', '#39': "'" };
+    return source
+      .replace(/<br\s*\/?\s*>/giu, '\n')
+      .replace(/<\/(?:li|p|div|h[1-6]|ul|ol)\s*>/giu, '\n')
+      .replace(/<li\b[^>]*>/giu, '• ')
+      .replace(/<[^>]+>/gu, '')
+      .replace(/&([a-z]+|#39);/giu, (_, name) => htmlEntities[name.toLowerCase()] || `&${name};`)
+      .replace(/^#{1,6}\s*/gmu, '')
+      .replace(/^\s*[-*+]\s+/gmu, '• ')
+      .replace(/\n{3,}/gu, '\n\n')
+      .trim();
+  }
+
   function closeModal() {
     const modal = document.getElementById('appUpdateModal');
     if (!modal) return;
@@ -60,7 +76,7 @@
     const modal = ensureModal();
     modal.querySelector('#appUpdateVersion').textContent = `新版本 ${status.version}`;
     modal.querySelector('#appUpdateMessage').textContent = '已发现新版本。是否现在下载并安装？';
-    modal.querySelector('#appUpdateNotes').textContent = status.releaseNotes || '本次版本包含体验优化和问题修复。';
+    modal.querySelector('#appUpdateNotes').textContent = formatReleaseNotes(status.releaseNotes) || '本次版本包含体验优化和问题修复。';
     modal.querySelector('#appUpdateError').textContent = '';
     modal.querySelector('#appUpdateProgressWrap').style.display = 'none';
     const button = modal.querySelector('#downloadAppUpdate');

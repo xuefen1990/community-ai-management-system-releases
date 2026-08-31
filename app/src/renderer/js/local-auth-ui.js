@@ -819,6 +819,10 @@
     actions.replaceChildren(secondaryActions);
   }
 
+  function removeOnboardingControls() {
+    document.querySelectorAll('.btn-guide, .sidebar-tour-btn').forEach((button) => button.remove());
+  }
+
   async function initialize() {
     applyProductBrand();
     const brandObserver = new MutationObserver(applyProductBrand);
@@ -840,6 +844,7 @@
       window.showToast?.('本单位数据已同步更新', 'success');
     });
     configureCompactSidebarFooter();
+    removeOnboardingControls();
     configureApplicationPanel();
     bindButton('privacyPolicyBtn', openPrivacyPolicy);
     configureLoginActions();

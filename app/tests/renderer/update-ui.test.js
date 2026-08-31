@@ -19,6 +19,10 @@ test('update UI uses the preload bridge and waits for user confirmation before d
   assert.match(source, /backend-unavailable/u);
   assert.match(source, /当前已是最新版本/u);
   assert.match(source, /拖入“应用程序”/u);
+  assert.match(source, /function formatReleaseNotes\(value\)/u);
+  assert.match(source, /replace\(\/<li\\b\[\^>\]\*>\/giu, '• '\)/u);
+  assert.match(source, /replace\(\/<\[\^>\]\+>\/gu, ''\)/u);
+  assert.match(source, /textContent = formatReleaseNotes\(status\.releaseNotes\)/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
 });
 
@@ -35,4 +39,17 @@ test('manual update check shows a loading state and always restores the button',
   assert.match(style, /\.sidebar-update-btn:hover\s*\{[\s\S]*transform:\s*translateY\(-2px\)/u);
   assert.match(style, /\.sidebar-update-btn\.is-checking\s+\.sidebar-update-btn__icon\s*\{[\s\S]*animation:/u);
   assert.match(style, /@media\s*\(prefers-reduced-motion:\s*reduce\)/u);
+});
+
+test('light theme keeps modal primary actions readable and hides legacy onboarding controls', async () => {
+  const [source, style] = await Promise.all([
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
+    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
+  ]);
+  assert.match(source, /function removeOnboardingControls\(\)/u);
+  assert.match(source, /querySelectorAll\('\.btn-guide, \.sidebar-tour-btn'\)/u);
+  assert.match(style, /Modal windows sit outside \.app-main/u);
+  assert.match(style, /\.modal-overlay \.modal-card \.btn\.btn-primary/u);
+  assert.match(style, /#appUpdateModal #appUpdateNotes/u);
+  assert.match(style, /\.btn\.btn-guide,\s*\.sidebar-tour-btn\s*\{[\s\S]*?display:\s*none\s*!important/u);
 });
