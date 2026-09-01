@@ -4,7 +4,7 @@
   const model = root.ContractFeeModel;
   const api = root.api;
   const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches', 'disbursementProfiles', 'farmlandSubsidyLedgers'];
-  const state = { database: null, view: 'overview', modal: null, importDraft: null };
+  const state = { database: null, view: 'overview', modal: null, importDraft: null, subsidySelections: {} };
 
   const text = (value) => String(value ?? '').trim();
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/gu, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
@@ -536,13 +536,48 @@
 
   function subsidyUnresolvedRecords(ledger) { return (ledger?.records || []).filter((record) => record.matchStatus !== 'matched'); }
 
+  function subsidySelectionFor(ledgerId) {
+    const selectedIds = state.subsidySelections[ledgerId];
+    return new Set(Array.isArray(selectedIds) ? selectedIds : []);
+  }
+
+  function saveSubsidySelection(ledgerId, selectedIds) { state.subsidySelections[ledgerId] = [...new Set(selectedIds)].filter(Boolean); }
+
+  function subsidyImportStatusLabel(item) {
+    if (item.status === 'create' || item.status === 'created') return '新建居民档案';
+    if (item.status === 'merge' || item.status === 'merged') return '补充并关联居民';
+    return '待人工处理';
+  }
+
   function subsidyIssueListModal(ledger, page = 1, query = '', pageSize = 10) {
     if (!ledger) throw new Error('未找到年度地力补贴台账');
     const needle = text(query).toLowerCase(); const all = subsidyUnresolvedRecords(ledger); const matched = needle ? all.filter((record) => [record.name, record.groupName, record.idCard, record.bankCard].some((value) => text(value).toLowerCase().includes(needle))) : all;
     const currentPageSize = pageSizeValue(pageSize); const totalPages = Math.max(1, Math.ceil(matched.length / currentPageSize)); const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages); const rows = matched.slice((currentPage - 1) * currentPageSize, currentPage * currentPageSize);
     state.modal = { type: 'subsidy-issues', ledgerId: ledger.id, page: currentPage, query: text(query), pageSize: currentPageSize };
-    const tableRows = rows.map((record, index) => { const candidates = model.farmlandSubsidyPersonCandidates(record, state.database.personnel); const candidateText = candidates.length ? `${candidates.length} 名候选${candidates[0] ? ` · ${model.personName(candidates[0].person)}（${candidates[0].reason}）` : ''}` : '未找到推荐候选'; const status = record.associationStatus === 'deferred' ? '暂不关联，等待核实' : '待关联居民'; return `<tr><td>${(currentPage - 1) * currentPageSize + index + 1}</td><td><strong>${escapeHtml(record.name)}</strong><br><span class="text-secondary">${escapeHtml(record.groupName || '未分组')}</span></td><td>${escapeHtml(record.idCard || '未填写')}</td><td>${escapeHtml(record.eligibleArea)} 亩<br>${money(record.amountCents)}</td><td>${escapeHtml(candidateText)}</td><td>${escapeHtml(status)}</td><td><button class="btn btn-primary" data-cf-action="resolve-subsidy-record" data-id="${escapeHtml(record.id)}">处理</button></td></tr>`; }).join('');
-    openModal(`${ledger.year} 年地力补贴 · 待处理项`, `<div class="cf-hint">剩余 <strong>${all.length}</strong> 项未关联居民档案。确认关联不会修改补贴面积和金额；“暂不关联”会保留说明，但在全部处理完成前仍不能导出五张表。</div><div class="cf-subsidy-search"><input id="cf-subsidy-issue-query" value="${escapeHtml(query)}" placeholder="输入姓名、身份证号、银行卡号或组别"><button class="btn btn-primary" data-cf-action="search-subsidy-issues">查询定位</button>${query ? '<button class="btn btn-outline" data-cf-action="clear-subsidy-issues-search">清除</button>' : ''}</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>序号</th><th>补贴对象</th><th>身份证号</th><th>补贴数据</th><th>居民候选</th><th>状态</th><th>操作</th></tr></thead><tbody>${tableRows || '<tr><td colspan="7"><div class="cf-empty">没有符合查询条件的待处理项。</div></td></tr>'}</tbody></table></div>${paginationHtml({ totalItems: matched.length, currentPage, totalPages, pageSize: currentPageSize, pageAction: 'subsidy-issues-page', jumpAction: 'jump-subsidy-issues-page', pageSizeAction: 'subsidy-issues-page-size' })}`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>' });
+    const selection = subsidySelectionFor(ledger.id); const pageSelected = rows.length && rows.every((record) => selection.has(record.id));
+    const tableRows = rows.map((record, index) => { const candidates = model.farmlandSubsidyPersonCandidates(record, state.database.personnel); const candidateText = candidates.length ? `${candidates.length} 名候选${candidates[0] ? ` · ${model.personName(candidates[0].person)}（${candidates[0].reason}）` : ''}` : '未找到推荐候选'; const status = record.associationStatus === 'deferred' ? '暂不关联，等待核实' : '待关联居民'; return `<tr><td><input type="checkbox" aria-label="选择 ${escapeHtml(record.name)}" data-cf-action="toggle-subsidy-issue-selection" data-id="${escapeHtml(record.id)}"${checked(selection.has(record.id))}></td><td>${(currentPage - 1) * currentPageSize + index + 1}</td><td><strong>${escapeHtml(record.name)}</strong><br><span class="text-secondary">${escapeHtml(record.groupName || '未分组')}</span></td><td>${escapeHtml(record.idCard || '未填写')}</td><td>${escapeHtml(record.eligibleArea)} 亩<br>${money(record.amountCents)}</td><td>${escapeHtml(candidateText)}</td><td>${escapeHtml(status)}</td><td><button class="btn btn-primary" data-cf-action="resolve-subsidy-record" data-id="${escapeHtml(record.id)}">处理</button></td></tr>`; }).join('');
+    const selectionActions = `<div class="cf-row-actions cf-subsidy-batch-actions"><label><input type="checkbox" data-cf-action="select-subsidy-issue-page"${checked(pageSelected)}> 全选本页</label><button class="btn btn-outline" data-cf-action="select-all-subsidy-issues">全选全部待处理项（${all.length}）</button><button class="btn btn-outline" data-cf-action="clear-subsidy-issue-selection">取消选择</button><span>已选择 <strong>${selection.size}</strong> 项</span><button class="btn btn-primary" data-cf-action="preview-subsidy-resident-import"${selection.size ? '' : ' disabled'}>批量导入居民档案</button></div>`;
+    openModal(`${ledger.year} 年地力补贴 · 待处理项`, `<div class="cf-hint">剩余 <strong>${all.length}</strong> 项未关联居民档案。可勾选后先预览，再批量导入；系统只补充居民档案空白信息，不覆盖原有资料。存在身份证、姓名或组别冲突的记录会保留为待人工处理。</div><div class="cf-subsidy-search"><input id="cf-subsidy-issue-query" value="${escapeHtml(query)}" placeholder="输入姓名、身份证号、银行卡号或组别"><button class="btn btn-primary" data-cf-action="search-subsidy-issues">查询定位</button>${query ? '<button class="btn btn-outline" data-cf-action="clear-subsidy-issues-search">清除</button>' : ''}</div>${selectionActions}<div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>选择</th><th>序号</th><th>补贴对象</th><th>身份证号</th><th>补贴数据</th><th>居民候选</th><th>状态</th><th>操作</th></tr></thead><tbody>${tableRows || '<tr><td colspan="8"><div class="cf-empty">没有符合查询条件的待处理项。</div></td></tr>'}</tbody></table></div>${paginationHtml({ totalItems: matched.length, currentPage, totalPages, pageSize: currentPageSize, pageAction: 'subsidy-issues-page', jumpAction: 'jump-subsidy-issues-page', pageSizeAction: 'subsidy-issues-page-size' })}`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>' });
+  }
+
+  function subsidyResidentImportPreviewModal(ledger) {
+    const selectedIds = subsidySelectionFor(ledger.id); if (!selectedIds.size) throw new Error('请先选择需要处理的补贴记录');
+    const plan = model.subsidyResidentImportPlan(ledger, [...selectedIds], state.database.personnel);
+    const summary = plan.reduce((result, item) => { if (item.status === 'create') result.create += 1; else if (item.status === 'merge') result.merge += 1; else result.manual += 1; return result; }, { create: 0, merge: 0, manual: 0 });
+    state.modal = { type: 'subsidy-resident-import-preview', ledgerId: ledger.id, page: state.modal?.page || 1, query: state.modal?.query || '', pageSize: state.modal?.pageSize || 10 };
+    const rows = plan.map((item, index) => `<tr><td>${index + 1}</td><td><strong>${escapeHtml(item.record.name)}</strong><br><span class="text-secondary">${escapeHtml(item.record.groupName || '未分组')}</span></td><td>${escapeHtml(subsidyImportStatusLabel(item))}</td><td>${escapeHtml(item.reason)}</td></tr>`).join('');
+    openModal(`${ledger.year} 年地力补贴 · 批量导入预览`, `<div class="cf-hint">以下预览尚未写入任何数据。确认后只处理“新建居民档案”和“补充并关联居民”；待人工处理项会保留在原清单中。</div><div class="cf-stats cf-import-summary"><div class="cf-stat"><span>新建档案</span><strong>${summary.create}</strong></div><div class="cf-stat"><span>补充并关联</span><strong>${summary.merge}</strong></div><div class="cf-stat"><span>待人工处理</span><strong>${summary.manual}</strong></div></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>序号</th><th>补贴对象</th><th>处理结果</th><th>说明</th></tr></thead><tbody>${rows}</tbody></table></div>`, { footer: '<button class="btn btn-outline" data-cf-action="back-subsidy-issues">返回清单</button><button class="btn btn-primary" data-cf-action="confirm-subsidy-resident-import">确认导入并关联</button>' });
+  }
+
+  async function importSelectedSubsidyResidents() {
+    const ledger = findById('farmlandSubsidyLedgers', state.modal?.ledgerId); if (!ledger) throw new Error('未找到年度地力补贴台账');
+    const selectedIds = [...subsidySelectionFor(ledger.id)]; if (!selectedIds.length) throw new Error('请先选择需要处理的补贴记录');
+    const result = model.importFarmlandSubsidyResidents({ ledger, selectedRecordIds: selectedIds, personnel: state.database.personnel });
+    state.database.personnel = result.personnel; state.database.farmlandSubsidyLedgers.splice(state.database.farmlandSubsidyLedgers.indexOf(ledger), 1, result.ledger);
+    saveSubsidySelection(ledger.id, result.results.filter((item) => item.status === 'manual').map((item) => item.recordId));
+    await saveDatabase(`已导入居民档案：新建 ${result.summary.created} 人，补充并关联 ${result.summary.merged} 人${result.summary.manual ? `，${result.summary.manual} 项待人工处理` : ''}`);
+    try { if (typeof root.filterPersonnel === 'function') root.filterPersonnel(); } catch (_error) { /* keep subsidy workflow usable if legacy page is unavailable */ }
+    subsidyIssueListModal(result.ledger, state.modal?.page || 1, state.modal?.query || '', state.modal?.pageSize || 10);
   }
 
   function subsidyResolutionModal(ledger, recordId, search = '') {
@@ -745,6 +780,12 @@
     if (action === 'resolve-subsidy-issues') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', element.dataset.id));
     if (action === 'search-subsidy-issues') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, document.getElementById('cf-subsidy-issue-query')?.value, state.modal?.pageSize);
     if (action === 'clear-subsidy-issues-search') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, '', state.modal?.pageSize);
+    if (action === 'toggle-subsidy-issue-selection') { const selectedIds = subsidySelectionFor(state.modal?.ledgerId); if (element.checked) selectedIds.add(element.dataset.id); else selectedIds.delete(element.dataset.id); saveSubsidySelection(state.modal?.ledgerId, selectedIds); return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.page, state.modal?.query, state.modal?.pageSize); }
+    if (action === 'select-subsidy-issue-page') { const selectedIds = subsidySelectionFor(state.modal?.ledgerId); const ledger = findById('farmlandSubsidyLedgers', state.modal?.ledgerId); const all = subsidyUnresolvedRecords(ledger); const needle = text(state.modal?.query).toLowerCase(); const matched = needle ? all.filter((record) => [record.name, record.groupName, record.idCard, record.bankCard].some((value) => text(value).toLowerCase().includes(needle))) : all; const first = (Number(state.modal?.page || 1) - 1) * Number(state.modal?.pageSize || 10); const pageRows = matched.slice(first, first + Number(state.modal?.pageSize || 10)); pageRows.forEach((record) => { if (element.checked) selectedIds.add(record.id); else selectedIds.delete(record.id); }); saveSubsidySelection(ledger.id, selectedIds); return subsidyIssueListModal(ledger, state.modal?.page, state.modal?.query, state.modal?.pageSize); }
+    if (action === 'select-all-subsidy-issues') { const ledger = findById('farmlandSubsidyLedgers', state.modal?.ledgerId); saveSubsidySelection(ledger.id, subsidyUnresolvedRecords(ledger).map((record) => record.id)); return subsidyIssueListModal(ledger, state.modal?.page, state.modal?.query, state.modal?.pageSize); }
+    if (action === 'clear-subsidy-issue-selection') { saveSubsidySelection(state.modal?.ledgerId, []); return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.page, state.modal?.query, state.modal?.pageSize); }
+    if (action === 'preview-subsidy-resident-import') return subsidyResidentImportPreviewModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId));
+    if (action === 'confirm-subsidy-resident-import') return importSelectedSubsidyResidents();
     if (action === 'subsidy-issues-page') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), element.dataset.page, state.modal?.query, state.modal?.pageSize);
     if (action === 'jump-subsidy-issues-page') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), document.getElementById('jump-subsidy-issues-page-input')?.value, state.modal?.query, state.modal?.pageSize);
     if (action === 'subsidy-issues-page-size') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, state.modal?.query, element.value);
@@ -828,6 +869,9 @@
   async function init() {
     if (!model) return;
     injectWorkspace();
+    if (!document.querySelector('script[data-resident-subsidy-profile]')) {
+      const script = document.createElement('script'); script.src = 'js/resident-subsidy-profile.js'; script.dataset.residentSubsidyProfile = 'true'; document.head.appendChild(script);
+    }
     document.addEventListener('click', onClick);
   }
 

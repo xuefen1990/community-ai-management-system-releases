@@ -160,3 +160,29 @@ test('suggests subsidy residents without automatically binding a same-name recor
   assert.equal(deferred.records[0].associationStatus, 'deferred');
   assert.match(model.validateFarmlandSubsidyLedger(deferred).errors.join('；'), /暂不关联/u);
 });
+
+test('previews and imports subsidy residents by identity card without overwriting existing fields', () => {
+  const subsidyPeople = [
+    { id: 'p-keep', name: '张三', village_group: '东一组', id_card: '320000199001010011', phone: '13800000000', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] },
+    { id: 'p-conflict', name: '李四', village_group: '西一组', id_card: '320000199001010022' },
+  ];
+  const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [
+    { name: '张三', groupName: '东一组', idCard: '320000199001010011', bankName: '农商行', bankCard: '62220009', phone: '13900000000', eligibleArea: 2, standard: 120 },
+    { name: '王五', groupName: '东二组', idCard: '320000199001010033', bankName: '农商行', bankCard: '62220003', eligibleArea: 1, standard: 120 },
+    { name: '李六', groupName: '西二组', idCard: '320000199001010022', bankCard: '62220004', eligibleArea: 1, standard: 120 },
+    { name: '赵七', groupName: '东三组', idCard: '', bankCard: '62220005', eligibleArea: 1, standard: 120 },
+  ] }, { personnel: [], now, id: 'subsidy-import' });
+  const plan = model.subsidyResidentImportPlan(ledger, ledger.records.map((record) => record.id), subsidyPeople);
+  assert.deepEqual(plan.map((item) => item.status), ['merge', 'create', 'manual', 'manual']);
+  const imported = model.importFarmlandSubsidyResidents({ ledger, selectedRecordIds: ledger.records.map((record) => record.id), personnel: subsidyPeople }, { now });
+  assert.deepEqual(imported.summary, { created: 1, merged: 1, manual: 2 });
+  const kept = imported.personnel.find((person) => person.id === 'p-keep');
+  assert.equal(kept.phone, '13800000000');
+  assert.equal(model.defaultBankCard(kept), '62220001');
+  assert.equal(kept.farmlandSubsidyHistory.length, 1);
+  const added = imported.personnel.find((person) => person.name === '王五');
+  assert.equal(added.village_group, '东二组');
+  assert.equal(model.defaultBankCard(added), '62220003');
+  assert.equal(imported.ledger.records.filter((record) => record.matchStatus === 'matched').length, 2);
+  assert.equal(imported.ledger.records.filter((record) => record.matchStatus !== 'matched').length, 2);
+});

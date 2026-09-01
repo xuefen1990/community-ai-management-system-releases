@@ -405,6 +405,89 @@
     return result;
   }
 
+  function normalizedIdCard(value) { return text(value).replace(/\s/gu, '').toUpperCase(); }
+
+  function subsidyResidentImportHistory(record, ledger, now) {
+    return {
+      id: `farmland-subsidy-source-${record.id}`,
+      sourceType: 'farmland_subsidy', ledgerId: text(ledger?.id), ledgerYear: text(ledger?.year), recordId: text(record?.id),
+      villageName: text(ledger?.villageName), groupName: text(record?.groupName), eligibleArea: Number(record?.eligibleArea || 0),
+      standardCents: Number(record?.standardCents || 0), amountCents: Number(record?.amountCents || 0), importedAt: nowIso(now),
+    };
+  }
+
+  function subsidyResidentImportPlan(ledger, selectedRecordIds = [], personnel = []) {
+    const selectedIds = new Set((selectedRecordIds || []).map(text).filter(Boolean));
+    const records = (ledger?.records || []).filter((record) => selectedIds.has(text(record.id)) && record.matchStatus !== 'matched');
+    return records.map((record) => {
+      const idCard = normalizedIdCard(record.idCard);
+      if (!idCard) return { recordId: record.id, status: 'manual', reason: '缺少身份证号，不能自动导入', record };
+      const matches = (personnel || []).filter((person) => normalizedIdCard(person.id_card || person.idCard) === idCard);
+      if (matches.length > 1) return { recordId: record.id, status: 'manual', reason: '居民档案中身份证号重复', record };
+      if (!matches.length) {
+        if (!text(record.name)) return { recordId: record.id, status: 'manual', reason: '缺少姓名，不能新建居民档案', record };
+        return { recordId: record.id, status: 'create', reason: '未找到同身份证居民，将新建档案', record };
+      }
+      const person = matches[0]; const nameConflict = text(personName(person)) && text(record.name) && text(personName(person)) !== text(record.name);
+      const groupConflict = text(personGroup(person)) && text(record.groupName) && text(personGroup(person)) !== text(record.groupName);
+      if (nameConflict || groupConflict) return { recordId: record.id, status: 'manual', reason: nameConflict && groupConflict ? '身份证相同，但姓名和组别不一致' : (nameConflict ? '身份证相同，但姓名不一致' : '身份证相同，但组别不一致'), record, personId: personId(person) };
+      return { recordId: record.id, status: 'merge', reason: '身份证号一致，只补充居民档案空白信息', record, personId: personId(person) };
+    });
+  }
+
+  function appendSubsidyResidentHistory(person, history) {
+    const records = Array.isArray(person.farmlandSubsidyHistory) ? person.farmlandSubsidyHistory : [];
+    if (!records.some((item) => text(item.ledgerId) === text(history.ledgerId) && text(item.recordId) === text(history.recordId))) records.push(history);
+    person.farmlandSubsidyHistory = records;
+    const sources = Array.isArray(person.importSources) ? person.importSources : [];
+    if (!sources.some((item) => text(item.ledgerId) === text(history.ledgerId) && text(item.recordId) === text(history.recordId))) sources.push({ ...history, sourceType: 'farmland_subsidy_import' });
+    person.importSources = sources;
+  }
+
+  function fillResidentFromSubsidy(person, record, ledger, now) {
+    const changedFields = []; const fill = (key, value, aliases = []) => {
+      if (!text(value) || text(person[key] || aliases.map((alias) => person[alias]).find((item) => text(item)))) return;
+      person[key] = text(value); changedFields.push(key);
+    };
+    fill('name', record.name, ['person_name', 'resident_name']);
+    fill('village_group', record.groupName, ['villageGroup', 'group', 'group_name']);
+    fill('village_name', ledger?.villageName, ['villageName']);
+    fill('phone', record.phone, ['mobile', 'mobile_phone']);
+    if (!normalizedIdCard(person.id_card || person.idCard)) { person.id_card = normalizedIdCard(record.idCard); person.idCard = normalizedIdCard(record.idCard); changedFields.push('idCard'); }
+    const card = normalizeBankCard(record.bankCard);
+    if (card && !defaultBankCard(person)) {
+      setDefaultBankCard(person, card, { source: 'farmland-subsidy-import', now });
+      const account = bankAccounts(person).find((item) => normalizeBankCard(item.cardNumber) === card);
+      if (account && text(record.bankName)) account.bankName = text(record.bankName);
+      if (text(record.bankName)) person.bank_name = text(record.bankName);
+      changedFields.push('bankCard');
+    } else if (!text(person.bank_name || person.bankName) && text(record.bankName)) { person.bank_name = text(record.bankName); changedFields.push('bankName'); }
+    appendSubsidyResidentHistory(person, subsidyResidentImportHistory(record, ledger, now));
+    person.updated_at = nowIso(now);
+    return changedFields;
+  }
+
+  function importFarmlandSubsidyResidents({ ledger, selectedRecordIds = [], personnel = [] } = {}, { now = new Date() } = {}) {
+    const nextLedger = structuredClone(ledger); const nextPersonnel = structuredClone(personnel || []); const plan = subsidyResidentImportPlan(nextLedger, selectedRecordIds, nextPersonnel);
+    const results = []; let serial = 0;
+    for (const item of plan) {
+      if (item.status === 'manual') { results.push(item); continue; }
+      const record = nextLedger.records.find((entry) => entry.id === item.recordId); let person;
+      if (item.status === 'merge') person = nextPersonnel.find((entry) => personId(entry) === item.personId);
+      else {
+        serial += 1;
+        person = { id: `personnel-subsidy-${now instanceof Date ? now.getTime() : Date.now()}-${serial}`, created_at: nowIso(now) };
+        nextPersonnel.push(person);
+      }
+      const changedFields = fillResidentFromSubsidy(person, record, nextLedger, now);
+      record.personId = personId(person); record.matchStatus = 'matched'; record.associationStatus = 'matched'; record.associationNote = '由地力补贴批量导入居民档案并自动关联'; record.updatedAt = nowIso(now);
+      results.push({ ...item, personId: personId(person), changedFields, status: item.status === 'create' ? 'created' : 'merged' });
+    }
+    nextLedger.updatedAt = nowIso(now);
+    const summary = results.reduce((result, item) => { if (item.status === 'created') result.created += 1; else if (item.status === 'merged') result.merged += 1; else result.manual += 1; return result; }, { created: 0, merged: 0, manual: 0 });
+    return { ledger: nextLedger, personnel: nextPersonnel, results, summary };
+  }
+
   function correctFarmlandSubsidyRecord(ledger, recordId, value, { personnel = [], now = new Date() } = {}) {
     if (!text(value.correctionReason)) throw new Error('更正补贴数据必须填写原因');
     const current = (ledger?.records || []).find((item) => item.id === recordId);
@@ -424,7 +507,7 @@
     defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
     DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch,
-    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, correctFarmlandSubsidyRecord,
+    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyResidentImportPlan, importFarmlandSubsidyResidents, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ContractFeeModel = api;
