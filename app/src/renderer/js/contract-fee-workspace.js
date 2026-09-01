@@ -124,7 +124,7 @@
   }
 
   function renderSubsidyLedgers() {
-    const rows = [...state.database.farmlandSubsidyLedgers].sort((a, b) => text(b.year).localeCompare(text(a.year))).map((ledger) => { const summary = model.summarizeFarmlandSubsidyLedger(ledger); const validation = model.validateFarmlandSubsidyLedger(ledger); return `<tr><td><strong>${escapeHtml(ledger.year)} 年</strong><br><span class="text-secondary">${escapeHtml(ledger.villageName || '未填写单位')}</span></td><td>${ledger.records.length} 人<br><span class="text-secondary">村干部 ${summary.villageCadreRecords.length} 人</span></td><td>${money(summary.totalAmountCents)}</td><td>${validation.ok ? '<span class="cf-badge ok">核对通过</span>' : `<span class="cf-badge warn">${validation.errors.length} 项待处理</span>`}</td><td>${escapeHtml(ledger.corrections?.length || 0)} 次更正</td><td><div class="cf-row-actions"><button data-cf-action="view-subsidy" data-id="${ledger.id}">主表与附件</button><button data-cf-action="export-subsidy" data-id="${ledger.id}">导出五张表</button></div></td></tr>`; }).join('');
+    const rows = [...state.database.farmlandSubsidyLedgers].sort((a, b) => text(b.year).localeCompare(text(a.year))).map((ledger) => { const summary = model.summarizeFarmlandSubsidyLedger(ledger); const validation = model.validateFarmlandSubsidyLedger(ledger); return `<tr><td><strong>${escapeHtml(ledger.year)} 年</strong><br><span class="text-secondary">${escapeHtml(ledger.villageName || '未填写单位')}</span></td><td>${ledger.records.length} 人<br><span class="text-secondary">村干部 ${summary.villageCadreRecords.length} 人</span></td><td>${money(summary.totalAmountCents)}</td><td>${validation.ok ? '<span class="cf-badge ok">核对通过</span>' : `<button class="cf-badge warn cf-issue-button" data-cf-action="resolve-subsidy-issues" data-id="${ledger.id}">${validation.errors.length} 项待处理 · 去处理</button>`}</td><td>${escapeHtml(ledger.corrections?.length || 0)} 次更正</td><td><div class="cf-row-actions"><button data-cf-action="resolve-subsidy-issues" data-id="${ledger.id}">处理异常</button><button data-cf-action="view-subsidy" data-id="${ledger.id}">主表与附件</button><button data-cf-action="export-subsidy" data-id="${ledger.id}">导出五张表</button></div></td></tr>`; }).join('');
     return `<div class="cf-panel"><div class="cf-panel-head"><h3>年度地力补贴关联台账</h3><div class="cf-row-actions"><button data-cf-action="import-subsidy">导入整套 Excel</button><button class="btn btn-primary" data-cf-action="new-subsidy">＋ 新建年度台账</button></div></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>年度 / 单位</th><th>对象</th><th>补贴金额</th><th>核对</th><th>更正记录</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="6"><div class="cf-empty">可导入含“地力补贴兑付清册”的整套 Excel；附件将和主表自动关联。</div></td></tr>'}</tbody></table></div></div>`;
   }
 
@@ -534,6 +534,35 @@
 
   function subsidyQueryRows(rows, query) { const needle = text(query).toLowerCase(); return needle ? rows.filter((row) => row.some((cell) => text(cell).toLowerCase().includes(needle))) : rows; }
 
+  function subsidyUnresolvedRecords(ledger) { return (ledger?.records || []).filter((record) => record.matchStatus !== 'matched'); }
+
+  function subsidyIssueListModal(ledger, page = 1, query = '', pageSize = 10) {
+    if (!ledger) throw new Error('未找到年度地力补贴台账');
+    const needle = text(query).toLowerCase(); const all = subsidyUnresolvedRecords(ledger); const matched = needle ? all.filter((record) => [record.name, record.groupName, record.idCard, record.bankCard].some((value) => text(value).toLowerCase().includes(needle))) : all;
+    const currentPageSize = pageSizeValue(pageSize); const totalPages = Math.max(1, Math.ceil(matched.length / currentPageSize)); const currentPage = Math.min(Math.max(Number(page) || 1, 1), totalPages); const rows = matched.slice((currentPage - 1) * currentPageSize, currentPage * currentPageSize);
+    state.modal = { type: 'subsidy-issues', ledgerId: ledger.id, page: currentPage, query: text(query), pageSize: currentPageSize };
+    const tableRows = rows.map((record, index) => { const candidates = model.farmlandSubsidyPersonCandidates(record, state.database.personnel); const candidateText = candidates.length ? `${candidates.length} 名候选${candidates[0] ? ` · ${model.personName(candidates[0].person)}（${candidates[0].reason}）` : ''}` : '未找到推荐候选'; const status = record.associationStatus === 'deferred' ? '暂不关联，等待核实' : '待关联居民'; return `<tr><td>${(currentPage - 1) * currentPageSize + index + 1}</td><td><strong>${escapeHtml(record.name)}</strong><br><span class="text-secondary">${escapeHtml(record.groupName || '未分组')}</span></td><td>${escapeHtml(record.idCard || '未填写')}</td><td>${escapeHtml(record.eligibleArea)} 亩<br>${money(record.amountCents)}</td><td>${escapeHtml(candidateText)}</td><td>${escapeHtml(status)}</td><td><button class="btn btn-primary" data-cf-action="resolve-subsidy-record" data-id="${escapeHtml(record.id)}">处理</button></td></tr>`; }).join('');
+    openModal(`${ledger.year} 年地力补贴 · 待处理项`, `<div class="cf-hint">剩余 <strong>${all.length}</strong> 项未关联居民档案。确认关联不会修改补贴面积和金额；“暂不关联”会保留说明，但在全部处理完成前仍不能导出五张表。</div><div class="cf-subsidy-search"><input id="cf-subsidy-issue-query" value="${escapeHtml(query)}" placeholder="输入姓名、身份证号、银行卡号或组别"><button class="btn btn-primary" data-cf-action="search-subsidy-issues">查询定位</button>${query ? '<button class="btn btn-outline" data-cf-action="clear-subsidy-issues-search">清除</button>' : ''}</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>序号</th><th>补贴对象</th><th>身份证号</th><th>补贴数据</th><th>居民候选</th><th>状态</th><th>操作</th></tr></thead><tbody>${tableRows || '<tr><td colspan="7"><div class="cf-empty">没有符合查询条件的待处理项。</div></td></tr>'}</tbody></table></div>${paginationHtml({ totalItems: matched.length, currentPage, totalPages, pageSize: currentPageSize, pageAction: 'subsidy-issues-page', jumpAction: 'jump-subsidy-issues-page', pageSizeAction: 'subsidy-issues-page-size' })}`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>' });
+  }
+
+  function subsidyResolutionModal(ledger, recordId, search = '') {
+    const record = ledger?.records?.find((item) => item.id === recordId); if (!record) throw new Error('未找到待处理记录');
+    const suggested = model.farmlandSubsidyPersonCandidates(record, state.database.personnel); const needle = text(search).toLowerCase(); const candidates = needle ? state.database.personnel.filter((person) => [model.personName(person), model.personGroup(person), person.id_card || person.idCard].some((value) => text(value).toLowerCase().includes(needle))).map((person) => ({ person, personId: model.personId(person), reason: '手动搜索结果' })) : suggested;
+    state.modal = { type: 'subsidy-resolution', ledgerId: ledger.id, recordId, search };
+    const candidateOptions = candidates.map((candidate) => `<option value="${escapeHtml(candidate.personId)}">${escapeHtml(model.personName(candidate.person))} · ${escapeHtml(model.personGroup(candidate.person) || '未分组')} · ${escapeHtml(candidate.reason)}</option>`).join('');
+    openModal(`处理补贴关联 · ${record.name}`, `<div class="cf-hint">补贴数据保持不变。请只在确认是同一位居民时选择关联对象；同名不代表同一人。</div><div class="cf-form-grid"><div class="cf-field full"><label>补贴记录</label><div class="cf-record-summary"><strong>${escapeHtml(record.name)}</strong> · ${escapeHtml(record.groupName || '未分组')} · 身份证号 ${escapeHtml(record.idCard || '未填写')} · ${escapeHtml(record.eligibleArea)} 亩 · ${money(record.amountCents)}</div></div><div class="cf-field full"><label>搜索居民档案</label><div class="cf-subsidy-search"><input id="cf-subsidy-association-query" value="${escapeHtml(search)}" placeholder="输入居民姓名、身份证号或组别"><button type="button" class="btn btn-outline" data-cf-action="search-subsidy-association">搜索居民</button></div></div><div class="cf-field full"><label>确认关联居民 *</label><select id="cf-subsidy-person-choice"><option value="">请选择居民档案</option>${candidateOptions}</select><small>${search ? `搜索到 ${candidates.length} 名居民` : (suggested.length ? '已按身份证号、同组同名和同名顺序推荐' : '没有推荐候选，请搜索全体居民')}</small></div><div class="cf-field full"><label>处理说明 *</label><input id="cf-subsidy-association-reason" value="${escapeHtml(record.associationNote || '')}" placeholder="例如：已核对身份证号后确认关联；或等待户主核实"></div><p id="cf-subsidy-association-error" class="cf-error" role="alert" style="display:none"></p></div>`, { footer: '<button class="btn btn-outline" data-cf-action="back-subsidy-issues">返回清单</button><button class="btn btn-outline" data-cf-action="defer-subsidy-association">暂不关联</button><button class="btn btn-primary" data-cf-action="confirm-subsidy-association">确认关联</button>' });
+  }
+
+  async function saveSubsidyAssociation(deferred = false) {
+    const error = document.getElementById('cf-subsidy-association-error'); if (error) error.style.display = 'none';
+    try {
+      const ledger = findById('farmlandSubsidyLedgers', state.modal?.ledgerId); const record = ledger?.records?.find((item) => item.id === state.modal?.recordId); const reason = text(document.getElementById('cf-subsidy-association-reason')?.value); const personId = text(document.getElementById('cf-subsidy-person-choice')?.value);
+      if (!reason) throw new Error('请填写处理说明'); if (!deferred && !personId) throw new Error('请选择确认关联的居民档案');
+      const next = model.correctFarmlandSubsidyRecord(ledger, record.id, { ...record, personId: deferred ? '' : personId, associationStatus: deferred ? 'deferred' : 'matched', associationNote: reason, correctionReason: reason }, { personnel: state.database.personnel });
+      state.database.farmlandSubsidyLedgers.splice(state.database.farmlandSubsidyLedgers.indexOf(ledger), 1, next); await saveDatabase(deferred ? '已标记为暂不关联，仍会保留在待处理清单中' : '居民档案关联已确认'); subsidyIssueListModal(next);
+    } catch (reason) { if (error) { error.textContent = reason.message || '保存失败'; error.style.display = 'block'; } else throw reason; }
+  }
+
   function pageSizeValue(value) { const size = Number(value); return [10, 20, 50].includes(size) ? size : 10; }
 
   function paginationPages(currentPage, totalPages) {
@@ -614,7 +643,7 @@
   }
 
   async function exportSubsidyLedger(id) {
-    const ledger = findById('farmlandSubsidyLedgers', id); const validation = model.validateFarmlandSubsidyLedger(ledger); if (!validation.ok) throw new Error(`请先处理 ${validation.errors.length} 项关联或资料异常后再导出`);
+    const ledger = findById('farmlandSubsidyLedgers', id); const validation = model.validateFarmlandSubsidyLedger(ledger); if (!validation.ok) { notify(`请先处理 ${validation.errors.length} 项关联或资料异常后再导出`, 'error'); return subsidyIssueListModal(ledger); }
     const result = await api.exportFarmlandSubsidyWorkbook({ ledger }); if (!result?.ok) { if (!result?.canceled) throw new Error(result?.error || '导出失败'); return; }
     await saveDatabase('已导出地力补贴五张关联表'); notify(`已导出：${result.file.fileName}`);
   }
@@ -713,6 +742,17 @@
     if (action === 'new-subsidy') return subsidyLedgerModal();
     if (action === 'import-subsidy') return importSubsidyLedger();
     if (action === 'view-subsidy') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', element.dataset.id));
+    if (action === 'resolve-subsidy-issues') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', element.dataset.id));
+    if (action === 'search-subsidy-issues') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, document.getElementById('cf-subsidy-issue-query')?.value, state.modal?.pageSize);
+    if (action === 'clear-subsidy-issues-search') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, '', state.modal?.pageSize);
+    if (action === 'subsidy-issues-page') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), element.dataset.page, state.modal?.query, state.modal?.pageSize);
+    if (action === 'jump-subsidy-issues-page') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), document.getElementById('jump-subsidy-issues-page-input')?.value, state.modal?.query, state.modal?.pageSize);
+    if (action === 'subsidy-issues-page-size') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), 1, state.modal?.query, element.value);
+    if (action === 'resolve-subsidy-record') return subsidyResolutionModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), element.dataset.id);
+    if (action === 'search-subsidy-association') return subsidyResolutionModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.recordId, document.getElementById('cf-subsidy-association-query')?.value);
+    if (action === 'back-subsidy-issues') return subsidyIssueListModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId));
+    if (action === 'confirm-subsidy-association') return saveSubsidyAssociation(false);
+    if (action === 'defer-subsidy-association') return saveSubsidyAssociation(true);
     if (action === 'view-subsidy-sheet') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), element.dataset.sheet, 1, state.modal?.query, state.modal?.pageSize);
     if (action === 'view-subsidy-page') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.sheet, element.dataset.page, state.modal?.query, state.modal?.pageSize);
     if (action === 'jump-subsidy-sheet-page') return subsidyDetailsModal(findById('farmlandSubsidyLedgers', state.modal?.ledgerId), state.modal?.sheet, document.getElementById('jump-subsidy-sheet-page-input')?.value, state.modal?.query, state.modal?.pageSize);

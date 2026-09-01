@@ -37,6 +37,9 @@
 @media (max-width: 720px) { .cf-subsidy-search { align-items: stretch; flex-direction: column; } .cf-pager-controls, .cf-pager-pages, .cf-pager-tools { width: 100%; } .cf-pager-tools { padding-left: 0; border-left: 0; } }
 .cf-empty { padding: 42px 16px; text-align: center; color: var(--text-secondary); }
 .cf-badge { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: rgba(59,130,246,.1); color: #2563eb; }
+.cf-issue-button { border: 0; cursor: pointer; font: inherit; }
+.cf-issue-button:hover { filter: brightness(.95); }
+.cf-record-summary { padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); background: var(--bg-card); }
 .cf-badge.ok { background: rgba(16,185,129,.1); color: #059669; }
 .cf-badge.warn { background: rgba(245,158,11,.12); color: #d97706; }
 .cf-badge.danger { background: rgba(239,68,68,.1); color: #dc2626; }

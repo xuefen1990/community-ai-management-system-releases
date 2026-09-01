@@ -145,3 +145,18 @@ test('keeps a farmland subsidy master record authoritative and requires correcti
   assert.equal(corrected.records[0].amountCents, 30000);
   assert.equal(corrected.corrections.length, 1);
 });
+
+test('suggests subsidy residents without automatically binding a same-name record', () => {
+  const subsidyPeople = [
+    { id: 'p-4', name: '张三', village_group: '东一组', id_card: '320000199001010011' },
+    { id: 'p-5', name: '张三', village_group: '东二组', id_card: '320000199001010012' },
+  ];
+  const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '', bankCard: '62220001', eligibleArea: 1, standard: 120 }] }, { personnel: [], now, id: 'subsidy-candidates' });
+  const record = ledger.records[0];
+  const candidates = model.farmlandSubsidyPersonCandidates(record, subsidyPeople);
+  assert.equal(record.matchStatus, 'missing');
+  assert.deepEqual(candidates.map((item) => [item.personId, item.reason]), [['p-4', '同组同名'], ['p-5', '同名待确认']]);
+  const deferred = model.correctFarmlandSubsidyRecord(ledger, record.id, { associationStatus: 'deferred', associationNote: '等待核实户主', correctionReason: '等待核实户主' }, { personnel: subsidyPeople, now });
+  assert.equal(deferred.records[0].associationStatus, 'deferred');
+  assert.match(model.validateFarmlandSubsidyLedger(deferred).errors.join('；'), /暂不关联/u);
+});

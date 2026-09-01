@@ -341,8 +341,9 @@
 
   function normalizedSubsidyRecord(value, personnel = [], { now = new Date(), id } = {}) {
     const idCard = text(value.idCard || value.id_card).toUpperCase();
-    const explicitPerson = personnel.find((person) => personId(person) === text(value.personId));
-    const candidates = explicitPerson ? [explicitPerson] : (idCard ? personnel.filter((person) => text(person.id_card || person.idCard).toUpperCase() === idCard) : personnel.filter((person) => personGroup(person) === text(value.groupName || value.group) && personName(person) === text(value.name)));
+    const deferred = text(value.associationStatus) === 'deferred';
+    const explicitPerson = deferred ? null : personnel.find((person) => personId(person) === text(value.personId));
+    const candidates = deferred ? [] : (explicitPerson ? [explicitPerson] : (idCard ? personnel.filter((person) => text(person.id_card || person.idCard).toUpperCase() === idCard) : personnel.filter((person) => personGroup(person) === text(value.groupName || value.group) && personName(person) === text(value.name))));
     const person = candidates.length === 1 ? candidates[0] : null;
     const name = person ? personName(person) : text(value.name);
     if (!name) throw new Error('补贴记录必须填写姓名');
@@ -352,7 +353,7 @@
     const amountCents = value.amount === undefined || text(value.amount) === '' ? calculatedAmountCents : amountToCents(value.amount);
     return {
       id: id || identifier('farmland-subsidy-record', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : text(value.personId),
-      matchStatus: person ? 'matched' : (candidates.length > 1 ? 'ambiguous' : 'missing'), name, groupName: person ? personGroup(person) : text(value.groupName || value.group),
+      matchStatus: person ? 'matched' : (candidates.length > 1 ? 'ambiguous' : 'missing'), associationStatus: person ? 'matched' : (text(value.associationStatus) === 'deferred' ? 'deferred' : 'pending'), associationNote: text(value.associationNote), name, groupName: person ? personGroup(person) : text(value.groupName || value.group),
       category: text(value.category) === 'village_cadre' ? 'village_cadre' : 'household', idCard, bankName: text(value.bankName || value.bank), bankCard: normalizeBankCard(value.bankCard || value.cardNumber),
       ownershipArea: numberValue(value.ownershipArea ?? value.ownership_area ?? eligibleArea), excludedArea: numberValue(value.excludedArea ?? value.excluded_area ?? 0), eligibleArea,
       standardCents, calculatedAmountCents, amountCents, phone: text(value.phone), remark: text(value.remark), adjustmentReason: text(value.adjustmentReason),
@@ -383,12 +384,25 @@
   function validateFarmlandSubsidyLedger(ledger) {
     const errors = [];
     for (const record of ledger?.records || []) {
-      if (record.matchStatus !== 'matched') errors.push(`${record.name}尚未关联居民档案`);
+      if (record.matchStatus !== 'matched') errors.push(`${record.name}${record.associationStatus === 'deferred' ? '暂不关联居民档案' : '尚未关联居民档案'}`);
       if (!text(record.idCard)) errors.push(`${record.name}缺少身份证号`);
       if (!normalizeBankCard(record.bankCard)) errors.push(`${record.name}缺少一卡通号`);
       if (Number(record.amountCents) !== Number(record.calculatedAmountCents) && !text(record.adjustmentReason)) errors.push(`${record.name}调整金额后必须填写原因`);
     }
     return { ok: errors.length === 0, errors, ...summarizeFarmlandSubsidyLedger(ledger) };
+  }
+
+  function farmlandSubsidyPersonCandidates(record, personnel = []) {
+    const idCard = text(record?.idCard).toUpperCase(); const name = text(record?.name); const groupName = text(record?.groupName);
+    const seen = new Set(); const result = [];
+    const add = (person, reason) => {
+      const id = personId(person); if (!id || seen.has(id)) return;
+      seen.add(id); result.push({ person, personId: id, reason });
+    };
+    if (idCard) personnel.filter((person) => text(person.id_card || person.idCard).toUpperCase() === idCard).forEach((person) => add(person, '身份证号一致'));
+    if (name && groupName) personnel.filter((person) => personName(person) === name && personGroup(person) === groupName).forEach((person) => add(person, '同组同名'));
+    if (name) personnel.filter((person) => personName(person) === name).forEach((person) => add(person, '同名待确认'));
+    return result;
   }
 
   function correctFarmlandSubsidyRecord(ledger, recordId, value, { personnel = [], now = new Date() } = {}) {
@@ -410,7 +424,7 @@
     defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
     DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch,
-    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, correctFarmlandSubsidyRecord,
+    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ContractFeeModel = api;
