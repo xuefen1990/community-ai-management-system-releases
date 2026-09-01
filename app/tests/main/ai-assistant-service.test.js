@@ -42,6 +42,35 @@ test('answers an annual payment question from paid general and contract batches 
   assert.match(result.content, /地力补贴台账目前没有/u);
 });
 
+test('answers group, category, and highest-group annual payment questions with a paid-only scope', async () => {
+  const assistant = service({
+    personnel: [
+      { id: 'one', name: '张三', village_group: '一组' },
+      { id: 'two', name: '李四', village_group: '二组' },
+    ],
+    disbursementCategories: [{ id: 'salary', name: '固定工资' }],
+    disbursementBatches: [{ id: 'salary-1', categoryName: '固定工资', completedAt: '2026-03-01T00:00:00.000Z', items: [
+      { personId: 'one', name: '张三', amountCents: 250000, paymentStatus: 'paid' },
+      { personId: 'two', name: '李四', amountCents: 100000, paymentStatus: 'paid' },
+      { personId: 'two', name: '李四', amountCents: 990000, paymentStatus: 'pending' },
+    ] }],
+    contractFeeBatches: [{ id: 'rent-1', contractName: '土地租金', batchDate: '2026-05-01', items: [
+      { personId: 'two', name: '李四', groupName: '二组', finalAmountCents: 200000, paymentStatus: 'paid' },
+    ] }],
+  });
+
+  const group = await assistant.converse({ messages: [{ role: 'user', content: '一组 2026 年发放多少钱？' }] });
+  assert.match(group.content, /¥2500\.00/u);
+  assert.match(group.content, /只统计状态为“已发放”/u);
+
+  const category = await assistant.converse({ messages: [{ role: 'user', content: '固定工资 2026 年发放多少钱？' }] });
+  assert.match(category.content, /¥3500\.00/u);
+
+  const highest = await assistant.converse({ messages: [{ role: 'user', content: '2026 年哪个组发放最多？' }] });
+  assert.match(highest.content, /二组/u);
+  assert.match(highest.content, /¥3000\.00/u);
+});
+
 test('requires confirmation, records, and manually undoes a resident phone update', async () => {
   const database = { personnel: [{ id: 'person-1', name: '张三', village_group: '一组', phone: '13800000000' }], aiAssistantOperations: [] };
   const assistant = service(database);
@@ -101,6 +130,26 @@ test('returns a controlled navigation action for the funding center', async () =
   const assistant = service({ personnel: [], disbursementBatches: [], contractFeeBatches: [] });
   const result = await assistant.converse({ messages: [{ role: 'user', content: '打开资金发放中心' }] });
   assert.deepEqual(result.action, { type: 'navigate', target: 'tab-contract-fees', label: '资金发放中心' });
+});
+
+test('returns controlled navigation only for an explicitly requested module', async () => {
+  const assistant = service({ personnel: [] });
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '打开土地承包确权' }] });
+  assert.deepEqual(result.action, { type: 'navigate', target: 'tab-land', label: '土地承包确权' });
+});
+
+test('returns explicitly scoped read-only counts for other system ledgers', async () => {
+  const assistant = service({
+    personnel: [{ id: 'one' }, { id: 'two' }],
+    partyMembers: [{ id: 'party-1' }],
+    resourceContracts: [{ id: 'contract-1' }, { id: 'contract-2' }],
+  });
+  const residents = await assistant.converse({ messages: [{ role: 'user', content: '现在有多少村民？' }] });
+  assert.match(residents.content, /2 条村民档案/u);
+  assert.match(residents.content, /未按年份或状态筛选/u);
+
+  const contracts = await assistant.converse({ messages: [{ role: 'user', content: '系统有几份合同？' }] });
+  assert.match(contracts.content, /2 条资源合同/u);
 });
 
 test('uses the configured AI only for non-system conversations and adds a no-guessing rule', async () => {

@@ -49,16 +49,43 @@ function isAnnualAmountQuestion(message) {
   return /(发了|发放|实发|已发|累计).{0,18}(多少钱|多少|金额|总额|合计)|(多少钱|多少|金额|总额|合计).{0,18}(发了|发放|实发|已发|累计)/u.test(value);
 }
 
+function isPaymentQuestion(message) {
+  const value = text(message);
+  return isAnnualAmountQuestion(value)
+    || /(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)/u.test(value)
+    || /(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(value);
+}
+
 function isSystemDataRequest(message) {
   const value = text(message);
   return /(村民|居民|人员|档案|发放|资金|承包费|补贴|合同|地块|值班|党员|台账|系统).{0,24}(多少|查询|查|统计|修改|新增|删除|导出|跳转|打开|看看|信息|记录)/u.test(value)
     || /(查询|查|统计|修改|新增|删除|导出|跳转|打开).{0,24}(村民|居民|人员|档案|发放|资金|承包费|补贴|合同|地块|值班|党员|台账|系统)/u.test(value);
 }
 
+function isCountQuestion(message) {
+  return /(多少|几(个|人|条|份|块)|数量|人数|总数)/u.test(text(message));
+}
+
 function navigationTarget(message) {
   const value = text(message);
-  if (!/(打开|进入|跳转|去).{0,14}(资金发放|发放中心)|(资金发放|发放中心).{0,14}(打开|进入|跳转|去)/u.test(value)) return null;
-  return { target: 'tab-contract-fees', label: '资金发放中心' };
+  if (!/(打开|进入|跳转|去|查看).{0,14}|.{0,14}(打开|进入|跳转|去|查看)/u.test(value)) return null;
+  const targets = [
+    { pattern: /(资金发放|发放中心|承包费)/u, target: 'tab-contract-fees', label: '资金发放中心' },
+    { pattern: /(村民一户一档|村民档案|居民档案|人员档案)/u, target: 'tab-personnel', label: '村民一户一档' },
+    { pattern: /党员/u, target: 'tab-party', label: '党员管理' },
+    { pattern: /(民情|走访)/u, target: 'tab-visit-records', label: '民情记录' },
+    { pattern: /值班/u, target: 'tab-duty', label: '村里值班' },
+    { pattern: /(财务|收支)/u, target: 'tab-finance', label: '财务收支' },
+    { pattern: /(土地|地块|确权)/u, target: 'tab-land', label: '土地承包确权' },
+    { pattern: /工作管理/u, target: 'tab-work-management', label: '工作管理' },
+    { pattern: /(公文拟写|公文)/u, target: 'tab-document-drafting', label: '公文拟写' },
+    { pattern: /证明/u, target: 'tab-certificate', label: '证明开具' },
+    { pattern: /(电子档案|档案柜)/u, target: 'tab-documents', label: '电子档案柜' },
+    { pattern: /(系统设置|设置)/u, target: 'tab-settings', label: '系统设置' },
+    { pattern: /统计/u, target: 'tab-statistics', label: '数据统计' },
+  ];
+  const matched = targets.find((item) => item.pattern.test(value));
+  return matched ? { target: matched.target, label: matched.label } : null;
 }
 
 class AiAssistantService {
@@ -118,18 +145,38 @@ class AiAssistantService {
   }
 
   collectAnnualPayments(database, recipient, year) {
+    return this.collectPaidPayments(database, { recipient, year });
+  }
+
+  groupForPayment(database, item) {
+    const directGroup = text(item?.groupName || item?.group_name || item?.villageGroup || item?.village_group);
+    if (directGroup) return directGroup;
+    const related = (database.personnel || []).find((person) => personId(person) && personId(person) === text(item?.personId));
+    return personGroup(related);
+  }
+
+  collectPaidPayments(database, { recipient = null, year = null, groupName = '', categoryName = '' } = {}) {
     const records = [];
-    const sameRecipient = (item) => recipient.id
+    const sameRecipient = (item) => !recipient || (recipient.id
       ? text(item?.personId) === recipient.id
-      : text(item?.name) === recipient.name && text(item?.groupName) === recipient.groupName;
+      : text(item?.name) === recipient.name && this.groupForPayment(database, item) === recipient.groupName);
     const append = ({ batch, item, source, amountCents }) => {
-      if (item?.paymentStatus !== 'paid' || !sameRecipient(item) || paymentYear(item, batch) !== year) return;
+      const recordYear = paymentYear(item, batch);
+      const recordGroup = this.groupForPayment(database, item);
+      const recordCategory = text(batch.categoryName || batch.contractName || source);
+      if (item?.paymentStatus !== 'paid' || !sameRecipient(item)) return;
+      if (year && recordYear !== year) return;
+      if (groupName && recordGroup !== groupName) return;
+      if (categoryName && recordCategory !== categoryName) return;
       records.push({
         source,
-        categoryName: text(batch.categoryName || batch.contractName || source),
+        categoryName: recordCategory,
         amountCents: cents(amountCents),
         date: text(item.paidAt || batch.completedAt || batch.batchDate || batch.period),
         batchId: text(batch.id),
+        groupName: recordGroup,
+        recipientName: text(item.name),
+        personId: text(item.personId),
       });
     };
     for (const batch of database.disbursementBatches || []) {
@@ -139,6 +186,69 @@ class AiAssistantService {
       for (const item of batch.items || []) append({ batch, item, source: '合同发放批次', amountCents: item.finalAmountCents ?? item.amountCents });
     }
     return records;
+  }
+
+  knownGroups(database) {
+    const groups = new Set((database.personnel || []).map(personGroup).filter(Boolean));
+    for (const record of this.collectPaidPayments(database)) if (record.groupName) groups.add(record.groupName);
+    return [...groups].sort((left, right) => left.localeCompare(right, 'zh-CN'));
+  }
+
+  specifiedGroup(database, message) {
+    const matches = this.knownGroups(database).filter((groupName) => text(message).includes(groupName));
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  specifiedCategory(database, message) {
+    const categories = new Set();
+    for (const batch of database.disbursementBatches || []) if (text(batch.categoryName)) categories.add(text(batch.categoryName));
+    for (const batch of database.contractFeeBatches || []) if (text(batch.contractName)) categories.add(text(batch.contractName));
+    for (const category of database.disbursementCategories || []) if (text(category.name)) categories.add(text(category.name));
+    const matches = [...categories].filter((name) => text(message).includes(name));
+    return matches.length === 1 ? matches[0] : null;
+  }
+
+  formatAggregateAnswer({ year, records, subject, scope }) {
+    const total = records.reduce((sum, record) => sum + record.amountCents, 0);
+    if (!records.length) return `${year} 年未查到${subject}已登记发放的资金记录。统计范围：${scope}，只统计状态为“已发放”的记录。`;
+    const recipients = new Set(records.map((record) => record.personId || `${record.recipientName}|${record.groupName}`).filter(Boolean));
+    return `${year} 年${subject}已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔，涉及 ${recipients.size} 人。统计范围：${scope}，只统计状态为“已发放”的记录。`;
+  }
+
+  formatHighestGroupAnswer(year, records) {
+    const totals = new Map();
+    for (const record of records) {
+      if (!record.groupName) continue;
+      totals.set(record.groupName, (totals.get(record.groupName) || 0) + record.amountCents);
+    }
+    if (!totals.size) return `${year} 年已发放记录中没有可识别的村民组，暂时无法比较哪个组发放最多。`;
+    const sorted = [...totals.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'));
+    const [groupName, amount] = sorted[0];
+    return `${year} 年已登记发放金额最高的是${groupName}，共 ${formatMoney(amount)}。统计范围：通用发放批次和合同发放批次中状态为“已发放”的记录。`;
+  }
+
+  answerModuleCount(database, message) {
+    if (!isCountQuestion(message)) return null;
+    const value = text(message);
+    const counters = [
+      { pattern: /(村民|居民|人员)/u, label: '村民档案', items: database.personnel },
+      { pattern: /党员/u, label: '党员档案', items: database.partyMembers },
+      { pattern: /(民情|走访)/u, label: '民情记录', items: database.visitRecords },
+      { pattern: /值班/u, label: '值班记录', items: database.dutyRecords },
+      { pattern: /(财务|收支)/u, label: '财务收支记录', items: database.finances },
+      { pattern: /(土地|地块|确权)/u, label: '土地确权记录', items: database.landParcel?.length ? database.landParcel : database.lands },
+      { pattern: /合同/u, label: '资源合同', items: database.resourceContracts },
+      { pattern: /(工作事项|工作任务|工作管理)/u, label: '工作事项', items: database.workItems },
+      { pattern: /(电子档案|档案柜)/u, label: '电子档案', items: database.documents },
+      { pattern: /证明/u, label: '证明记录', items: database.certificates },
+    ];
+    const matched = counters.find((counter) => counter.pattern.test(value));
+    if (!matched) return null;
+    const count = Array.isArray(matched.items) ? matched.items.length : 0;
+    return {
+      content: `当前系统共有 ${count} 条${matched.label}。统计口径：${matched.label}台账中的全部记录，未按年份或状态筛选。`,
+      provider: 'system', handled: true, data: { module: matched.label, count },
+    };
   }
 
   subsidyLedgerNotice(database, recipient, year) {
@@ -278,17 +388,32 @@ class AiAssistantService {
   }
 
   async answerDirectQuestion(message) {
-    if (!isAnnualAmountQuestion(message)) return null;
+    if (!isPaymentQuestion(message)) return null;
     const year = this.resolveYear(message);
-    if (!year) return { content: '请告诉我需要查询哪一年，例如“张三 2026 年共计发了多少钱？”。我会只统计该年度已登记发放的记录。', provider: 'system', handled: true };
+    if (!year) return { content: '请告诉我需要查询哪一年，例如“张三 2026 年共计发了多少钱？”或“2026 年哪个组发放最多？”。我会只统计该年度已登记发放的记录。', provider: 'system', handled: true };
     const database = await this.databaseStore.read();
+    const paidRecords = this.collectPaidPayments(database, { year });
+    if (/(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)|(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(text(message))) {
+      return { content: this.formatHighestGroupAnswer(year, paidRecords), provider: 'system', handled: true, data: { year, records: paidRecords } };
+    }
+    const groupName = this.specifiedGroup(database, message);
+    const categoryName = this.specifiedCategory(database, message);
     const resolved = this.resolveRecipient(database, message);
     if (resolved.kind === 'ambiguous') {
       const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
       return { content: `系统中有多位同名人员，请确认要查询哪一位：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
     }
-    if (resolved.kind === 'missing') return { content: '我没有识别出要查询的人员。请补充姓名；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
-    const records = this.collectAnnualPayments(database, resolved.recipient, year);
+    if (resolved.kind === 'missing' && groupName) {
+      const records = this.collectPaidPayments(database, { year, groupName, categoryName });
+      const qualifier = categoryName ? `${groupName}${categoryName}` : groupName;
+      return { content: this.formatAggregateAnswer({ year, records, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true, data: { year, groupName, categoryName, records } };
+    }
+    if (resolved.kind === 'missing' && categoryName) {
+      const records = this.collectPaidPayments(database, { year, categoryName });
+      return { content: this.formatAggregateAnswer({ year, records, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true, data: { year, categoryName, records } };
+    }
+    if (resolved.kind === 'missing') return { content: '我没有识别出要查询的人员、村民组或资金类别。请补充其中一个对象；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    const records = this.collectPaidPayments(database, { recipient: resolved.recipient, year, categoryName });
     return {
       content: this.formatAnnualAnswer({
         recipient: resolved.recipient,
@@ -310,6 +435,8 @@ class AiAssistantService {
     const direct = await this.answerDirectQuestion(userMessage.content);
     if (direct) return direct;
     const database = await this.databaseStore.read();
+    const moduleCount = this.answerModuleCount(database, userMessage.content);
+    if (moduleCount) return moduleCount;
     const phoneProposal = this.phoneUpdateProposal(database, userMessage.content);
     if (phoneProposal) return phoneProposal;
     const navigation = navigationTarget(userMessage.content);
