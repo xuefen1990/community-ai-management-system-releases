@@ -387,6 +387,7 @@
       if (record.matchStatus !== 'matched') errors.push(`${record.name}${record.associationStatus === 'deferred' ? '暂不关联居民档案' : '尚未关联居民档案'}`);
       if (!text(record.idCard)) errors.push(`${record.name}缺少身份证号`);
       if (!normalizeBankCard(record.bankCard)) errors.push(`${record.name}缺少一卡通号`);
+      if (text(record.residentSyncStatus) !== 'synced') errors.push(`${record.name}居民资料尚未同步`);
       if (Number(record.amountCents) !== Number(record.calculatedAmountCents) && !text(record.adjustmentReason)) errors.push(`${record.name}调整金额后必须填写原因`);
     }
     return { ok: errors.length === 0, errors, ...summarizeFarmlandSubsidyLedger(ledger) };
@@ -406,6 +407,13 @@
   }
 
   function normalizedIdCard(value) { return text(value).replace(/\s/gu, '').toUpperCase(); }
+  function normalizedPhone(value) { return text(value).replace(/[\s-]/gu, ''); }
+  function residentPhone(person) { return normalizedPhone(person?.phone || person?.mobile || person?.mobile_phone); }
+  function residentBankName(person, cardNumber = '') {
+    const card = normalizeBankCard(cardNumber);
+    const accounts = bankAccounts(person); const account = card ? (accounts.find((item) => normalizeBankCard(item.cardNumber) === card) || accounts[0]) : accounts[0];
+    return text(account?.bankName || person?.bank_name || person?.bankName);
+  }
 
   function subsidyResidentImportHistory(record, ledger, now) {
     return {
@@ -418,7 +426,7 @@
 
   function subsidyResidentImportPlan(ledger, selectedRecordIds = [], personnel = []) {
     const selectedIds = new Set((selectedRecordIds || []).map(text).filter(Boolean));
-    const records = (ledger?.records || []).filter((record) => selectedIds.has(text(record.id)) && record.matchStatus !== 'matched');
+    const records = (ledger?.records || []).filter((record) => selectedIds.has(text(record.id)) && text(record.residentSyncStatus) !== 'synced');
     return records.map((record) => {
       const idCard = normalizedIdCard(record.idCard);
       if (!idCard) return { recordId: record.id, status: 'manual', reason: '缺少身份证号，不能自动导入', record };
@@ -430,7 +438,16 @@
       }
       const person = matches[0]; const nameConflict = text(personName(person)) && text(record.name) && text(personName(person)) !== text(record.name);
       const groupConflict = text(personGroup(person)) && text(record.groupName) && text(personGroup(person)) !== text(record.groupName);
-      if (nameConflict || groupConflict) return { recordId: record.id, status: 'manual', reason: nameConflict && groupConflict ? '身份证相同，但姓名和组别不一致' : (nameConflict ? '身份证相同，但姓名不一致' : '身份证相同，但组别不一致'), record, personId: personId(person) };
+      const conflicts = [];
+      if (nameConflict) conflicts.push({ field: '姓名', residentValue: personName(person), subsidyValue: text(record.name) });
+      if (groupConflict) conflicts.push({ field: '村民组', residentValue: personGroup(person), subsidyValue: text(record.groupName) });
+      const incomingPhone = normalizedPhone(record.phone); const currentPhone = residentPhone(person);
+      if (incomingPhone && currentPhone && incomingPhone !== currentPhone) conflicts.push({ field: '手机号', residentValue: currentPhone, subsidyValue: incomingPhone });
+      const incomingCard = normalizeBankCard(record.bankCard); const accounts = bankAccounts(person); const hasIncomingCard = incomingCard && accounts.some((item) => normalizeBankCard(item.cardNumber) === incomingCard);
+      if (incomingCard && accounts.length && !hasIncomingCard) conflicts.push({ field: '银行卡号', residentValue: accounts.map((item) => normalizeBankCard(item.cardNumber)).join('、'), subsidyValue: incomingCard });
+      const incomingBankName = text(record.bankName); const currentBankName = residentBankName(person, incomingCard);
+      if (incomingBankName && currentBankName && incomingBankName !== currentBankName) conflicts.push({ field: '开户行', residentValue: currentBankName, subsidyValue: incomingBankName });
+      if (conflicts.length) return { recordId: record.id, status: 'manual', reason: conflicts.map((item) => `${item.field}与居民档案不一致`).join('；'), conflicts, record, personId: personId(person) };
       return { recordId: record.id, status: 'merge', reason: '身份证号一致，只补充居民档案空白信息', record, personId: personId(person) };
     });
   }
@@ -454,14 +471,15 @@
     fill('village_name', ledger?.villageName, ['villageName']);
     fill('phone', record.phone, ['mobile', 'mobile_phone']);
     if (!normalizedIdCard(person.id_card || person.idCard)) { person.id_card = normalizedIdCard(record.idCard); person.idCard = normalizedIdCard(record.idCard); changedFields.push('idCard'); }
-    const card = normalizeBankCard(record.bankCard);
+    const card = normalizeBankCard(record.bankCard); const knownAccount = card && bankAccounts(person).find((item) => normalizeBankCard(item.cardNumber) === card);
     if (card && !defaultBankCard(person)) {
       setDefaultBankCard(person, card, { source: 'farmland-subsidy-import', now });
       const account = bankAccounts(person).find((item) => normalizeBankCard(item.cardNumber) === card);
       if (account && text(record.bankName)) account.bankName = text(record.bankName);
       if (text(record.bankName)) person.bank_name = text(record.bankName);
       changedFields.push('bankCard');
-    } else if (!text(person.bank_name || person.bankName) && text(record.bankName)) { person.bank_name = text(record.bankName); changedFields.push('bankName'); }
+    } else if (knownAccount && !text(knownAccount.bankName) && text(record.bankName)) { knownAccount.bankName = text(record.bankName); if (!text(person.bank_name || person.bankName)) person.bank_name = text(record.bankName); changedFields.push('bankName'); }
+    else if (!text(person.bank_name || person.bankName) && text(record.bankName)) { person.bank_name = text(record.bankName); changedFields.push('bankName'); }
     appendSubsidyResidentHistory(person, subsidyResidentImportHistory(record, ledger, now));
     person.updated_at = nowIso(now);
     return changedFields;
@@ -480,12 +498,38 @@
         nextPersonnel.push(person);
       }
       const changedFields = fillResidentFromSubsidy(person, record, nextLedger, now);
-      record.personId = personId(person); record.matchStatus = 'matched'; record.associationStatus = 'matched'; record.associationNote = '由地力补贴批量导入居民档案并自动关联'; record.updatedAt = nowIso(now);
+      record.personId = personId(person); record.matchStatus = 'matched'; record.associationStatus = 'matched'; record.residentSyncStatus = 'synced'; record.associationNote = '由地力补贴批量导入居民档案并自动关联'; record.updatedAt = nowIso(now);
       results.push({ ...item, personId: personId(person), changedFields, status: item.status === 'create' ? 'created' : 'merged' });
     }
     nextLedger.updatedAt = nowIso(now);
     const summary = results.reduce((result, item) => { if (item.status === 'created') result.created += 1; else if (item.status === 'merged') result.merged += 1; else result.manual += 1; return result; }, { created: 0, merged: 0, manual: 0 });
     return { ledger: nextLedger, personnel: nextPersonnel, results, summary };
+  }
+
+  function resolveFarmlandSubsidyResidentConflict({ ledger, recordId, personId: selectedPersonId, personnel = [], resolution = 'keep' } = {}, { now = new Date() } = {}) {
+    const nextLedger = structuredClone(ledger); const nextPersonnel = structuredClone(personnel || []);
+    const record = (nextLedger?.records || []).find((item) => text(item.id) === text(recordId));
+    const person = nextPersonnel.find((item) => personId(item) === text(selectedPersonId));
+    if (!record) throw new Error('未找到补贴记录');
+    if (!person) throw new Error('未找到确认关联的居民档案');
+    const changedFields = fillResidentFromSubsidy(person, record, nextLedger, now);
+    if (resolution === 'adopt') {
+      const phone = normalizedPhone(record.phone); if (phone && residentPhone(person) !== phone) { person.phone = phone; changedFields.push('phone'); }
+      const card = normalizeBankCard(record.bankCard);
+      if (card && defaultBankCard(person) !== card) { setDefaultBankCard(person, card, { source: 'farmland-subsidy-manual-confirmation', now }); changedFields.push('bankCard'); }
+      if (text(record.bankName)) {
+        const account = bankAccounts(person).find((item) => normalizeBankCard(item.cardNumber) === normalizeBankCard(record.bankCard));
+        if (account) account.bankName = text(record.bankName);
+        person.bank_name = text(record.bankName); changedFields.push('bankName');
+      }
+    }
+    record.personId = personId(person); record.matchStatus = 'matched'; record.associationStatus = 'matched'; record.residentSyncStatus = 'synced'; record.associationNote = resolution === 'adopt' ? '人工确认采用补贴表资料并同步居民档案' : '人工确认关联居民档案，保留原有资料'; record.updatedAt = nowIso(now);
+    nextLedger.updatedAt = nowIso(now);
+    return { ledger: nextLedger, personnel: nextPersonnel, personId: personId(person), changedFields: [...new Set(changedFields)] };
+  }
+
+  function subsidyRecordsNeedingResidentSync(ledger) {
+    return (ledger?.records || []).filter((record) => record.matchStatus !== 'matched' || text(record.residentSyncStatus) !== 'synced');
   }
 
   function correctFarmlandSubsidyRecord(ledger, recordId, value, { personnel = [], now = new Date() } = {}) {
@@ -507,7 +551,7 @@
     defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
     DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch,
-    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyResidentImportPlan, importFarmlandSubsidyResidents, correctFarmlandSubsidyRecord,
+    normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyRecordsNeedingResidentSync, subsidyResidentImportPlan, importFarmlandSubsidyResidents, resolveFarmlandSubsidyResidentConflict, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (root) root.ContractFeeModel = api;

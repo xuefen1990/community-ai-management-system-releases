@@ -37,6 +37,9 @@ test('workspace module keeps the unified disbursement screens outside the legacy
   for (const label of ['全选本页', '全选全部待处理项', '批量导入居民档案', '批量导入预览', '确认导入并关联', '只补充居民档案空白信息']) assert.match(script, new RegExp(label, 'u'));
   assert.match(script, /subsidyResidentImportPlan/u);
   assert.match(script, /importFarmlandSubsidyResidents/u);
+  assert.match(script, /已关联，待同步资料/u);
+  assert.match(script, /资料核对/u);
+  assert.match(script, /确认并同步/u);
   assert.match(script, /resident-subsidy-profile\.js/u);
   assert.match(script, /save-subsidy-record/u);
   assert.match(script, /document\.getElementById\('cf-modal-overlay'\)\?\.remove\(\)/u);

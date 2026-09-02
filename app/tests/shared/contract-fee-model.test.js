@@ -139,7 +139,7 @@ test('keeps a farmland subsidy master record authoritative and requires correcti
   const subsidyPeople = [{ id: 'p-4', name: '张三', village_group: '东一组', id_card: '320000199001010011', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] }];
   const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', bankName: '农商行', bankCard: '62220001', eligibleArea: 2.4, standard: 120 }] }, { personnel: subsidyPeople, now, id: 'subsidy-1' });
   assert.equal(ledger.records[0].amountCents, 28800);
-  assert.equal(model.validateFarmlandSubsidyLedger(ledger).ok, true);
+  assert.match(model.validateFarmlandSubsidyLedger(ledger).errors.join('；'), /居民资料尚未同步/u);
   assert.throws(() => model.correctFarmlandSubsidyRecord(ledger, ledger.records[0].id, { eligibleArea: 2.5 }, { personnel: subsidyPeople, now }), /填写原因/u);
   const corrected = model.correctFarmlandSubsidyRecord(ledger, ledger.records[0].id, { eligibleArea: 2.5, correctionReason: '核实面积' }, { personnel: subsidyPeople, now });
   assert.equal(corrected.records[0].amountCents, 30000);
@@ -173,16 +173,43 @@ test('previews and imports subsidy residents by identity card without overwritin
     { name: '赵七', groupName: '东三组', idCard: '', bankCard: '62220005', eligibleArea: 1, standard: 120 },
   ] }, { personnel: [], now, id: 'subsidy-import' });
   const plan = model.subsidyResidentImportPlan(ledger, ledger.records.map((record) => record.id), subsidyPeople);
-  assert.deepEqual(plan.map((item) => item.status), ['merge', 'create', 'manual', 'manual']);
+  assert.deepEqual(plan.map((item) => item.status), ['manual', 'create', 'manual', 'manual']);
   const imported = model.importFarmlandSubsidyResidents({ ledger, selectedRecordIds: ledger.records.map((record) => record.id), personnel: subsidyPeople }, { now });
-  assert.deepEqual(imported.summary, { created: 1, merged: 1, manual: 2 });
+  assert.deepEqual(imported.summary, { created: 1, merged: 0, manual: 3 });
   const kept = imported.personnel.find((person) => person.id === 'p-keep');
   assert.equal(kept.phone, '13800000000');
   assert.equal(model.defaultBankCard(kept), '62220001');
-  assert.equal(kept.farmlandSubsidyHistory.length, 1);
+  assert.equal(kept.farmlandSubsidyHistory, undefined);
   const added = imported.personnel.find((person) => person.name === '王五');
   assert.equal(added.village_group, '东二组');
   assert.equal(model.defaultBankCard(added), '62220003');
-  assert.equal(imported.ledger.records.filter((record) => record.matchStatus === 'matched').length, 2);
-  assert.equal(imported.ledger.records.filter((record) => record.matchStatus !== 'matched').length, 2);
+  assert.equal(imported.ledger.records.filter((record) => record.matchStatus === 'matched').length, 1);
+  assert.equal(imported.ledger.records.filter((record) => record.matchStatus !== 'matched').length, 3);
+});
+
+test('syncs an already associated subsidy resident with blank contact and bank fields', () => {
+  const subsidyPeople = [{ id: 'p-sync', name: '张三', village_group: '东一组', id_card: '320000199001010011' }];
+  const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [
+    { name: '张三', groupName: '东一组', idCard: '320000199001010011', bankName: '农商行', bankCard: '62220001', phone: '13800000000', eligibleArea: 2, standard: 120 },
+  ] }, { personnel: subsidyPeople, now, id: 'subsidy-sync' });
+  assert.equal(ledger.records[0].matchStatus, 'matched');
+  assert.equal(model.subsidyRecordsNeedingResidentSync(ledger).length, 1);
+  const result = model.importFarmlandSubsidyResidents({ ledger, selectedRecordIds: [ledger.records[0].id], personnel: subsidyPeople }, { now });
+  const person = result.personnel[0];
+  assert.equal(person.phone, '13800000000');
+  assert.equal(model.defaultBankCard(person), '62220001');
+  assert.equal(result.ledger.records[0].residentSyncStatus, 'synced');
+  assert.equal(model.subsidyRecordsNeedingResidentSync(result.ledger).length, 0);
+});
+
+test('requires manual confirmation before replacing a resident phone or bank card from subsidy data', () => {
+  const people = [{ id: 'p-conflict', name: '张三', village_group: '东一组', id_card: '320000199001010011', phone: '13900000000', bankAccounts: [{ cardNumber: '62220009', bankName: '旧开户行', isDefault: true }] }];
+  const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', phone: '13800000000', bankName: '农商行', bankCard: '62220001', eligibleArea: 1, standard: 120 }] }, { personnel: people, now, id: 'subsidy-conflict' });
+  const [plan] = model.subsidyResidentImportPlan(ledger, [ledger.records[0].id], people);
+  assert.equal(plan.status, 'manual');
+  assert.deepEqual(plan.conflicts.map((item) => item.field), ['手机号', '银行卡号', '开户行']);
+  const resolved = model.resolveFarmlandSubsidyResidentConflict({ ledger, recordId: ledger.records[0].id, personId: 'p-conflict', personnel: people, resolution: 'adopt' }, { now });
+  assert.equal(resolved.personnel[0].phone, '13800000000');
+  assert.equal(model.defaultBankCard(resolved.personnel[0]), '62220001');
+  assert.equal(resolved.ledger.records[0].residentSyncStatus, 'synced');
 });
