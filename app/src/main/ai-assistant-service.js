@@ -1445,26 +1445,56 @@ class AiAssistantService {
     const left = first.resident;
     const right = second.resident;
     const labels = `“${left.name}”${left.groupName ? `（${left.groupName}）` : ''}、“${right.name}”${right.groupName ? `（${right.groupName}）` : ''}`;
-    if (!left.householdId || !right.householdId) return { content: `${labels}的居民档案至少有一人未登记户号，无法依据台账确认两人的家庭关系。我不会按姓名、年龄或常识猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
-    if (left.householdId !== right.householdId) return { content: `${labels}登记在不同户号下，当前居民档案不能确认二人存在直接家庭关系。我不会推测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
+    const relationshipEvidence = (conclusion, summary = []) => this.buildRecordEvidence({
+      title: '居民家庭关系核对',
+      scope: '本机村民一户一档中两位居民的户号与户主关系字段',
+      metricLabel: '档案关系结论',
+      metricValue: conclusion,
+      summary,
+      records: [left, right].map((resident) => this.navigationEvidenceRecord({
+        title: resident.name,
+        meta: [resident.groupName, resident.householdId ? `户号：${resident.householdId}` : '户号未登记'].filter(Boolean).join(' · '),
+        value: resident.relationToHead ? `与户主关系：${resident.relationToHead}` : '与户主关系未登记',
+        target: 'tab-personnel', label: '村民一户一档', source: '居民档案', filters: { query: resident.name },
+      })),
+    });
+    if (!left.householdId || !right.householdId) {
+      const evidence = relationshipEvidence('无法确认', [{ name: '户号核对', value: '至少一人未登记' }]);
+      return { content: `${labels}的居民档案至少有一人未登记户号，无法依据台账确认两人的家庭关系。我不会按姓名、年龄或常识猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
+    }
+    if (left.householdId !== right.householdId) {
+      const evidence = relationshipEvidence('无法确认', [{ name: '户号核对', value: '不同户号' }]);
+      return { content: `${labels}登记在不同户号下，当前居民档案不能确认二人存在直接家庭关系。我不会推测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
+    }
     const shared = `两人登记为同一户（户号：${left.householdId}）`;
+    const sameHouseholdSummary = [{ name: '户号核对', value: '同一户' }];
     const leftHead = /^(?:户主|户主本人)$/u.test(left.relationToHead);
     const rightHead = /^(?:户主|户主本人)$/u.test(right.relationToHead);
-    if (leftHead && right.relationToHead) return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationDescription(right.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
-    if (rightHead && left.relationToHead) return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationDescription(left.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
+    if (leftHead && right.relationToHead) {
+      const relationship = relationDescription(right.relationToHead);
+      const evidence = relationshipEvidence(`${right.name}是${left.name}的${relationship}`, sameHouseholdSummary);
+      return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationship}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
+    }
+    if (rightHead && left.relationToHead) {
+      const relationship = relationDescription(left.relationToHead);
+      const evidence = relationshipEvidence(`${left.name}是${right.name}的${relationship}`, sameHouseholdSummary);
+      return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationship}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
+    }
     const leftGender = relationChildGender(left.relationToHead);
     const rightGender = relationChildGender(right.relationToHead);
     if (leftGender && rightGender) {
       const relationship = leftGender === 'male' && rightGender === 'male' ? '兄弟'
         : leftGender === 'female' && rightGender === 'female' ? '姐妹' : '兄妹或姐弟';
+      const evidence = relationshipEvidence(relationship, sameHouseholdSummary);
       return {
         content: `${shared}。档案标注：${left.name}与户主关系为“${left.relationToHead}”，${right.name}与户主关系为“${right.relationToHead}”。二人均为同一户主的子女，因此可确认二人是${relationship}关系。查询依据：本机村民一户一档。`,
-        provider: 'system', handled: true, data: { left, right, relationship },
+        provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence },
       };
     }
     const leftDetail = left.relationToHead ? `${left.name}与户主关系为“${left.relationToHead}”` : `${left.name}未填写与户主关系`;
     const rightDetail = right.relationToHead ? `${right.name}与户主关系为“${right.relationToHead}”` : `${right.name}未填写与户主关系`;
-    return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
+    const evidence = relationshipEvidence('无法确认', sameHouseholdSummary);
+    return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
   }
 
   answerLandAreaQuestion(database, message) {

@@ -141,6 +141,11 @@ test('answers a same-household relationship from the local resident archive with
   assert.match(result.content, /薛锋.*子/u);
   assert.match(result.content, /薛伯齐.*户主/u);
   assert.match(result.content, /本机村民一户一档/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.metricValue, '薛锋是薛伯齐的子女');
+  assert.equal(result.data.queryEvidence.records.length, 2);
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-personnel');
+  assert.equal(result.data.queryEvidence.records[1].sourceAction.filters.query, '薛锋');
   assert.equal(onlineCalled, false);
 });
 
@@ -156,6 +161,8 @@ test('does not guess a direct relationship when two residents share a household 
   assert.match(result.content, /同一户/u);
   assert.match(result.content, /无法仅依据/u);
   assert.match(result.content, /不会猜测/u);
+  assert.equal(result.data.queryEvidence.metricValue, '无法确认');
+  assert.equal(result.data.queryEvidence.summary[0].value, '同一户');
 });
 
 test('explains that the archive cannot establish a relationship for residents in different households', async () => {
