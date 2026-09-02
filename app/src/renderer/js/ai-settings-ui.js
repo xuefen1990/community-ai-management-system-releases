@@ -411,6 +411,14 @@ if (typeof module !== 'undefined' && module.exports) {
         if (typeof window.filterPersonnel === 'function') window.filterPersonnel();
       }
     }
+    if (query && action.target === 'tab-party') {
+      const input = document.getElementById('searchPartyKeyword');
+      if (input) {
+        input.value = query;
+        window.currentPartySearchKeyword = query;
+        if (typeof window.renderPartyMemberList === 'function') window.renderPartyMemberList();
+      }
+    }
     if (action.evidenceSource && typeof window.ContractFeeWorkspace?.openEvidenceSource === 'function') {
       window.ContractFeeWorkspace.openEvidenceSource(action.evidenceSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
     }
@@ -419,6 +427,18 @@ if (typeof module !== 'undefined' && module.exports) {
     }
     if (action.recordSource?.kind === 'work' && typeof window.WorkManagement?.openWork === 'function') {
       window.WorkManagement.openWork(action.recordSource.id).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
+    }
+    if (action.recordSource?.kind === 'document' && typeof window.DocumentDrafting?.openDocument === 'function') {
+      window.DocumentDrafting.openDocument(action.recordSource.id).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
+    }
+    if (action.recordSource?.kind === 'certificate' && typeof window.showCertHistoryModal === 'function') {
+      window.showCertHistoryModal();
+      window.setTimeout(() => {
+        const input = document.getElementById('certHistoryKeyword');
+        if (!input) return;
+        input.value = String(action.recordSource.query || '');
+        if (typeof window.onCertHistoryFilterChange === 'function') window.onCertHistoryFilterChange();
+      }, 0);
     }
   }
 

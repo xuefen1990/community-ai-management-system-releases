@@ -1375,7 +1375,17 @@ class AiAssistantService {
     if (matched.length > 1) return { content: `系统中有多位同名党员，请确认要查询哪一位：${matched.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
     const member = matched[0];
     const details = [member.stage && `党员阶段：${member.stage}`, member.duty && `党内职务：${member.duty}`].filter(Boolean);
-    return { content: `“${member.name}”已登记在党员档案中。${details.length ? details.join('；') : '党员阶段和党内职务暂未填写。'} 查询范围：党员管理台账。`, provider: 'system', handled: true, data: { member } };
+    const evidence = this.buildRecordEvidence({
+      title: `“${member.name}”党员档案核对`, scope: '党员管理台账中与该姓名和村民小组匹配的党员记录',
+      metricLabel: '党员档案状态', metricValue: member.stage || '阶段未登记',
+      summary: [{ name: '党内职务', value: member.duty || '未登记' }, { name: '村民小组', value: member.groupName || '未登记' }],
+      records: [this.navigationEvidenceRecord({
+        title: member.name, meta: member.groupName || '村民小组未登记', value: member.stage || '党员阶段未登记',
+        target: 'tab-party', label: '党员管理', source: '党员管理台账', filters: { query: member.name },
+      })],
+      emptyMessage: `党员管理台账中未查到“${member.name}”的记录。`,
+    });
+    return { content: `“${member.name}”已登记在党员档案中。${details.length ? details.join('；') : '党员阶段和党内职务暂未填写。'} 查询范围：党员管理台账。`, provider: 'system', handled: true, data: { member, queryEvidence: evidence } };
   }
 
   answerIdentityCardQuestion(database, message) {
@@ -1591,10 +1601,20 @@ class AiAssistantService {
     if (!/(公文|草稿|文档)/u.test(requested) || !/(定稿|已定稿|final)/iu.test(requested)) return null;
     const documents = (database.documentDrafts || []).filter((item) => text(item.status) === 'final' && !item.archivedAt)
       .sort((left, right) => text(right.updatedAt).localeCompare(text(left.updatedAt)));
-    if (!documents.length) return { content: '当前没有未归档的已定稿公文。查询范围：公文拟写台账，已排除归档记录。', provider: 'system', handled: true, data: { documents: [] } };
+    const evidence = this.buildRecordEvidence({
+      title: '已定稿公文核对', scope: '公文拟写台账中状态为“定稿”、且未归档的公文记录',
+      metricLabel: '符合条件的公文', metricValue: `${documents.length} 份`,
+      summary: [{ name: '已排除', value: '归档记录' }],
+      records: documents.map((item) => this.navigationEvidenceRecord({
+        title: text(item.title) || '未命名公文', meta: [text(item.documentKind), text(item.updatedAt) && `更新于 ${text(item.updatedAt).slice(0, 10)}`].filter(Boolean).join(' · '),
+        value: '已定稿', target: 'tab-document-drafting', label: '公文拟写', source: '公文拟写台账', recordSource: { kind: 'document', id: text(item.id) },
+      })),
+      emptyMessage: '当前没有未归档的已定稿公文。',
+    });
+    if (!documents.length) return { content: '当前没有未归档的已定稿公文。查询范围：公文拟写台账，已排除归档记录。', provider: 'system', handled: true, data: { documents: [], queryEvidence: evidence } };
     const list = documents.slice(0, 10).map((item) => `“${text(item.title) || '未命名公文'}”${text(item.documentKind) ? `（${text(item.documentKind)}）` : ''}`).join('；');
     const more = documents.length > 10 ? `；其余 ${documents.length - 10} 份请进入公文拟写查看。` : '。';
-    return { content: `当前有 ${documents.length} 份未归档的已定稿公文：${list}${more} 查询范围：公文拟写台账，已排除归档记录。`, provider: 'system', handled: true, data: { documents } };
+    return { content: `当前有 ${documents.length} 份未归档的已定稿公文：${list}${more} 查询范围：公文拟写台账，已排除归档记录。`, provider: 'system', handled: true, data: { documents, queryEvidence: evidence } };
   }
 
   answerCertificateQuestion(database, message) {
@@ -1602,10 +1622,26 @@ class AiAssistantService {
     if (!/证明/u.test(requested) || /^(?:删除|移除|新增|开具)(?:证明(?:记录)?)[：:]/u.test(requested) || /(打开|进入|跳转|去).{0,14}证明/u.test(requested)) return null;
     if (!/(最近|哪些|哪几|多少|几条|列表|清单|记录|历史)/u.test(requested)) return null;
     const records = [...(database.certificates || [])].sort((left, right) => text(right.issuedAt || right.createdAt || right.date).localeCompare(text(left.issuedAt || left.createdAt || left.date)));
-    if (!records.length) return { content: '当前没有已登记的证明开具记录。查询范围：证明开具历史台账。', provider: 'system', handled: true, data: { records: [] } };
     const personNameQuery = (database.personnel || []).map(personName).filter((name) => name && requested.includes(name)).sort((left, right) => right.length - left.length)[0];
     const matched = personNameQuery ? records.filter((item) => text(item.personName || item.name) === personNameQuery) : records;
-    if (!matched.length) return { content: `证明开具历史中未查到“${personNameQuery}”的记录。查询范围：证明开具历史台账。`, provider: 'system', handled: true, data: { records: [] } };
+    const evidence = this.buildRecordEvidence({
+      title: personNameQuery ? `“${personNameQuery}”证明开具记录核对` : '证明开具记录核对',
+      scope: personNameQuery ? '证明开具历史台账中姓名精确匹配的记录' : '证明开具历史台账中的全部记录',
+      metricLabel: '符合条件的记录', metricValue: `${matched.length} 条`,
+      summary: personNameQuery ? [{ name: '查询对象', value: personNameQuery }] : [],
+      records: matched.map((item) => {
+        const code = certificateCode(item) || '未编号';
+        const recipient = text(item.personName || item.name);
+        const type = text(item.templateName || item.templateTitle || item.type) || '未填写类型';
+        return this.navigationEvidenceRecord({
+          title: code, meta: [recipient, type, text(item.issuedAt || item.createdAt || item.date).slice(0, 10)].filter(Boolean).join(' · '),
+          value: '已开具', target: 'tab-certificate', label: '证明开具', source: '证明开具历史台账', recordSource: { kind: 'certificate', query: code === '未编号' ? recipient : code },
+        });
+      }),
+      emptyMessage: personNameQuery ? `证明开具历史中未查到“${personNameQuery}”的记录。` : '当前没有已登记的证明开具记录。',
+    });
+    if (!records.length) return { content: '当前没有已登记的证明开具记录。查询范围：证明开具历史台账。', provider: 'system', handled: true, data: { records: [], queryEvidence: evidence } };
+    if (!matched.length) return { content: `证明开具历史中未查到“${personNameQuery}”的记录。查询范围：证明开具历史台账。`, provider: 'system', handled: true, data: { records: [], queryEvidence: evidence } };
     const list = matched.slice(0, 10).map((item) => {
       const code = certificateCode(item) || '未编号';
       const type = text(item.templateName || item.templateTitle || item.type) || '未填写类型';
@@ -1615,7 +1651,7 @@ class AiAssistantService {
     }).join('；');
     const subject = personNameQuery ? `“${personNameQuery}”` : '当前';
     const more = matched.length > 10 ? `；其余 ${matched.length - 10} 条请进入证明开具查看。` : '。';
-    return { content: `${subject}共有 ${matched.length} 条证明开具记录：${list}${more} 查询范围：证明开具历史台账。`, provider: 'system', handled: true, data: { records: matched, personName: personNameQuery || '' } };
+    return { content: `${subject}共有 ${matched.length} 条证明开具记录：${list}${more} 查询范围：证明开具历史台账。`, provider: 'system', handled: true, data: { records: matched, personName: personNameQuery || '', queryEvidence: evidence } };
   }
 
   answerFinanceSummaryQuestion(database, message) {

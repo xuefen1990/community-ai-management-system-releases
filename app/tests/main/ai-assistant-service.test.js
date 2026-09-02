@@ -907,6 +907,9 @@ test('answers a specific party member query from the party ledger', async () => 
   assert.match(result.content, /已登记在党员档案中/u);
   assert.match(result.content, /正式党员/u);
   assert.match(result.content, /支部委员/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-party');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.filters.query, '张三');
 });
 
 test('updates and manually restores a uniquely identified party member stage', async () => {
@@ -982,6 +985,8 @@ test('answers a final document question while excluding archived drafts', async 
   assert.match(result.content, /环境整治工作报告/u);
   assert.doesNotMatch(result.content, /旧请示/u);
   assert.match(result.content, /公文拟写台账/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.deepEqual(result.data.queryEvidence.records[0].sourceAction.recordSource, { kind: 'document', id: 'doc-1' });
 });
 
 test('answers a certificate history question directly from the certificate ledger', async () => {
@@ -998,6 +1003,8 @@ test('answers a certificate history question directly from the certificate ledge
   assert.match(result.content, /居住证明/u);
   assert.doesNotMatch(result.content, /CERT-002/u);
   assert.match(result.content, /证明开具历史台账/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.deepEqual(result.data.queryEvidence.records[0].sourceAction.recordSource, { kind: 'certificate', query: 'CERT-001' });
 });
 
 test('archives and manually restores a specified draft only after confirmation', async () => {
