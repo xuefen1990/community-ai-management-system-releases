@@ -36,6 +36,10 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /已等待 \$\{seconds\} 秒/u);
   assert.match(source, /converseWithAiAssistant\(\[\{ role: 'user', content \}\]\)/u);
   assert.match(source, /const button = event\.currentTarget/u);
+  assert.match(source, /configureSafeDrawerToggle/u);
+  assert.match(source, /removeAttribute\('onclick'\)/u);
+  assert.match(source, /stopPropagation/u);
+  assert.match(source, /toggleDesktopAiDrawer = toggleDrawer/u);
   assert.doesNotMatch(source, /finally\s*\{\s*event\.currentTarget/u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
 });

@@ -304,6 +304,7 @@ if (typeof module !== 'undefined' && module.exports) {
     const toggle = document.getElementById('aiCopilotToggleBtn');
     const drawer = document.getElementById('aiCopilotDrawer');
     if (!toggle || !drawer) return;
+    configureSafeDrawerToggle(toggle, drawer);
     const toggleText = toggle.querySelector('.ai-btn-text');
     if (toggleText) toggleText.textContent = 'AI 助理';
     toggle.title = '快捷唤起 AI 助理 (Ctrl+K)';
@@ -339,6 +340,48 @@ if (typeof module !== 'undefined' && module.exports) {
       }));
     }
     installDrawerDrag(drawer);
+  }
+
+  function configureSafeDrawerToggle(toggle, drawer) {
+    const closeButton = drawer.querySelector('.btn-close-ai');
+    const resetDrawerPosition = () => {
+      drawer.style.left = ''; drawer.style.top = ''; drawer.style.right = ''; drawer.style.bottom = '';
+      drawer.classList.remove('ai-assistant-dragging', 'ai-assistant-dragged');
+    };
+    const closeDrawer = (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      resetDrawerPosition();
+      drawer.classList.add('hidden');
+      drawer.setAttribute('aria-hidden', 'true');
+      toggle.setAttribute('aria-expanded', 'false');
+    };
+    const openDrawer = (event) => {
+      event?.preventDefault?.();
+      event?.stopPropagation?.();
+      drawer.classList.remove('hidden');
+      drawer.setAttribute('aria-hidden', 'false');
+      toggle.setAttribute('aria-expanded', 'true');
+    };
+    const toggleDrawer = (event) => {
+      if (drawer.classList.contains('hidden')) openDrawer(event);
+      else closeDrawer(event);
+    };
+
+    // The legacy page used an inline handler whose click event could be mistaken for chat text.
+    // Replace both entry points with one isolated handler so closing never sends a message.
+    window.toggleDesktopAiDrawer = toggleDrawer;
+    toggle.removeAttribute('onclick');
+    closeButton?.removeAttribute('onclick');
+    if (drawer.dataset.safeToggleReady === 'true') return;
+    drawer.dataset.safeToggleReady = 'true';
+    toggle.addEventListener('click', openDrawer);
+    closeButton?.addEventListener('click', closeDrawer);
+    document.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || drawer.classList.contains('hidden')) return;
+      event.stopImmediatePropagation();
+      closeDrawer(event);
+    }, true);
   }
 
   function switchToAssistantOperations() {

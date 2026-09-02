@@ -97,6 +97,53 @@ test('answers a unique resident identity-card request from the local archive wit
   assert.equal(onlineCalled, false);
 });
 
+test('answers a same-household relationship from the local resident archive without calling online AI', async () => {
+  let onlineCalled = false;
+  const assistant = service({
+    personnel: [
+      { id: 'head', name: '薛伯齐', village_group: '西六组', household_id: '209095940', relation_to_head: '户主' },
+      { id: 'member', name: '薛锋', village_group: '西六组', household_id: '209095940', relation_to_head: '子' },
+    ],
+  }, {
+    aiRouter: { chat: async () => { onlineCalled = true; return { content: '不应调用', provider: 'online' }; } },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '居民档案里面薛锋与薛伯齐是什么关系？' }] });
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /同一户/u);
+  assert.match(result.content, /薛锋.*子/u);
+  assert.match(result.content, /薛伯齐.*户主/u);
+  assert.match(result.content, /本机村民一户一档/u);
+  assert.equal(onlineCalled, false);
+});
+
+test('does not guess a direct relationship when two residents share a household but neither is the head', async () => {
+  const assistant = service({
+    personnel: [
+      { id: 'a', name: '张三', household_id: '001', relation_to_head: '子' },
+      { id: 'b', name: '李四', household_id: '001', relation_to_head: '孙' },
+    ],
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '张三和李四是什么关系？' }] });
+  assert.match(result.content, /同一户/u);
+  assert.match(result.content, /无法仅依据/u);
+  assert.match(result.content, /不会猜测/u);
+});
+
+test('explains that the archive cannot establish a relationship for residents in different households', async () => {
+  const assistant = service({
+    personnel: [
+      { id: 'a', name: '张三', household_id: '001', relation_to_head: '户主' },
+      { id: 'b', name: '李四', household_id: '002', relation_to_head: '户主' },
+    ],
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '张三跟李四什么关系？' }] });
+  assert.match(result.content, /不同户号/u);
+  assert.match(result.content, /不能确认/u);
+});
+
 test('requires a group for duplicate names and does not guess or send an identity-card request online', async () => {
   let onlineCalled = false;
   const assistant = service({

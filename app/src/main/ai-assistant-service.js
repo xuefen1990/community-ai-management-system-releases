@@ -55,6 +55,21 @@ function personIdentityCard(person) {
   return text(person?.id_card || person?.idCard || person?.identity_card || person?.identityCard);
 }
 
+function personHouseholdId(person) {
+  return text(person?.household_id || person?.householdId || person?.household_no || person?.householdNo || person?.household_number || person?.householdNumber);
+}
+
+function personRelationToHead(person) {
+  return text(person?.relation_to_head || person?.relationToHead || person?.household_relation || person?.householdRelation || person?.relationship_to_head || person?.relationshipToHead || person?.relation);
+}
+
+function relationDescription(relation) {
+  const value = text(relation);
+  if (/^(?:子|女|儿子|女儿|子女)$/u.test(value)) return '子女';
+  if (/^(?:配偶|妻子|丈夫|夫|妻)$/u.test(value)) return '配偶';
+  return value;
+}
+
 function onlineAnalysisRequested(message) {
   return /(?:在线|联网).{0,8}(?:AI|人工智能).{0,12}(?:分析|判断|研判)|(?:用|请用|交给).{0,8}(?:在线|联网).{0,8}(?:AI|人工智能)|(?:在线|联网)(?:分析|研判)/u.test(text(message));
 }
@@ -1161,6 +1176,56 @@ class AiAssistantService {
     return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard } };
   }
 
+  answerResidentRelationshipQuestion(database, message) {
+    const requested = text(message);
+    if (!/(?:什么|有何|是否|是不是|能否确认).{0,8}(?:关系|关联)|(?:关系|关联|同户|同一户|亲属|家庭成员|户主关系)/u.test(requested)) return null;
+    const residents = (database.personnel || []).map((person) => ({
+      person, id: personId(person), name: personName(person), groupName: personGroup(person),
+      householdId: personHouseholdId(person), relationToHead: personRelationToHead(person),
+    })).filter((item) => item.name);
+    const names = [...new Set(residents.filter((item) => requested.includes(item.name)).map((item) => item.name))]
+      .sort((left, right) => right.length - left.length);
+    if (!names.length) return { content: '请同时说明要核对的居民姓名，例如“薛锋和薛伯齐是什么关系？”。我会只按本机村民档案中的户号和户主关系核对，不会猜测。', provider: 'system', handled: true, needsConfirmation: true };
+
+    const resolveNamedResident = (name) => {
+      const candidates = residents.filter((item) => item.name === name);
+      const grouped = candidates.filter((item) => item.groupName && requested.includes(item.groupName));
+      const matched = grouped.length === 1 ? grouped : candidates;
+      return matched.length === 1 ? { kind: 'resident', resident: matched[0] } : { kind: 'ambiguous', candidates: matched };
+    };
+
+    if (names.length === 1) {
+      const result = resolveNamedResident(names[0]);
+      if (result.kind === 'ambiguous') return { content: `系统中有多位“${names[0]}”，请补充村民组后再查询户主关系：${result.candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
+      const resident = result.resident;
+      if (!/(户主关系|与户主|家庭成员|同户)/u.test(requested)) return { content: `请再说明另一位居民姓名，例如“${resident.name}和李四是什么关系？”。我会根据本机户号和与户主关系核对，不会推测。`, provider: 'system', handled: true, needsConfirmation: true };
+      if (!resident.relationToHead) return { content: `“${resident.name}”的村民档案尚未登记“与户主关系”，暂时无法核实家庭关系。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { resident } };
+      return { content: `“${resident.name}”${resident.groupName ? `（${resident.groupName}）` : ''}在居民档案中的与户主关系为“${resident.relationToHead}”。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { resident } };
+    }
+
+    const [firstName, secondName] = names.slice(0, 2);
+    const first = resolveNamedResident(firstName);
+    const second = resolveNamedResident(secondName);
+    const ambiguous = [first, second].find((item) => item.kind === 'ambiguous');
+    if (ambiguous) {
+      const candidateNames = ambiguous.candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、');
+      return { content: `关系查询中存在同名居民，请补充村民组后再核对：${candidateNames}。我不会自行选择同名人员。`, provider: 'system', handled: true, needsConfirmation: true };
+    }
+    const left = first.resident;
+    const right = second.resident;
+    const labels = `“${left.name}”${left.groupName ? `（${left.groupName}）` : ''}、“${right.name}”${right.groupName ? `（${right.groupName}）` : ''}`;
+    if (!left.householdId || !right.householdId) return { content: `${labels}的居民档案至少有一人未登记户号，无法依据台账确认两人的家庭关系。我不会按姓名、年龄或常识猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
+    if (left.householdId !== right.householdId) return { content: `${labels}登记在不同户号下，当前居民档案不能确认二人存在直接家庭关系。我不会推测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
+    const shared = `两人登记为同一户（户号：${left.householdId}）`;
+    const leftHead = /^(?:户主|户主本人)$/u.test(left.relationToHead);
+    const rightHead = /^(?:户主|户主本人)$/u.test(right.relationToHead);
+    if (leftHead && right.relationToHead) return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationDescription(right.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
+    if (rightHead && left.relationToHead) return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationDescription(left.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
+    const leftDetail = left.relationToHead ? `${left.name}与户主关系为“${left.relationToHead}”` : `${left.name}未填写与户主关系`;
+    const rightDetail = right.relationToHead ? `${right.name}与户主关系为“${right.relationToHead}”` : `${right.name}未填写与户主关系`;
+    return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
+  }
+
   answerLandAreaQuestion(database, message) {
     const requested = text(message);
     if (/^(?:新建|新增|登记)(?:一块)?(?:地块|土地|确权记录)[：:]/u.test(requested)) return null;
@@ -2027,6 +2092,8 @@ class AiAssistantService {
     if (partyAnswer) return partyAnswer;
     const identityCardAnswer = this.answerIdentityCardQuestion(database, userMessage.content);
     if (identityCardAnswer) return identityCardAnswer;
+    const relationshipAnswer = this.answerResidentRelationshipQuestion(database, userMessage.content);
+    if (relationshipAnswer) return relationshipAnswer;
     const landAreaAnswer = this.answerLandAreaQuestion(database, userMessage.content);
     if (landAreaAnswer) return landAreaAnswer;
     const landContractorAnswer = this.answerLandContractorQuestion(database, userMessage.content);
