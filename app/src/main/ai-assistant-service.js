@@ -51,6 +51,33 @@ function personGroup(person) {
   return text(person?.village_group || person?.villageGroup || person?.group || person?.group_name);
 }
 
+function personIdentityCard(person) {
+  return text(person?.id_card || person?.idCard || person?.identity_card || person?.identityCard);
+}
+
+function onlineAnalysisRequested(message) {
+  return /(?:在线|联网).{0,8}(?:AI|人工智能).{0,12}(?:分析|判断|研判)|(?:用|请用|交给).{0,8}(?:在线|联网).{0,8}(?:AI|人工智能)|(?:在线|联网)(?:分析|研判)/u.test(text(message));
+}
+
+function sensitiveContentLabels(message) {
+  const value = text(message);
+  const labels = [];
+  if (/\b\d{17}[\dXx]\b/u.test(value) || /(身份证|证件号|身份号码)/u.test(value)) labels.push('身份证信息');
+  if (/\b1\d{10}\b/u.test(value) || /手机号/u.test(value)) labels.push('手机号码');
+  if (/\b\d{12,19}\b/u.test(value) || /(银行卡|卡号|银行账户)/u.test(value)) labels.push('银行卡或账户信息');
+  if (/(?:姓名|住址|地址)[：:]/u.test(value)) labels.push('个人身份或住址信息');
+  return labels;
+}
+
+function redactOnlineAnalysisText(message) {
+  return text(message)
+    .replace(/\b\d{17}[\dXx]\b/gu, '[身份证号已脱敏]')
+    .replace(/\b1\d{10}\b/gu, '[手机号已脱敏]')
+    .replace(/\b\d{12,19}\b/gu, '[银行卡号已脱敏]')
+    .replace(/(姓名[：:]\s*)[\u4e00-\u9fff]{2,6}/gu, '$1[姓名已脱敏]')
+    .replace(/((?:住址|地址)[：:]\s*)[^；;，,。\n]+/gu, '$1[住址已脱敏]');
+}
+
 function certificateCode(certificate) {
   return text(certificate?.recordCode || certificate?.code || certificate?.certificateCode);
 }
@@ -151,6 +178,44 @@ class AiAssistantService {
     this.authService = authService;
     this.now = now;
     this.pendingAction = null;
+    this.pendingOnlineAnalysis = null;
+  }
+
+  prepareOnlineAnalysis(message) {
+    const requested = text(message);
+    const sensitiveLabels = sensitiveContentLabels(requested);
+    const sendOriginal = /(原始|不脱敏|完整).{0,8}(?:内容|数据|信息)?/u.test(requested);
+    const payload = sendOriginal ? requested : redactOnlineAnalysisText(requested);
+    this.pendingOnlineAnalysis = { payload, sensitiveLabels, sendOriginal };
+    const protection = sensitiveLabels.length
+      ? (sendOriginal ? `已识别到：${sensitiveLabels.join('、')}；将按您的要求发送原始内容。` : `已识别到：${sensitiveLabels.join('、')}；将发送脱敏摘要。`)
+      : '本次只会发送您刚才这一条内容。';
+    return {
+      content: `在线分析发送前确认：${protection}不会自动导出居民档案、资金台账或此前聊天记录。\n\n发送内容预览：\n${payload}\n\n回复“确认发送”后才会交给在线 AI；回复“取消”则不会发送。`,
+      provider: 'system', handled: true, needsConfirmation: true,
+      action: { type: 'online-analysis-confirmation', mode: sendOriginal ? 'original' : 'redacted', sensitiveLabels },
+    };
+  }
+
+  async confirmOnlineAnalysis(message) {
+    const requested = text(message);
+    const pending = this.pendingOnlineAnalysis;
+    if (!pending) return null;
+    if (/(取消|算了|不发送|不用了)/u.test(requested)) {
+      this.pendingOnlineAnalysis = null;
+      return { content: '已取消，本次不会向在线 AI 发送任何内容。', provider: 'system', handled: true };
+    }
+    if (!/(确认发送|确认|发送)/u.test(requested)) {
+      return { content: '请回复“确认发送”以继续，或回复“取消”。在您确认前，内容不会发送给在线 AI。', provider: 'system', handled: true, needsConfirmation: true };
+    }
+    this.pendingOnlineAnalysis = null;
+    if (typeof this.aiRouter?.onlineChat !== 'function') {
+      return { content: '在线 AI 尚未配置或当前不可用，因此本次内容没有发送。请先在系统设置中配置在线 AI。', provider: 'system', handled: true };
+    }
+    return this.aiRouter.onlineChat([
+      { role: 'system', content: '你是社区AI管理系统的在线分析助手。仅根据本次经管理员确认发送的文本进行分析；不得声称查询过系统数据库，不得索取或推测未提供的个人信息。' },
+      { role: 'user', content: pending.payload },
+    ]);
   }
 
   async memberDisableProposal(message) {
@@ -1077,6 +1142,25 @@ class AiAssistantService {
     return { content: `“${member.name}”已登记在党员档案中。${details.length ? details.join('；') : '党员阶段和党内职务暂未填写。'} 查询范围：党员管理台账。`, provider: 'system', handled: true, data: { member } };
   }
 
+  answerIdentityCardQuestion(database, message) {
+    const requested = text(message);
+    if (!/(身份证(?:号码|号)?|证件号码|身份号码|居民身份证)/u.test(requested)) return null;
+    const resolved = this.resolveRecipient(database, requested);
+    if (resolved.kind === 'ambiguous') {
+      const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
+      return { content: `系统中有多位同名居民，请补充村民小组后再查询身份证号码：${choices}。我不会自行猜测。`, provider: 'system', handled: true, needsConfirmation: true };
+    }
+    if (resolved.kind !== 'resident') {
+      return { content: '请提供要查询的居民姓名；如有同名人员，请同时说明村民小组。我会仅在本机村民档案中核对，不会交给在线 AI。', provider: 'system', handled: true, needsConfirmation: true };
+    }
+    const person = (database.personnel || []).find((item) => personId(item) === resolved.recipient.id)
+      || (database.personnel || []).find((item) => personName(item) === resolved.recipient.name && personGroup(item) === resolved.recipient.groupName);
+    const identityCard = personIdentityCard(person);
+    const personLabel = `“${resolved.recipient.name}”${resolved.recipient.groupName ? `（${resolved.recipient.groupName}）` : ''}`;
+    if (!identityCard) return { content: `${personLabel}的村民档案尚未登记身份证号码。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard: '' } };
+    return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard } };
+  }
+
   answerLandAreaQuestion(database, message) {
     const requested = text(message);
     if (/^(?:新建|新增|登记)(?:一块)?(?:地块|土地|确权记录)[：:]/u.test(requested)) return null;
@@ -1925,7 +2009,9 @@ class AiAssistantService {
   async converse({ messages } = {}) {
     const userMessage = lastUserMessage(messages);
     if (!userMessage) throw new Error('请先输入需要办理或查询的事项');
+    if (this.pendingOnlineAnalysis) return this.confirmOnlineAnalysis(userMessage.content);
     if (this.pendingAction) return this.confirmPendingAction(userMessage.content);
+    if (onlineAnalysisRequested(userMessage.content)) return this.prepareOnlineAnalysis(userMessage.content);
     const direct = await this.answerDirectQuestion(userMessage.content);
     if (direct) return direct;
     const database = await this.databaseStore.read();
@@ -1939,6 +2025,8 @@ class AiAssistantService {
     if (contractReceipt) return typeof contractReceipt === 'string' ? { content: contractReceipt, provider: 'system', handled: true } : contractReceipt;
     const partyAnswer = this.answerPartyMemberQuestion(database, userMessage.content);
     if (partyAnswer) return partyAnswer;
+    const identityCardAnswer = this.answerIdentityCardQuestion(database, userMessage.content);
+    if (identityCardAnswer) return identityCardAnswer;
     const landAreaAnswer = this.answerLandAreaQuestion(database, userMessage.content);
     if (landAreaAnswer) return landAreaAnswer;
     const landContractorAnswer = this.answerLandContractorQuestion(database, userMessage.content);
@@ -2012,11 +2100,18 @@ class AiAssistantService {
         needsConfirmation: true,
       };
     }
+    const sensitiveLabels = sensitiveContentLabels(userMessage.content);
+    if (sensitiveLabels.length) {
+      return {
+        content: `检测到本条内容包含${sensitiveLabels.join('、')}。为避免自动外发，请明确说明“请用在线 AI 分析……”，我会先展示发送预览，得到您的单次确认后才会发送。`,
+        provider: 'system', handled: true, needsConfirmation: true,
+      };
+    }
     if (!this.aiRouter?.chat) return { content: 'AI 对话服务暂不可用，请稍后重试。', provider: 'system', handled: true };
     return this.aiRouter.chat({
       messages: [
         { role: 'system', content: '你是社区AI管理系统的 AI 助理。不得编造、猜测或声称已查询系统数据；对任何不清楚的系统操作或数据请求，必须先请操作员补充对象、范围或年度。' },
-        ...(Array.isArray(messages) ? messages : []).slice(-12),
+        { role: 'user', content: userMessage.content },
       ],
     });
   }

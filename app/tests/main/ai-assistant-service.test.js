@@ -80,6 +80,63 @@ test('answers an annual payment question from paid general and contract batches 
   assert.match(result.content, /地力补贴台账目前没有/u);
 });
 
+test('answers a unique resident identity-card request from the local archive without calling online AI', async () => {
+  let onlineCalled = false;
+  const assistant = service({
+    personnel: [{ id: 'person-xue', name: '薛锋', village_group: '三组', id_card: '321302199009011634' }],
+  }, {
+    aiRouter: {
+      chat: async () => { onlineCalled = true; return { content: '不应调用', provider: 'online' }; },
+    },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '帮我查找一下薛锋的身份证号' }] });
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /321302199009011634/u);
+  assert.match(result.content, /本机村民一户一档/u);
+  assert.equal(onlineCalled, false);
+});
+
+test('requires a group for duplicate names and does not guess or send an identity-card request online', async () => {
+  let onlineCalled = false;
+  const assistant = service({
+    personnel: [
+      { id: 'person-1', name: '张三', village_group: '一组', id_card: '110101199001011234' },
+      { id: 'person-2', name: '张三', village_group: '二组', id_card: '110101199002021234' },
+    ],
+  }, {
+    aiRouter: { chat: async () => { onlineCalled = true; return { content: '不应调用', provider: 'online' }; } },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '张三的身份证号码是多少？' }] });
+  assert.equal(result.needsConfirmation, true);
+  assert.match(result.content, /一组/u);
+  assert.match(result.content, /二组/u);
+  assert.doesNotMatch(result.content, /1101011990/u);
+  assert.equal(onlineCalled, false);
+});
+
+test('requires a preview and single confirmation before sensitive text is sent to online AI', async () => {
+  let onlineMessages = null;
+  const assistant = service({}, {
+    aiRouter: {
+      onlineChat: async (messages) => { onlineMessages = messages; return { content: '已完成分析', provider: 'online' }; },
+    },
+  });
+
+  const preview = await assistant.converse({ messages: [{ role: 'user', content: '请用在线AI分析身份证号 321302199009011634 是否符合格式' }] });
+  assert.equal(preview.provider, 'system');
+  assert.match(preview.content, /发送前确认/u);
+  assert.match(preview.content, /身份证号已脱敏/u);
+  assert.doesNotMatch(preview.content, /321302199009011634/u);
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '确认发送' }] });
+  assert.equal(result.provider, 'online');
+  assert.equal(onlineMessages.length, 2);
+  assert.match(onlineMessages[1].content, /身份证号已脱敏/u);
+  assert.doesNotMatch(onlineMessages[1].content, /321302199009011634/u);
+});
+
 test('answers group, category, and highest-group annual payment questions with a paid-only scope', async () => {
   const assistant = service({
     personnel: [
