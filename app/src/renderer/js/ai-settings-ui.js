@@ -350,6 +350,7 @@ if (typeof module !== 'undefined' && module.exports) {
     };
     const closeDrawer = (event) => {
       event?.preventDefault?.();
+      event?.stopImmediatePropagation?.();
       event?.stopPropagation?.();
       resetDrawerPosition();
       drawer.classList.add('hidden');
@@ -376,7 +377,7 @@ if (typeof module !== 'undefined' && module.exports) {
     if (drawer.dataset.safeToggleReady === 'true') return;
     drawer.dataset.safeToggleReady = 'true';
     toggle.addEventListener('click', openDrawer);
-    closeButton?.addEventListener('click', closeDrawer);
+    closeButton?.addEventListener('click', closeDrawer, true);
     document.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape' || drawer.classList.contains('hidden')) return;
       event.stopImmediatePropagation();
