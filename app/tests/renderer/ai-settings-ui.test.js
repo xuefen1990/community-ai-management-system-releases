@@ -42,6 +42,7 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /stopImmediatePropagation/u);
   assert.match(source, /addEventListener\('click', closeDrawer, true\)/u);
   assert.match(source, /toggleDesktopAiDrawer = toggleDrawer/u);
+  assert.doesNotMatch(source, /new MutationObserver\(\(\) => \{ if \(drawer\.classList\.contains\('hidden'\)\) resetPosition\(\); \}\)/u);
   assert.doesNotMatch(source, /finally\s*\{\s*event\.currentTarget/u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
 });

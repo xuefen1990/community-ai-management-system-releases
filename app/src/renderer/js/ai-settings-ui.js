@@ -554,8 +554,10 @@ if (typeof module !== 'undefined' && module.exports) {
     const finish = () => { drag = null; drawer.classList.remove('ai-assistant-dragging'); };
     header.addEventListener('pointerup', finish);
     header.addEventListener('pointercancel', finish);
-    new MutationObserver(() => { if (drawer.classList.contains('hidden')) resetPosition(); })
-      .observe(drawer, { attributes: true, attributeFilter: ['class'] });
+    // Closing is handled by configureSafeDrawerToggle, which resets the position
+    // before hiding the drawer. Do not observe class changes here: resetting a
+    // class from a class observer can schedule another observer callback and
+    // leave the renderer busy after the close button is pressed.
   }
 
   async function initialize() {
