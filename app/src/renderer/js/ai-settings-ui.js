@@ -389,8 +389,26 @@ if (typeof module !== 'undefined' && module.exports) {
     if (menuItem) {
       document.querySelectorAll('.sidebar-menu .menu-item').forEach((item) => item.classList.toggle('active', item === menuItem));
     }
+    const query = String(action.filters?.query || '').trim();
+    if (query && action.target === 'tab-finance') {
+      const input = document.getElementById('searchFinanceRecord');
+      if (input) {
+        input.value = query;
+        if (typeof window.filterFinanceRecords === 'function') window.filterFinanceRecords();
+      }
+    }
+    if (query && action.target === 'tab-land') {
+      const input = document.getElementById('searchLand');
+      if (input) {
+        input.value = query;
+        if (typeof window.filterLand === 'function') window.filterLand();
+      }
+    }
     if (action.evidenceSource && typeof window.ContractFeeWorkspace?.openEvidenceSource === 'function') {
       window.ContractFeeWorkspace.openEvidenceSource(action.evidenceSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
+    }
+    if (action.recordSource && typeof window.ContractFeeWorkspace?.openRecordSource === 'function') {
+      window.ContractFeeWorkspace.openRecordSource(action.recordSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
     }
   }
 

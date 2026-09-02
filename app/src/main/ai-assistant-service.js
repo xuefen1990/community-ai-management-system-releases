@@ -711,12 +711,12 @@ class AiAssistantService {
     };
   }
 
-  navigationEvidenceRecord({ title, meta = '', value = '', target, label, source = '' }) {
+  navigationEvidenceRecord({ title, meta = '', value = '', target, label, source = '', filters = null, recordSource = null }) {
     return {
       title,
       meta,
       value,
-      sourceAction: { type: 'navigate', target, label, source },
+      sourceAction: { type: 'navigate', target, label, source, filters, recordSource },
     };
   }
 
@@ -1317,7 +1317,7 @@ class AiAssistantService {
     const evidenceRecords = contracts.map((item) => this.navigationEvidenceRecord({
       title: text(item.name) || '未命名合同',
       meta: [text(item.contractNumber), `结束日期 ${text(item.endDate) || '未填写'}`].filter(Boolean).join(' · '),
-      value: text(item.endDate) || '未填写', target: 'tab-contract-fees', label: '资金发放中心', source: '合同发放台账',
+      value: text(item.endDate) || '未填写', target: 'tab-contract-fees', label: '资金发放中心', source: '合同发放台账', recordSource: { kind: 'contract', id: item.id },
     }));
     const evidence = this.buildRecordEvidence({
       title: `${scope}合同核对`, scope: '资源合同台账中的合同结束日期', metricLabel: '符合条件的合同', metricValue: `${contracts.length} 份`, records: evidenceRecords,
@@ -1347,7 +1347,7 @@ class AiAssistantService {
     const evidence = this.buildRecordEvidence({
       title: `${contractName}到账核对`, scope: '资金发放中心的承包人缴费到账台账', metricLabel: '已登记到账', metricValue: receipt ? formatMoney(receipt.amountCents) : '暂无记录',
       summary: [{ name: '合同应缴金额', value: formatMoney(contract.amountCents) }],
-      records: receipt ? [this.navigationEvidenceRecord({ title: text(contract.name) || '未命名合同', meta: `到账日期 ${text(receipt.receivedDate) || '未填写'}`, value: formatMoney(receipt.amountCents), target: 'tab-contract-fees', label: '资金发放中心', source: '承包人缴费到账台账' })] : [],
+      records: receipt ? [this.navigationEvidenceRecord({ title: text(contract.name) || '未命名合同', meta: `到账日期 ${text(receipt.receivedDate) || '未填写'}`, value: formatMoney(receipt.amountCents), target: 'tab-contract-fees', label: '资金发放中心', source: '承包人缴费到账台账', recordSource: { kind: 'contract', id: contract.id } })] : [],
       emptyMessage: '尚未登记承包人缴费到账记录；这不等同于认定对方未缴。',
     });
     if (!receipt) return { content: `${contractName}尚未登记承包人缴费到账记录。查询范围：资金发放中心的承包人缴费到账台账；这不等同于认定对方未缴。`, provider: 'system', handled: true, data: { contract, receipt: null, queryEvidence: evidence } };
@@ -1475,7 +1475,7 @@ class AiAssistantService {
       summary: [{ name: '已登记地块', value: `${parcels.length} 块` }],
       records: parcels.map((parcel) => this.navigationEvidenceRecord({
         title: text(parcel.parcel_name || parcel.land_name || parcel.name || parcel.parcel_code || parcel.code || parcel.id) || '未命名地块',
-        meta: text(parcel.parcel_code || parcel.code), value: `${areaOf(parcel).toFixed(2)} 亩`, target: 'tab-land', label: '土地承包确权', source: '土地确权台账',
+        meta: text(parcel.parcel_code || parcel.code), value: `${areaOf(parcel).toFixed(2)} 亩`, target: 'tab-land', label: '土地承包确权', source: '土地确权台账', filters: { query: text(parcel.parcel_name || parcel.land_name || parcel.name || parcel.parcel_code || parcel.code || parcel.id) },
       })),
       emptyMessage: '土地确权台账中暂未登记地块，因此无法统计总面积。',
     });
@@ -1510,7 +1510,7 @@ class AiAssistantService {
       summary: [{ name: '关联地块', value: `${matches.length} 块` }],
       records: matches.map((parcel) => this.navigationEvidenceRecord({
         title: text(parcel.parcel_name || parcel.land_name || parcel.name || parcel.parcel_code || parcel.code || parcel.id) || '未命名地块',
-        meta: text(parcel.parcel_code || parcel.code), value: `${areaOf(parcel).toFixed(2)} 亩`, target: 'tab-land', label: '土地承包确权', source: '土地确权台账',
+        meta: text(parcel.parcel_code || parcel.code), value: `${areaOf(parcel).toFixed(2)} 亩`, target: 'tab-land', label: '土地承包确权', source: '土地确权台账', filters: { query: text(parcel.parcel_name || parcel.land_name || parcel.name || parcel.parcel_code || parcel.code || parcel.id) },
       })),
       emptyMessage: `土地确权台账中未查到关联“${resolved.recipient.name}”的地块。`,
     });
@@ -1582,11 +1582,14 @@ class AiAssistantService {
     const incomeCount = records.filter((record) => text(record.type) === 'income').length;
     const expenseCount = records.filter((record) => text(record.type) === 'expense').length;
     const scope = '财务收支台账中日期属于该自然年度、类型明确为“收入”或“支出”的记录';
-    const financeEvidenceRecords = (items) => items.map((record) => this.navigationEvidenceRecord({
-      title: text(record.summary || record.title || record.category || record.categoryName) || '未填写摘要',
-      meta: [text(record.type) === 'income' ? '收入' : text(record.type) === 'expense' ? '支出' : '未标注类型', text(record.category || record.categoryName), text(financeRecordDate(record))].filter(Boolean).join(' · '),
-      value: formatMoney(financeAmountCents(record)), target: 'tab-finance', label: '财务收支', source: '财务收支台账',
-    }));
+    const financeEvidenceRecords = (items) => items.map((record) => {
+      const financeQuery = text(record.summary || record.title || record.category || record.categoryName) || '未填写摘要';
+      return this.navigationEvidenceRecord({
+        title: financeQuery,
+        meta: [text(record.type) === 'income' ? '收入' : text(record.type) === 'expense' ? '支出' : '未标注类型', text(record.category || record.categoryName), text(financeRecordDate(record))].filter(Boolean).join(' · '),
+        value: formatMoney(financeAmountCents(record)), target: 'tab-finance', label: '财务收支', source: '财务收支台账', filters: { query: financeQuery },
+      });
+    });
     if (wantsCategoryBreakdown) {
       const filtered = records.filter((record) => {
         const type = text(record.type);

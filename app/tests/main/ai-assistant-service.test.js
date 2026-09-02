@@ -578,6 +578,7 @@ test('answers a scoped contract expiry question from contract end dates', async 
   assert.equal(result.data.queryEvidence.kind, 'record-evidence');
   assert.equal(result.data.queryEvidence.metricValue, '1 份');
   assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-contract-fees');
+  assert.deepEqual(result.data.queryEvidence.records[0].sourceAction.recordSource, { kind: 'contract', id: 'contract-1' });
 });
 
 test('asks for a contract expiry scope rather than assuming one', async () => {
@@ -834,6 +835,7 @@ test('answers a yearly finance summary using only explicit income and expense re
   assert.equal(result.data.queryEvidence.kind, 'record-evidence');
   assert.equal(result.data.queryEvidence.metricValue, '¥900.25');
   assert.equal(result.data.queryEvidence.records.length, 2);
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.filters.query, '未填写摘要');
 });
 
 test('answers a yearly finance category breakdown from explicit income records only', async () => {
@@ -925,6 +927,7 @@ test('answers a land area question from the authoritative land parcel ledger', a
   assert.match(result.content, /土地承包确权台账/u);
   assert.equal(result.data.queryEvidence.metricValue, '19.75 亩');
   assert.equal(result.data.queryEvidence.records.length, 2);
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.filters.query, 'land-1');
 });
 
 test('answers a resident land query through explicitly linked contractor identifiers', async () => {

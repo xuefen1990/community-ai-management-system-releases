@@ -4,7 +4,7 @@
   const model = root.ContractFeeModel;
   const api = root.api;
   const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches', 'disbursementProfiles', 'farmlandSubsidyLedgers'];
-  const state = { database: null, view: 'overview', modal: null, importDraft: null, subsidySelections: {} };
+  const state = { database: null, view: 'overview', modal: null, importDraft: null, subsidySelections: {}, evidenceContractId: '' };
 
   const text = (value) => String(value ?? '').trim();
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/gu, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
@@ -60,6 +60,16 @@
       return;
     }
     throw new Error('暂不支持打开这类原始台账');
+  }
+
+  async function openRecordSource(source = {}) {
+    if (source.kind !== 'contract') throw new Error('暂不支持打开这类原始台账');
+    await loadDatabase();
+    const contract = findById('resourceContracts', text(source.id));
+    if (!contract) throw new Error('对应合同已不存在，无法定位原始台账');
+    state.evidenceContractId = contract.id;
+    state.view = 'ledger';
+    renderShell();
   }
 
   async function saveDatabase(message) {
@@ -152,12 +162,14 @@
   }
 
   function renderLedgers() {
-    const rows = state.database.resourceContracts.map((contract) => {
+    const contracts = state.evidenceContractId ? state.database.resourceContracts.filter((item) => text(item.id) === text(state.evidenceContractId)) : state.database.resourceContracts;
+    const rows = contracts.map((contract) => {
       const ledger = ledgerForContract(contract.id);
       const groupNames = ledger ? [...new Set(ledger.items.map((item) => item.groupName))].filter(Boolean) : [];
       return `<tr><td><strong>${escapeHtml(contract.name)}</strong><br><span class="text-secondary">${escapeHtml(contract.startDate)} 至 ${escapeHtml(contract.endDate)}</span></td><td>${ledger ? '<span class="cf-badge ok">已建立</span>' : '<span class="cf-badge warn">未建立</span>'}</td><td>${ledger?.items.length || 0} 人</td><td>${escapeHtml(groupNames.join('、') || '—')}</td><td><div class="cf-row-actions">${ledger ? `<button data-cf-action="view-ledger" data-id="${ledger.id}">查看台账</button><button data-cf-action="new-batch" data-id="${ledger.id}">新建发放批次</button>` : `<button data-cf-action="import-ledger" data-id="${contract.id}">首次导入</button>`}</div></td></tr>`;
     }).join('');
-    return `<div class="cf-panel"><div class="cf-panel-head"><h3>合同发放台账</h3><span class="text-secondary">一份合同保留一份长期台账，后续不必重复上传 Excel</span></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>合同</th><th>状态</th><th>居民数</th><th>涉及组别</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="5"><div class="cf-empty">请先新建合同。</div></td></tr>'}</tbody></table></div></div>`;
+    const sourceHint = state.evidenceContractId ? '<span class="cf-badge ok">已按 AI 查询来源定位</span>' : '<span class="text-secondary">一份合同保留一份长期台账，后续不必重复上传 Excel</span>';
+    return `<div class="cf-panel"><div class="cf-panel-head"><h3>合同发放台账</h3>${sourceHint}</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>合同</th><th>状态</th><th>居民数</th><th>涉及组别</th><th>操作</th></tr></thead><tbody>${rows || '<tr><td colspan="5"><div class="cf-empty">请先新建合同。</div></td></tr>'}</tbody></table></div></div>`;
   }
 
   function renderBatches() {
@@ -885,7 +897,7 @@
 
   async function onClick(event) {
     const viewButton = event.target.closest('[data-cf-view]');
-    if (viewButton) { state.view = viewButton.dataset.cfView; renderShell(); return; }
+    if (viewButton) { state.evidenceContractId = ''; state.view = viewButton.dataset.cfView; renderShell(); return; }
     const workspaceButton = event.target.closest('[data-target="tab-contract-fees"]');
     if (workspaceButton) {
       try { await loadDatabase(); renderShell(); } catch (error) { notify(error.message, 'error'); }
@@ -906,7 +918,7 @@
     document.addEventListener('click', onClick);
   }
 
-  root.ContractFeeWorkspace = Object.freeze({ init, loadDatabase, render: renderShell, openEvidenceSource });
+  root.ContractFeeWorkspace = Object.freeze({ init, loadDatabase, render: renderShell, openEvidenceSource, openRecordSource });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })(window);
