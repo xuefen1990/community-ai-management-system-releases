@@ -7757,8 +7757,34 @@ body.dark-theme .document-prompt-examples button, body.dark-theme .document-refe
 .ai-operation-row strong, .ai-operation-row span { display: block; }
 .ai-operation-row strong { color: var(--text-primary, #1f2937); font-size: 14px; }
 .ai-operation-row span { margin-top: 5px; color: var(--text-secondary, #64748b); font-size: 12px; }
+.ai-operation-row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.ai-operation-detail { display: none; flex-basis: 100%; max-height: 240px; overflow: auto; margin: -2px 0 0; padding: 10px; border-radius: 8px; background: rgba(255, 255, 255, 0.72); border: 1px solid var(--border-color, #d7e4df); color: var(--text-primary, #1f2937); font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; word-break: break-word; }
+.ai-operation-row.is-expanded { flex-wrap: wrap; }
+.ai-operation-row.is-expanded .ai-operation-detail { display: block; }
+.ai-operation-filters { display: grid; grid-template-columns: minmax(160px, 1fr) 160px 150px 145px 130px; gap: 10px; margin-bottom: 14px; }
+.ai-operation-filters input, .ai-operation-filters select { min-width: 0; padding: 8px 10px; border: 1px solid var(--border-color, #d7e4df); border-radius: 8px; background: var(--bg-input, #ffffff); color: var(--text-primary, #1f2937); font-size: 13px; }
+@media (max-width: 720px) { .ai-operation-filters { grid-template-columns: 1fr; } .ai-operation-row { align-items: flex-start; flex-wrap: wrap; } }
 .ai-operation-undo { white-space: nowrap; }
 .ai-operation-empty { margin: 0; padding: 28px; border: 1px dashed var(--border-color, #d7e4df); border-radius: 12px; color: var(--text-secondary, #64748b); text-align: center; }
+.ai-confirmation-card {
+  align-self: flex-start;
+  max-width: 88%;
+  padding: 11px 12px;
+  border: 1px solid rgba(5, 150, 105, 0.32);
+  border-radius: 12px;
+  background: rgba(236, 253, 245, 0.92);
+  box-shadow: 0 5px 14px rgba(5, 150, 105, 0.08);
+}
+.ai-confirmation-card.is-high-risk { border-color: rgba(220, 38, 38, 0.38); background: rgba(254, 242, 242, 0.94); }
+.ai-confirmation-card strong { display: block; color: #14532d; font-size: 12.5px; }
+.ai-confirmation-card.is-high-risk strong { color: #991b1b; }
+.ai-confirmation-card p { margin: 5px 0 10px; color: #526a62; font-size: 11.5px; line-height: 1.5; }
+.ai-confirmation-actions { display: flex; gap: 8px; }
+.ai-confirmation-actions button { min-height: 30px; padding: 6px 10px; border-radius: 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.ai-confirmation-confirm { border: 1px solid #059669; background: #059669; color: #ffffff; }
+.is-high-risk .ai-confirmation-confirm { border-color: #dc2626; background: #dc2626; }
+.ai-confirmation-cancel { border: 1px solid #cbd5d1; background: #ffffff; color: #475569; }
+.ai-confirmation-actions button:disabled { opacity: 0.55; cursor: not-allowed; }
 .btn-close-ai {
   width: 32px;
   height: 32px;

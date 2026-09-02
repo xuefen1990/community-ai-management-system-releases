@@ -78,7 +78,7 @@ class RemoteDatabaseStore {
 
   async createBackup() { return this.localStore.createBackup(); }
   async listBackups() { return this.localStore.listBackups(); }
-  async restoreBackup(value) { const restored = await this.localStore.restoreBackup(value); await this.write(restored.data); return restored; }
+  async restoreBackup(value, options) { const restored = await this.localStore.restoreBackup(value, options); await this.write(restored.data); return restored; }
 }
 
 module.exports = { RemoteDatabaseStore, normalize };

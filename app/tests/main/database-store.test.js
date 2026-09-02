@@ -108,6 +108,26 @@ test('backup can restore the previous database state', async (t) => {
   assert.ok((await store.listBackups()).length >= 1);
 });
 
+test('backup restore can atomically add an audit record to the restored state', async (t) => {
+  const store = await makeStore(t);
+  const initial = await store.read();
+  initial.settings.villageName = '幸福社区';
+  await store.write(initial);
+  const backup = await store.createBackup();
+
+  initial.settings.villageName = '临时名称';
+  await store.write(initial);
+  const result = await store.restoreBackup(backup.path, {
+    transform: async (database) => {
+      database.aiAssistantOperations.push({ id: 'ai-restore-1', type: 'database_backup_restore', status: 'completed' });
+    },
+  });
+
+  assert.equal(result.data.settings.villageName, '幸福社区');
+  assert.equal(result.data.aiAssistantOperations[0].id, 'ai-restore-1');
+  assert.equal((await store.read()).aiAssistantOperations[0].type, 'database_backup_restore');
+});
+
 test('restore rejects paths outside the product backup directory', async (t) => {
   const store = await makeStore(t);
   await store.initialize();

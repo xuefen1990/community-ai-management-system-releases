@@ -154,7 +154,7 @@ class JsonDatabaseStore {
     return backups.sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
   }
 
-  async restoreBackup(reference) {
+  async restoreBackup(reference, { transform = null } = {}) {
     const requestedPath = typeof reference === 'string'
       ? reference
       : reference?.path || reference?.filePath || (reference?.name && path.join(this.backupsDirectory, reference.name));
@@ -168,9 +168,15 @@ class JsonDatabaseStore {
 
     const database = JSON.parse(await fs.readFile(resolvedPath, 'utf8'));
     validateDatabase(database);
+    const restoredDatabase = clone(database);
+    if (transform !== null) {
+      if (typeof transform !== 'function') throw new TypeError('备份恢复处理器必须是函数');
+      await transform(restoredDatabase);
+      validateDatabase(restoredDatabase);
+    }
     await this.createBackup();
-    await this.write(database);
-    return { ok: true, data: clone(database) };
+    await this.write(restoredDatabase);
+    return { ok: true, data: clone(restoredDatabase) };
   }
 }
 

@@ -197,6 +197,41 @@ if (typeof module !== 'undefined' && module.exports) {
     return bubble;
   }
 
+  function appendConfirmationCard(action) {
+    if (!action || action.type !== 'confirm') return;
+    const container = document.getElementById('aiDesktopChatContainer');
+    if (!container) return;
+    const highRisk = action.riskLevel === 'high';
+    const finalConfirmation = highRisk && action.confirmationStep === 1;
+    const card = document.createElement('div');
+    card.className = `ai-confirmation-card${highRisk ? ' is-high-risk' : ''}`;
+    const title = document.createElement('strong');
+    title.textContent = highRisk
+      ? (finalConfirmation ? '高风险操作：最终确认' : '高风险操作：第一次确认')
+      : '请确认本次修改';
+    const hint = document.createElement('p');
+    hint.textContent = highRisk
+      ? (finalConfirmation ? '确认后将立即执行并写入操作记录。' : '继续后还会要求一次最终确认，当前不会修改系统数据。')
+      : '确认后才会修改系统数据，并写入操作记录。';
+    const actions = document.createElement('div');
+    actions.className = 'ai-confirmation-actions';
+    const confirm = document.createElement('button');
+    confirm.type = 'button'; confirm.className = 'ai-confirmation-confirm';
+    confirm.textContent = highRisk ? (finalConfirmation ? '确认执行' : '继续执行') : '确认执行';
+    const cancel = document.createElement('button');
+    cancel.type = 'button'; cancel.className = 'ai-confirmation-cancel'; cancel.textContent = '取消';
+    const reply = (value) => {
+      for (const button of actions.querySelectorAll('button')) button.disabled = true;
+      sendAiMessage(value);
+    };
+    confirm.addEventListener('click', () => reply(highRisk ? (finalConfirmation ? '确认执行' : '继续执行') : '确认'));
+    cancel.addEventListener('click', () => reply('取消'));
+    actions.append(confirm, cancel);
+    card.append(title, hint, actions);
+    container.appendChild(card);
+    container.scrollTop = container.scrollHeight;
+  }
+
   function runAssistantAction(action) {
     if (!action || action.type !== 'navigate') return;
     if (typeof window.switchTab !== 'function') {
@@ -210,12 +245,12 @@ if (typeof module !== 'undefined' && module.exports) {
     }
   }
 
-  async function sendAiMessage() {
+  async function sendAiMessage(preparedContent = '') {
     const input = document.getElementById('aiDesktopInputText');
     const button = document.getElementById('aiDesktopSendBtn');
-    const content = input.value.trim();
+    const content = String(preparedContent || input.value || '').trim();
     if (!content || button.disabled) return;
-    input.value = '';
+    if (!preparedContent) input.value = '';
     appendChatBubble('user', content);
     conversation.push({ role: 'user', content });
     button.disabled = true;
@@ -227,6 +262,7 @@ if (typeof module !== 'undefined' && module.exports) {
       pending.remove();
       appendChatBubble('bot', response.content);
       conversation.push({ role: 'assistant', content: response.content });
+      appendConfirmationCard(response.action);
       runAssistantAction(response.action);
       const drawerStatus = document.getElementById('aiDrawerModelStatus');
       if (drawerStatus) drawerStatus.textContent = response.provider === 'system' ? '系统数据已核对' : response.provider === 'local' ? '本地 AI 已回复' : '在线 AI 已回复';
@@ -300,8 +336,49 @@ if (typeof module !== 'undefined' && module.exports) {
 
   function operationSummary(operation) {
     if (operation.type === 'resident_phone_update') return `${operation.object?.name || '居民'}：手机号 ${operation.before?.phone || '未填写'} → ${operation.after?.phone || '未填写'}`;
+    if (operation.type === 'resident_address_update') return `${operation.object?.name || '居民'}：住址 ${operation.before?.address || '未填写'} → ${operation.after?.address || '未填写'}`;
+    if (operation.type === 'resident_group_update') return `${operation.object?.name || '居民'}：村民组 ${operation.before?.group || '未填写'} → ${operation.after?.group || '未填写'}`;
+    if (operation.type === 'land_parcel_create') return `登记地块：${operation.after?.record?.parcel_name || operation.object?.name || '未命名地块'}`;
+    if (operation.type === 'visit_record_create') return `新增民情记录：${operation.after?.record?.content || operation.object?.name || '未填写内容'}`;
+    if (operation.type === 'duty_schedule_add') return `新增值班安排：${operation.object?.name || '未填写人员'} · ${operation.after?.date || '未填写日期'}`;
+    if (operation.type === 'work_item_create') return `新建工作：${operation.object?.name || operation.after?.record?.name || '未命名工作'}`;
+    if (operation.type === 'work_item_status_update') return `工作状态：${operation.object?.name || '未命名工作'} ${operation.before?.status || '未填写'} → ${operation.after?.status || '未填写'}`;
+    if (operation.type === 'work_item_soft_delete') return `删除工作（可恢复）：${operation.object?.name || '未命名工作'}`;
+    if (operation.type === 'work_items_soft_delete_batch') return `批量删除工作（可恢复）：${operation.object?.name || `${operation.object?.numbers?.length || 0} 项`}`;
+    if (operation.type === 'database_backup_restore') return `恢复系统备份（可撤销）：${operation.object?.name || operation.after?.backupName || '未指定备份'}`;
+    if (operation.type === 'unit_member_disable') return `停用成员登录（可恢复）：${operation.object?.name || operation.object?.phone || '未指定成员'}`;
+    if (operation.type === 'finance_records_clear') return `清空财务收支台账（可恢复）：${operation.object?.count || operation.before?.records?.length || 0} 笔`;
+    if (operation.type === 'certificate_record_delete') return `删除证明记录（可恢复）：${operation.object?.name || '未编号证明'}`;
+    if (operation.type === 'document_draft_archive') return `归档公文：${operation.object?.name || '未命名公文'}`;
+    if (operation.type === 'party_member_stage_update') return `${operation.object?.name || '党员'}：党员阶段 ${operation.before?.stage || '未填写'} → ${operation.after?.stage || '未填写'}`;
+    if (operation.type === 'resource_contract_create') return `新建合同：${operation.object?.name || operation.after?.record?.name || '未命名合同'}`;
+    if (operation.type === 'contract_receipt_create') return `登记承包人到账：${operation.object?.name || '未命名合同'}`;
+    if (operation.type === 'finance_record_create') return `登记财务${operation.after?.record?.type === 'income' ? '收入' : '支出'}：${operation.after?.record?.summary || operation.object?.name || '未填写摘要'}`;
+    if (operation.type === 'finance_record_update') return `修改财务记录：${operation.before?.record?.voucherNumber || operation.object?.voucherNumber || operation.object?.name || '未编号凭证'}`;
+    if (operation.type === 'settings_village_name_update') return `社区名称：${operation.before?.villageName || '未填写'} → ${operation.after?.villageName || '未填写'}`;
     if (operation.type === 'undo') return `${operation.object?.name || '对象'}：已恢复上一项 AI 修改`;
     return operation.type || 'AI 助理操作';
+  }
+
+  function compactOperationValue(value) {
+    if (value === undefined || value === null || value === '') return '无';
+    const serialized = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+    return serialized.length > 1800 ? `${serialized.slice(0, 1800)}\n……内容较长，已截取前 1800 个字符。` : serialized;
+  }
+
+  function operationDateKey(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || '').trim().slice(0, 10);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function operationMatchesFilters(operation, filters) {
+    if (filters.module && operation.module !== filters.module) return false;
+    if (filters.type && operation.type !== filters.type) return false;
+    if (filters.status && operation.status !== filters.status) return false;
+    if (filters.date && operationDateKey(operation.completedAt || operation.createdAt) !== filters.date) return false;
+    const keyword = filters.keyword.toLocaleLowerCase('zh-CN');
+    return !keyword || `${operationSummary(operation)} ${operation.module || ''} ${operation.object?.name || ''}`.toLocaleLowerCase('zh-CN').includes(keyword);
   }
 
   async function renderAssistantOperations() {
@@ -311,15 +388,33 @@ if (typeof module !== 'undefined' && module.exports) {
     list.replaceChildren();
     try {
       const operations = await api.listAiAssistantOperations({ limit: 100 });
-      if (!operations.length) {
+      const filters = {
+        module: section.querySelector('[data-ai-assistant-operation-module]')?.value || '',
+        type: section.querySelector('[data-ai-assistant-operation-type]')?.value || '',
+        status: section.querySelector('[data-ai-assistant-operation-status]')?.value || '',
+        date: section.querySelector('[data-ai-assistant-operation-date]')?.value || '',
+        keyword: section.querySelector('[data-ai-assistant-operation-keyword]')?.value.trim() || '',
+      };
+      const visibleOperations = operations.filter((operation) => operationMatchesFilters(operation, filters));
+      if (!visibleOperations.length) {
         const empty = document.createElement('p'); empty.className = 'ai-operation-empty'; empty.textContent = '还没有由 AI 助理实际执行的操作。查询和页面跳转不会写入这里。'; list.appendChild(empty); return;
       }
-      for (const operation of operations) {
+      for (const operation of visibleOperations) {
         const row = document.createElement('article'); row.className = 'ai-operation-row';
         const textBlock = document.createElement('div');
         const title = document.createElement('strong'); title.textContent = operationSummary(operation);
         const meta = document.createElement('span'); meta.textContent = `${operation.module || 'AI 助理'} · ${formatOperationTime(operation.completedAt || operation.createdAt)} · ${operation.status === 'undone' ? '已撤销' : operation.status === 'cancelled' ? '已取消' : '已完成'}`;
         textBlock.append(title, meta); row.appendChild(textBlock);
+        const actions = document.createElement('div'); actions.className = 'ai-operation-row-actions';
+        const details = document.createElement('button'); details.type = 'button'; details.className = 'btn btn-outline ai-operation-details'; details.textContent = '查看详情';
+        details.addEventListener('click', () => {
+          const expanded = row.classList.toggle('is-expanded');
+          details.textContent = expanded ? '收起详情' : '查看详情';
+        });
+        actions.appendChild(details);
+        const detailBlock = document.createElement('pre'); detailBlock.className = 'ai-operation-detail';
+        detailBlock.textContent = `操作类型：${operation.type || '未填写'}\n风险等级：${operation.riskLevel === 'high' ? '高风险' : '一般'}\n执行前：${compactOperationValue(operation.before)}\n执行后：${compactOperationValue(operation.after)}${operation.error ? `\n失败原因：${operation.error}` : ''}`;
+        row.appendChild(detailBlock);
         if (operation.recoverable && operation.status === 'completed') {
           const undo = document.createElement('button'); undo.type = 'button'; undo.className = 'btn btn-outline ai-operation-undo'; undo.textContent = '撤销此操作';
           undo.addEventListener('click', async () => {
@@ -330,8 +425,9 @@ if (typeof module !== 'undefined' && module.exports) {
               notify(result.message || '已撤销该操作'); await renderAssistantOperations();
             } catch (error) { notify(error.message || '撤销失败，请人工核对后再试', 'error'); undo.disabled = false; }
           });
-          row.appendChild(undo);
+          actions.appendChild(undo);
         }
+        row.appendChild(actions);
         list.appendChild(row);
       }
     } catch (error) {
@@ -350,8 +446,11 @@ if (typeof module !== 'undefined' && module.exports) {
       reference?.insertAdjacentElement('afterend', button) || menu.appendChild(button);
     }
     const section = document.createElement('section'); section.className = 'tab-content hidden'; section.id = 'tab-ai-assistant-records';
-    section.innerHTML = '<div class="ai-operation-center"><div class="ai-operation-header"><div><h2>AI 助理记录</h2><p>仅保留 AI 实际写入系统或已取消的高风险操作。撤销必须在此页手动确认。</p></div><button type="button" class="btn btn-outline" data-ai-assistant-operation-refresh>刷新</button></div><div class="ai-operation-list" data-ai-assistant-operation-list></div></div>';
+    section.innerHTML = '<div class="ai-operation-center"><div class="ai-operation-header"><div><h2>AI 助理记录</h2><p>仅保留 AI 实际写入系统或已取消的高风险操作。撤销必须在此页手动确认。</p></div><button type="button" class="btn btn-outline" data-ai-assistant-operation-refresh>刷新</button></div><div class="ai-operation-filters"><input type="search" placeholder="按对象或操作搜索" data-ai-assistant-operation-keyword><select data-ai-assistant-operation-module><option value="">全部模块</option><option value="村民一户一档">村民一户一档</option><option value="土地承包确权">土地承包确权</option><option value="民情记录">民情记录</option><option value="村里值班">村里值班</option><option value="工作管理">工作管理</option><option value="党员管理">党员管理</option><option value="证明开具">证明开具</option><option value="资金发放中心">资金发放中心</option><option value="财务收支">财务收支</option><option value="系统设置">系统设置</option><option value="系统备份">系统备份</option><option value="账号权限">账号权限</option></select><select data-ai-assistant-operation-type><option value="">全部操作</option><option value="resident_phone_update">修改手机号</option><option value="resident_address_update">修改住址</option><option value="resident_group_update">调整村民组</option><option value="land_parcel_create">登记地块</option><option value="visit_record_create">新增民情记录</option><option value="duty_schedule_add">新增值班安排</option><option value="work_item_create">新建工作</option><option value="work_item_status_update">调整工作状态</option><option value="work_item_soft_delete">删除工作</option><option value="work_items_soft_delete_batch">批量删除工作</option><option value="database_backup_restore">恢复系统备份</option><option value="unit_member_disable">停用成员登录</option><option value="certificate_record_delete">删除证明记录</option><option value="document_draft_archive">归档公文</option><option value="party_member_stage_update">调整党员阶段</option><option value="resource_contract_create">新建合同</option><option value="contract_receipt_create">登记承包人到账</option><option value="finance_record_create">登记财务收支</option><option value="finance_record_update">修改财务收支</option><option value="finance_records_clear">清空财务收支台账</option><option value="settings_village_name_update">修改社区名称</option><option value="undo">撤销操作</option></select><input type="date" aria-label="按日期筛选" data-ai-assistant-operation-date><select data-ai-assistant-operation-status><option value="">全部状态</option><option value="completed">已完成</option><option value="undone">已撤销</option><option value="cancelled">已取消</option><option value="failed">未执行</option></select></div><div class="ai-operation-list" data-ai-assistant-operation-list></div></div>';
     section.querySelector('[data-ai-assistant-operation-refresh]')?.addEventListener('click', renderAssistantOperations);
+    for (const control of section.querySelectorAll('[data-ai-assistant-operation-keyword], [data-ai-assistant-operation-module], [data-ai-assistant-operation-type], [data-ai-assistant-operation-date], [data-ai-assistant-operation-status]')) {
+      control.addEventListener(control.tagName === 'INPUT' ? 'input' : 'change', renderAssistantOperations);
+    }
     document.querySelector('.app-main')?.appendChild(section);
   }
 
