@@ -575,6 +575,9 @@ test('answers a scoped contract expiry question from contract end dates', async 
   assert.match(result.content, /鱼塘承包/u);
   assert.doesNotMatch(result.content, /林地承包/u);
   assert.match(result.content, /合同结束日期/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.metricValue, '1 份');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-contract-fees');
 });
 
 test('asks for a contract expiry scope rather than assuming one', async () => {
@@ -582,6 +585,16 @@ test('asks for a contract expiry scope rather than assuming one', async () => {
   const result = await assistant.converse({ messages: [{ role: 'user', content: '有哪些到期合同？' }] });
   assert.match(result.content, /时间范围/u);
   assert.match(result.content, /不会自行猜测/u);
+});
+
+test('makes a no-result contract expiry query traceable instead of silently returning an empty list', async () => {
+  const assistant = service({ resourceContracts: [{ id: 'contract-1', name: '鱼塘承包', endDate: '2027-12-31' }] });
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '2026 年有哪些到期合同？' }] });
+  assert.match(result.content, /未查到/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.empty, true);
+  assert.match(result.data.queryEvidence.emptyMessage, /未查到/u);
+  assert.match(result.data.queryEvidence.scope, /合同结束日期/u);
 });
 
 test('answers a contract receipt question from the actual contract receipt ledger', async () => {
@@ -594,6 +607,8 @@ test('answers a contract receipt question from the actual contract receipt ledge
   assert.match(result.content, /¥5000\.00/u);
   assert.match(result.content, /2026-08-20/u);
   assert.match(result.content, /承包人缴费到账台账/u);
+  assert.equal(result.data.queryEvidence.metricValue, '¥5000.00');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-contract-fees');
 });
 
 test('creates and manually removes a fully specified resource contract after confirmation', async () => {
@@ -816,6 +831,9 @@ test('answers a yearly finance summary using only explicit income and expense re
   assert.match(result.content, /支出 ¥300\.25/u);
   assert.match(result.content, /结余 ¥900\.25/u);
   assert.match(result.content, /类型明确为“收入”或“支出”/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.metricValue, '¥900.25');
+  assert.equal(result.data.queryEvidence.records.length, 2);
 });
 
 test('answers a yearly finance category breakdown from explicit income records only', async () => {
@@ -905,6 +923,8 @@ test('answers a land area question from the authoritative land parcel ledger', a
   assert.match(result.content, /2 块/u);
   assert.match(result.content, /19\.75 亩/u);
   assert.match(result.content, /土地承包确权台账/u);
+  assert.equal(result.data.queryEvidence.metricValue, '19.75 亩');
+  assert.equal(result.data.queryEvidence.records.length, 2);
 });
 
 test('answers a resident land query through explicitly linked contractor identifiers', async () => {
@@ -920,6 +940,8 @@ test('answers a resident land query through explicitly linked contractor identif
   assert.match(result.content, /8\.50 亩/u);
   assert.match(result.content, /东一田/u);
   assert.doesNotMatch(result.content, /西二田/u);
+  assert.equal(result.data.queryEvidence.metricValue, '8.50 亩');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-land');
 });
 
 test('answers a work status question without counting deleted work items', async () => {

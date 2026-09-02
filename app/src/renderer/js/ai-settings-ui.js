@@ -217,7 +217,7 @@ if (typeof module !== 'undefined' && module.exports) {
   }
 
   function appendQueryEvidenceCard(evidence) {
-    if (!evidence || evidence.kind !== 'payment-evidence') return;
+    if (!evidence || !['payment-evidence', 'record-evidence'].includes(evidence.kind)) return;
     const container = document.getElementById('aiDesktopChatContainer');
     if (!container) return;
     const card = document.createElement('section');
@@ -233,11 +233,11 @@ if (typeof module !== 'undefined' && module.exports) {
     const total = document.createElement('div');
     total.className = 'ai-query-evidence-total';
     const totalLabel = document.createElement('span');
-    totalLabel.textContent = '已发放合计';
+    totalLabel.textContent = evidence.kind === 'payment-evidence' ? '已发放合计' : evidenceText(evidence.metricLabel, '查询结果');
     const totalValue = document.createElement('b');
-    totalValue.textContent = evidenceMoney(evidence.paidTotalCents);
+    totalValue.textContent = evidence.kind === 'payment-evidence' ? evidenceMoney(evidence.paidTotalCents) : evidenceText(evidence.metricValue, '—');
     const count = document.createElement('small');
-    count.textContent = `共 ${Number(evidence.paidCount || 0)} 笔已发放记录`;
+    count.textContent = evidence.kind === 'payment-evidence' ? `共 ${Number(evidence.paidCount || 0)} 笔已发放记录` : '可展开查看统计依据与原始记录';
     total.append(totalLabel, totalValue, count);
     card.append(heading, total);
 
@@ -248,15 +248,16 @@ if (typeof module !== 'undefined' && module.exports) {
       card.appendChild(empty);
     }
 
-    if (Array.isArray(evidence.categorySummary) && evidence.categorySummary.length) {
+    const summaryItems = evidence.kind === 'payment-evidence' ? evidence.categorySummary : evidence.summary;
+    if (Array.isArray(summaryItems) && summaryItems.length) {
       const summary = document.createElement('div');
       summary.className = 'ai-query-evidence-summary';
-      for (const item of evidence.categorySummary) {
+      for (const item of summaryItems) {
         const row = document.createElement('div');
         const label = document.createElement('span');
-        label.textContent = `${evidenceText(item.name)} · ${Number(item.count || 0)} 笔`;
+        label.textContent = evidence.kind === 'payment-evidence' ? `${evidenceText(item.name)} · ${Number(item.count || 0)} 笔` : evidenceText(item.name);
         const amount = document.createElement('b');
-        amount.textContent = evidenceMoney(item.amountCents);
+        amount.textContent = evidence.kind === 'payment-evidence' ? evidenceMoney(item.amountCents) : evidenceText(item.value);
         row.append(label, amount);
         summary.appendChild(row);
       }
@@ -291,12 +292,14 @@ if (typeof module !== 'undefined' && module.exports) {
         row.className = 'ai-query-evidence-record';
         const identity = document.createElement('div');
         const name = document.createElement('strong');
-        name.textContent = evidenceText(record.recipientName, evidenceText(record.categoryName));
+        name.textContent = evidenceText(record.title || record.recipientName, evidenceText(record.categoryName));
         const meta = document.createElement('span');
-        meta.textContent = [record.categoryName, record.groupName, record.date, record.statusLabel].map((item) => evidenceText(item, '')).filter(Boolean).join(' · ');
+        meta.textContent = evidence.kind === 'payment-evidence'
+          ? [record.categoryName, record.groupName, record.date, record.statusLabel].map((item) => evidenceText(item, '')).filter(Boolean).join(' · ')
+          : evidenceText(record.meta, '原始台账记录');
         identity.append(name, meta);
         const amount = document.createElement('b');
-        amount.textContent = evidenceMoney(record.amountCents);
+        amount.textContent = evidence.kind === 'payment-evidence' ? evidenceMoney(record.amountCents) : evidenceText(record.value);
         const source = document.createElement('button');
         source.type = 'button';
         source.className = 'ai-query-evidence-source';
