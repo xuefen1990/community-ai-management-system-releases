@@ -59,7 +59,8 @@ if (typeof module !== 'undefined' && module.exports) {
   if (!api?.getAiSettings) return;
   let status = { running: false };
   let conversation = [];
-  const MAX_CONVERSATION_MESSAGES = 24;
+  // 保留最近 30 轮（用户与助理各一条），让在线理解服务能够承接上下文。
+  const MAX_CONVERSATION_MESSAGES = 60;
   const MAX_RENDERED_CHAT_ITEMS = 80;
 
   function notify(message, type = 'success') {
@@ -219,6 +220,18 @@ if (typeof module !== 'undefined' && module.exports) {
     };
   }
 
+  function assistantGreeting() {
+    return `<div class="chat-bubble bot"><p style="font-size:13px;line-height:1.6;margin:0;color:var(--text-primary);">您好，我是 AI 助理。我会先理解您的连续对话，再核对系统中的真实资料；查询、总结和跳转可直接完成，修改前仍会请您确认。</p><p style="font-size:11.5px;line-height:1.55;margin:8px 0 0;color:var(--text-secondary);">例如：先问“薛锋和薛振宇是什么关系”，下一句可继续问“他们今年发了多少钱”。资料不足时我会追问，不会猜测。</p></div>`;
+  }
+
+  function startNewAssistantConversation() {
+    conversation = [];
+    const chat = document.getElementById('aiDesktopChatContainer');
+    if (chat) chat.innerHTML = assistantGreeting();
+    const input = document.getElementById('aiDesktopInputText');
+    input?.focus();
+  }
+
   function appendConfirmationCard(action) {
     if (!action || action.type !== 'confirm') return;
     const container = document.getElementById('aiDesktopChatContainer');
@@ -281,8 +294,8 @@ if (typeof module !== 'undefined' && module.exports) {
     const pending = appendPendingChatBubble();
     try {
       const response = api.converseWithAiAssistant
-        ? await api.converseWithAiAssistant([{ role: 'user', content }])
-        : await api.chatWithAi([{ role: 'user', content }]);
+        ? await api.converseWithAiAssistant(conversation)
+        : await api.chatWithAi(conversation);
       pending.stop();
       pending.bubble.remove();
       appendChatBubble('bot', response.content);
@@ -319,9 +332,16 @@ if (typeof module !== 'undefined' && module.exports) {
       recordsLink.addEventListener('click', openAssistantOperations);
       drawerIdentity.appendChild(recordsLink);
     }
+    if (drawerIdentity && !drawer.querySelector('[data-ai-assistant-new-chat]')) {
+      const newChat = document.createElement('button');
+      newChat.type = 'button'; newChat.className = 'ai-records-link'; newChat.dataset.aiAssistantNewChat = 'true';
+      newChat.textContent = '新建对话';
+      newChat.addEventListener('click', startNewAssistantConversation);
+      drawerIdentity.appendChild(newChat);
+    }
     const chat = document.getElementById('aiDesktopChatContainer');
     if (chat) {
-      chat.innerHTML = `<div class="chat-bubble bot"><p style="font-size:13px;line-height:1.6;margin:0;color:var(--text-primary);">您好，我是 AI 助理。我可以核对系统中的数据、带您跳转到对应功能，并在执行修改前向您确认。</p><p style="font-size:11.5px;line-height:1.55;margin:8px 0 0;color:var(--text-secondary);">例如：<strong>张三这年度共计发了多少钱？</strong> 同名、年度或对象不明确时，我会先请您确认，不会猜测。</p></div>`;
+      chat.innerHTML = assistantGreeting();
     }
     const input = document.getElementById('aiDesktopInputText');
     if (input) input.placeholder = '例如：张三这年度共计发了多少钱？';

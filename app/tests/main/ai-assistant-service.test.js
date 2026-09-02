@@ -163,7 +163,7 @@ test('requires a group for duplicate names and does not guess or send an identit
   assert.equal(onlineCalled, false);
 });
 
-test('requires a preview and single confirmation before sensitive text is sent to online AI', async () => {
+test('automatically sends an explicitly requested online analysis after the administrator authorization', async () => {
   let onlineMessages = null;
   const assistant = service({}, {
     aiRouter: {
@@ -171,17 +171,104 @@ test('requires a preview and single confirmation before sensitive text is sent t
     },
   });
 
-  const preview = await assistant.converse({ messages: [{ role: 'user', content: '请用在线AI分析身份证号 321302199009011634 是否符合格式' }] });
-  assert.equal(preview.provider, 'system');
-  assert.match(preview.content, /发送前确认/u);
-  assert.match(preview.content, /身份证号已脱敏/u);
-  assert.doesNotMatch(preview.content, /321302199009011634/u);
-
-  const result = await assistant.converse({ messages: [{ role: 'user', content: '确认发送' }] });
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '请用在线AI分析身份证号 321302199009011634 是否符合格式' }] });
   assert.equal(result.provider, 'online');
-  assert.equal(onlineMessages.length, 2);
-  assert.match(onlineMessages[1].content, /身份证号已脱敏/u);
-  assert.doesNotMatch(onlineMessages[1].content, /321302199009011634/u);
+  assert.equal(onlineMessages.length, 3);
+  assert.match(onlineMessages[2].content, /321302199009011634/u);
+});
+
+test('can automatically provide the complete local database to online analysis when the planner requires it', async () => {
+  const onlineCalls = [];
+  const assistant = service({
+    personnel: [{ id: 'person-1', name: '张三', village_group: '一组' }],
+    partyMembers: [{ id: 'party-1', name: '李四', stage: '正式党员' }],
+  }, {
+    aiRouter: {
+      onlineChat: async (messages) => {
+        onlineCalls.push(messages);
+        if (/对话理解器/u.test(messages[0].content)) {
+          return { content: JSON.stringify({ canonicalMessage: '请用在线 AI 对本系统资料作综合分析。', intent: 'query', needsFacts: true, dataScope: 'full_database' }) };
+        }
+        return { content: '已根据完整资料完成综合分析。', provider: 'online' };
+      },
+    },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '请用在线AI对系统资料作综合分析' }] });
+
+  assert.equal(result.provider, 'online');
+  assert.equal(onlineCalls.length, 2);
+  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /partyMembers/u);
+  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /正式党员/u);
+});
+
+test('uses online context understanding and verified household facts for a sibling relationship', async () => {
+  const onlineCalls = [];
+  const assistant = service({
+    personnel: [
+      { id: 'head', name: '薛伯齐', household_id: 'H-1', relation_to_head: '户主' },
+      { id: 'xue-feng', name: '薛锋', household_id: 'H-1', relation_to_head: '长子' },
+      { id: 'xue-zhen-yu', name: '薛振宇', household_id: 'H-1', relation_to_head: '次子' },
+    ],
+  }, {
+    aiRouter: {
+      onlineChat: async (messages) => {
+        onlineCalls.push(messages);
+        if (/对话理解器/u.test(messages[0].content)) {
+          return { content: JSON.stringify({ canonicalMessage: '薛锋与薛振宇是什么关系？', intent: 'query', needsFacts: true, dataScope: 'related_records' }), provider: 'online' };
+        }
+        return { content: '已核对同户资料：薛锋登记为长子、薛振宇登记为次子，二人是兄弟关系。', provider: 'online' };
+      },
+    },
+  });
+
+  const result = await assistant.converse({ messages: [
+    { role: 'user', content: '帮我查一下薛锋和薛振宇' },
+    { role: 'assistant', content: '请说明需要核对什么。' },
+    { role: 'user', content: '他们是什么关系？' },
+  ] });
+
+  assert.equal(result.provider, 'online');
+  assert.match(result.content, /兄弟关系/u);
+  assert.equal(onlineCalls.length, 2);
+  assert.match(onlineCalls[0].map((item) => item.content).join('\n'), /他们是什么关系/u);
+  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /长子/u);
+  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /次子/u);
+});
+
+test('falls back to verified local sibling reasoning when online understanding is unavailable', async () => {
+  const assistant = service({
+    personnel: [
+      { id: 'xue-feng', name: '薛锋', household_id: 'H-1', relation_to_head: '长子' },
+      { id: 'xue-zhen-yu', name: '薛振宇', household_id: 'H-1', relation_to_head: '次子' },
+    ],
+  }, {
+    aiRouter: { onlineChat: async () => { throw new Error('offline'); } },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '薛锋和薛振宇是什么关系？' }] });
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /兄弟关系/u);
+});
+
+test('uses an online-normalized conversational update only as a local confirmation proposal', async () => {
+  const database = { personnel: [{ id: 'xue-feng', name: '薛锋', village_group: '一组', phone: '18888190901' }] };
+  const assistant = service(database, {
+    aiRouter: {
+      onlineChat: async () => ({ content: JSON.stringify({ canonicalMessage: '修改手机号：姓名=薛锋；手机号=17505270901', intent: 'update', needsFacts: false, dataScope: 'related_records' }), provider: 'online' }),
+    },
+  });
+
+  const proposal = await assistant.converse({ messages: [
+    { role: 'user', content: '我刚说的那个人，电话换成 17505270901' },
+  ] });
+  assert.equal(proposal.provider, 'system');
+  assert.equal(proposal.action.type, 'confirm');
+  assert.equal(database.personnel[0].phone, '18888190901');
+
+  const completed = await assistant.converse({ messages: [{ role: 'user', content: '确认' }] });
+  assert.match(completed.content, /已修改薛锋的手机号/u);
+  assert.equal(database.personnel[0].phone, '17505270901');
 });
 
 test('answers group, category, and highest-group annual payment questions with a paid-only scope', async () => {

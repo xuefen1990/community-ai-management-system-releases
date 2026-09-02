@@ -141,6 +141,40 @@ function lastUserMessage(messages) {
     .find((message) => message?.role === 'user' && text(message.content));
 }
 
+function recentConversation(messages, limit = 60) {
+  return (Array.isArray(messages) ? messages : [])
+    .filter((message) => ['user', 'assistant', 'system'].includes(text(message?.role)) && text(message?.content))
+    .slice(-limit)
+    .map((message) => ({ role: text(message.role), content: text(message.content) }));
+}
+
+function parseOnlinePlan(content) {
+  const raw = text(content).replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end < start) return null;
+  try {
+    const plan = JSON.parse(raw.slice(start, end + 1));
+    const canonicalMessage = text(plan?.canonicalMessage);
+    if (!canonicalMessage || canonicalMessage.length > 2000) return null;
+    return {
+      canonicalMessage,
+      intent: text(plan.intent) || 'query',
+      needsFacts: plan.needsFacts === true,
+      dataScope: ['related_records', 'full_database'].includes(text(plan.dataScope)) ? text(plan.dataScope) : 'related_records',
+    };
+  } catch {
+    return null;
+  }
+}
+
+function relationChildGender(relation) {
+  const value = text(relation);
+  if (/(?:子|儿子)$/u.test(value)) return 'male';
+  if (/(?:女|女儿)$/u.test(value)) return 'female';
+  return '';
+}
+
 function isAnnualAmountQuestion(message) {
   const value = text(message);
   return /(发了|发放|实发|已发|累计).{0,18}(多少钱|多少|金额|总额|合计)|(多少钱|多少|金额|总额|合计).{0,18}(发了|发放|实发|已发|累计)/u.test(value);
@@ -194,6 +228,84 @@ class AiAssistantService {
     this.now = now;
     this.pendingAction = null;
     this.pendingOnlineAnalysis = null;
+  }
+
+  async understandConversation(messages) {
+    if (typeof this.aiRouter?.onlineChat !== 'function') return null;
+    try {
+      const response = await this.aiRouter.onlineChat([
+        {
+          role: 'system',
+          content: '你是社区AI管理系统的对话理解器。根据完整对话把最后一个用户问题改写成脱离上下文也能执行的明确指令。仅输出 JSON：{"canonicalMessage":"明确指令","intent":"query|navigate|create|update|delete|chat","needsFacts":true或false,"dataScope":"related_records|full_database"}。不要声称已经查询系统，不要执行操作；姓名、年度、指代不明确时在 canonicalMessage 中保留需要追问的原意，不要编造。',
+        },
+        ...recentConversation(messages),
+      ]);
+      return parseOnlinePlan(response?.content);
+    } catch {
+      return null;
+    }
+  }
+
+  relevantFacts(database, plan, request) {
+    if (plan?.dataScope === 'full_database') return structuredClone(database || {});
+    const requested = text(request);
+    const personnel = Array.isArray(database?.personnel) ? database.personnel : [];
+    const named = personnel.filter((person) => personName(person) && requested.includes(personName(person)));
+    const householdIds = new Set(named.map(personHouseholdId).filter(Boolean));
+    const relatedPeople = householdIds.size
+      ? personnel.filter((person) => householdIds.has(personHouseholdId(person)))
+      : named;
+    const identifiers = new Set(relatedPeople.flatMap((person) => [personId(person), personIdentityCard(person)]).filter(Boolean));
+    const recordIncludesPerson = (record) => {
+      const raw = JSON.stringify(record || {});
+      return [...identifiers].some((identifier) => raw.includes(identifier))
+        || relatedPeople.some((person) => raw.includes(personName(person)));
+    };
+    return {
+      personnel: structuredClone(relatedPeople),
+      landParcel: structuredClone((database?.landParcel || database?.lands || []).filter(recordIncludesPerson)),
+      disbursementBatches: structuredClone((database?.disbursementBatches || []).filter(recordIncludesPerson)),
+      contractFeeBatches: structuredClone((database?.contractFeeBatches || []).filter(recordIncludesPerson)),
+      financeRecords: structuredClone((database?.financeRecords || []).filter(recordIncludesPerson)),
+    };
+  }
+
+  async explainVerifiedFacts({ messages, request, database, plan, localAnswer }) {
+    if (!plan?.needsFacts || typeof this.aiRouter?.onlineChat !== 'function') return localAnswer;
+    const facts = this.relevantFacts(database, plan, request);
+    try {
+      const response = await this.aiRouter.onlineChat([
+        {
+          role: 'system',
+          content: '你是社区AI管理系统的事实说明助手。只能根据“已核对本机资料”回答，不得补充、猜测或修改任何资料。若资料不足，明确说明无法确认。用简洁中文解释结论和依据。',
+        },
+        ...recentConversation(messages),
+        { role: 'user', content: `已核对本机资料：\n${JSON.stringify(facts)}` },
+      ]);
+      const content = text(response?.content);
+      return content ? { ...localAnswer, content, provider: 'online', data: { ...(localAnswer.data || {}), facts } } : localAnswer;
+    } catch {
+      return localAnswer;
+    }
+  }
+
+  async answerAutomaticOnlineAnalysis({ messages, request, database, plan }) {
+    if (typeof this.aiRouter?.onlineChat !== 'function') {
+      return { content: '在线 AI 当前未配置或不可用，本次已按本机能力继续处理；如问题仍无法判断，请补充对象、范围或年度。', provider: 'system', handled: true, needsConfirmation: true };
+    }
+    try {
+      const response = await this.aiRouter.onlineChat([
+        {
+          role: 'system',
+          content: '你是社区AI管理系统的在线分析助手。用户已授权系统自动提交与当前事项有关的本机资料。只能依据随后提供的“已核对本机资料”分析，不得编造、不得声称执行过系统操作，也不得指示绕过本机确认规则。资料不足时直接说明需要补充什么。',
+        },
+        ...recentConversation(messages),
+        { role: 'user', content: `当前明确请求：${request}\n已核对本机资料：\n${JSON.stringify(this.relevantFacts(database, plan || { dataScope: 'related_records' }, request))}` },
+      ]);
+      return { ...response, provider: 'online', handled: true };
+    } catch {
+      return { content: '在线 AI 当前不可用，本次已回退为本机规则处理；请补充姓名、村民组、年度或具体事项后重试。', provider: 'system', handled: true, needsConfirmation: true };
+    }
   }
 
   prepareOnlineAnalysis(message) {
@@ -519,7 +631,11 @@ class AiAssistantService {
   }
 
   phoneUpdateProposal(database, message) {
-    const requestedPhone = text(message).match(/(?:电话|手机(?:号)?).{0,12}?(?:改成|修改为|换成|更新为)\s*(1\d{10})/u)?.[1];
+    const requested = text(message);
+    // “停用成员：手机号=…”属于账号权限操作，不能误判为居民电话修改。
+    if (/(?:停用|禁用)(?:单位)?成员/u.test(requested)) return null;
+    const requestedPhone = requested.match(/(?:电话|手机(?:号)?).{0,12}?(?:改成|修改为|换成|更新为)\s*(1\d{10})/u)?.[1]
+      || requested.match(/(?:电话|手机(?:号)?)\s*[=:：]\s*(1\d{10})/u)?.[1];
     if (!requestedPhone) return null;
     const resolved = this.resolveRecipient(database, message);
     if (resolved.kind === 'ambiguous') {
@@ -1221,6 +1337,16 @@ class AiAssistantService {
     const rightHead = /^(?:户主|户主本人)$/u.test(right.relationToHead);
     if (leftHead && right.relationToHead) return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationDescription(right.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
     if (rightHead && left.relationToHead) return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationDescription(left.relationToHead)}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right } };
+    const leftGender = relationChildGender(left.relationToHead);
+    const rightGender = relationChildGender(right.relationToHead);
+    if (leftGender && rightGender) {
+      const relationship = leftGender === 'male' && rightGender === 'male' ? '兄弟'
+        : leftGender === 'female' && rightGender === 'female' ? '姐妹' : '兄妹或姐弟';
+      return {
+        content: `${shared}。档案标注：${left.name}与户主关系为“${left.relationToHead}”，${right.name}与户主关系为“${right.relationToHead}”。二人均为同一户主的子女，因此可确认二人是${relationship}关系。查询依据：本机村民一户一档。`,
+        provider: 'system', handled: true, data: { left, right, relationship },
+      };
+    }
     const leftDetail = left.relationToHead ? `${left.name}与户主关系为“${left.relationToHead}”` : `${left.name}未填写与户主关系`;
     const rightDetail = right.relationToHead ? `${right.name}与户主关系为“${right.relationToHead}”` : `${right.name}未填写与户主关系`;
     return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right } };
@@ -2072,14 +2198,19 @@ class AiAssistantService {
   }
 
   async converse({ messages } = {}) {
-    const userMessage = lastUserMessage(messages);
+    let userMessage = lastUserMessage(messages);
     if (!userMessage) throw new Error('请先输入需要办理或查询的事项');
     if (this.pendingOnlineAnalysis) return this.confirmOnlineAnalysis(userMessage.content);
     if (this.pendingAction) return this.confirmPendingAction(userMessage.content);
-    if (onlineAnalysisRequested(userMessage.content)) return this.prepareOnlineAnalysis(userMessage.content);
+    const conversation = recentConversation(messages);
+    const onlinePlan = await this.understandConversation(conversation);
+    if (onlinePlan?.canonicalMessage) userMessage = { ...userMessage, content: onlinePlan.canonicalMessage };
+    const database = await this.databaseStore.read();
+    if (onlineAnalysisRequested(userMessage.content)) {
+      return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
+    }
     const direct = await this.answerDirectQuestion(userMessage.content);
     if (direct) return direct;
-    const database = await this.databaseStore.read();
     const pendingFunding = this.answerPendingFundingQuestion(database, userMessage.content);
     if (pendingFunding) return pendingFunding;
     const dutyAnswer = this.answerDutyQuestion(database, userMessage.content);
@@ -2093,7 +2224,7 @@ class AiAssistantService {
     const identityCardAnswer = this.answerIdentityCardQuestion(database, userMessage.content);
     if (identityCardAnswer) return identityCardAnswer;
     const relationshipAnswer = this.answerResidentRelationshipQuestion(database, userMessage.content);
-    if (relationshipAnswer) return relationshipAnswer;
+    if (relationshipAnswer) return this.explainVerifiedFacts({ messages: conversation, request: userMessage.content, database, plan: onlinePlan, localAnswer: relationshipAnswer });
     const landAreaAnswer = this.answerLandAreaQuestion(database, userMessage.content);
     if (landAreaAnswer) return landAreaAnswer;
     const landContractorAnswer = this.answerLandContractorQuestion(database, userMessage.content);
@@ -2158,6 +2289,9 @@ class AiAssistantService {
         handled: true,
         action: { type: 'navigate', ...navigation },
       };
+    }
+    if (onlinePlan?.needsFacts && onlinePlan.intent === 'query') {
+      return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
     }
     if (isSystemDataRequest(userMessage.content)) {
       return {
