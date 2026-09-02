@@ -59,6 +59,8 @@ if (typeof module !== 'undefined' && module.exports) {
   if (!api?.getAiSettings) return;
   let status = { running: false };
   let conversation = [];
+  const MAX_CONVERSATION_MESSAGES = 24;
+  const MAX_RENDERED_CHAT_ITEMS = 80;
 
   function notify(message, type = 'success') {
     if (typeof window.showToast === 'function') window.showToast(message, type);
@@ -193,8 +195,28 @@ if (typeof module !== 'undefined' && module.exports) {
     paragraph.textContent = content;
     bubble.appendChild(paragraph);
     container.appendChild(bubble);
+    trimAssistantChat(container);
     container.scrollTop = container.scrollHeight;
     return bubble;
+  }
+
+  function trimAssistantChat(container) {
+    const items = [...container.querySelectorAll('.chat-bubble, .ai-confirmation-card')];
+    for (const item of items.slice(0, Math.max(0, items.length - MAX_RENDERED_CHAT_ITEMS))) item.remove();
+  }
+
+  function appendPendingChatBubble() {
+    const bubble = appendChatBubble('bot', '正在查询…');
+    const paragraph = bubble.querySelector('p');
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => {
+      const seconds = Math.max(1, Math.floor((performance.now() - startedAt) / 1000));
+      if (paragraph?.isConnected) paragraph.textContent = `正在查询… 已等待 ${seconds} 秒`;
+    }, 500);
+    return {
+      bubble,
+      stop: () => window.clearInterval(timer),
+    };
   }
 
   function appendConfirmationCard(action) {
@@ -229,6 +251,7 @@ if (typeof module !== 'undefined' && module.exports) {
     actions.append(confirm, cancel);
     card.append(title, hint, actions);
     container.appendChild(card);
+    trimAssistantChat(container);
     container.scrollTop = container.scrollHeight;
   }
 
@@ -253,21 +276,25 @@ if (typeof module !== 'undefined' && module.exports) {
     if (!preparedContent) input.value = '';
     appendChatBubble('user', content);
     conversation.push({ role: 'user', content });
+    if (conversation.length > MAX_CONVERSATION_MESSAGES) conversation = conversation.slice(-MAX_CONVERSATION_MESSAGES);
     button.disabled = true;
-    const pending = appendChatBubble('bot', '正在思考...');
+    const pending = appendPendingChatBubble();
     try {
       const response = api.converseWithAiAssistant
-        ? await api.converseWithAiAssistant(conversation.slice(-12))
-        : await api.chatWithAi(conversation.slice(-12));
-      pending.remove();
+        ? await api.converseWithAiAssistant([{ role: 'user', content }])
+        : await api.chatWithAi([{ role: 'user', content }]);
+      pending.stop();
+      pending.bubble.remove();
       appendChatBubble('bot', response.content);
       conversation.push({ role: 'assistant', content: response.content });
+      if (conversation.length > MAX_CONVERSATION_MESSAGES) conversation = conversation.slice(-MAX_CONVERSATION_MESSAGES);
       appendConfirmationCard(response.action);
       runAssistantAction(response.action);
       const drawerStatus = document.getElementById('aiDrawerModelStatus');
       if (drawerStatus) drawerStatus.textContent = response.provider === 'system' ? '系统数据已核对' : response.provider === 'local' ? '本地 AI 已回复' : '在线 AI 已回复';
     } catch (error) {
-      pending.querySelector('p').textContent = `请求失败：${error.message}`;
+      pending.stop();
+      pending.bubble.querySelector('p').textContent = `请求失败：${error.message}`;
     } finally {
       button.disabled = false;
     }

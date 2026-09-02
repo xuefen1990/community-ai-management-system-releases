@@ -30,6 +30,11 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /finance_record_update/u);
   assert.match(source, /data-ai-assistant-operation-date/u);
   assert.match(source, /查看详情/u);
+  assert.match(source, /MAX_CONVERSATION_MESSAGES = 24/u);
+  assert.match(source, /MAX_RENDERED_CHAT_ITEMS = 80/u);
+  assert.match(source, /appendPendingChatBubble/u);
+  assert.match(source, /已等待 \$\{seconds\} 秒/u);
+  assert.match(source, /converseWithAiAssistant\(\[\{ role: 'user', content \}\]\)/u);
   assert.match(source, /const button = event\.currentTarget/u);
   assert.doesNotMatch(source, /finally\s*\{\s*event\.currentTarget/u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);

@@ -69,3 +69,51 @@ test('uses the shared workspace only for an account assigned to a unit', async (
   assert.deepEqual(data.contractFeeLedgers, [{ id: 'shared-ledger' }]);
   assert.equal(subscribed, 1);
 });
+
+test('reuses a defensive shared-workspace snapshot and refreshes it after a workspace change', async () => {
+  let requestCount = 0;
+  let notifyChanged = null;
+  const store = new RemoteDatabaseStore({
+    authService: {
+      getStatus: async () => ({ authenticated: true, account: { id: 'account-1', organizationId: 'unit-1' } }),
+      subscribeWorkspaceChanges: async (callback) => { notifyChanged = callback; return () => {}; },
+      request: async () => {
+        requestCount += 1;
+        return { version: requestCount, data: { personnel: [{ id: `resident-${requestCount}` }] } };
+      },
+    },
+    localStore: { dataDirectory: '/tmp/community-local-store', read: async () => { throw new Error('不应读取本机台账'); } },
+  });
+
+  const first = await store.read();
+  first.personnel[0].id = 'mutated-by-caller';
+  const second = await store.read();
+  assert.equal(requestCount, 1);
+  assert.equal(second.personnel[0].id, 'resident-1');
+
+  notifyChanged({ type: 'workspace-changed' });
+  const refreshed = await store.read();
+  assert.equal(requestCount, 2);
+  assert.equal(refreshed.personnel[0].id, 'resident-2');
+});
+
+test('reuses a local snapshot and replaces it after a local write', async () => {
+  let readCount = 0;
+  let saved = null;
+  const store = new RemoteDatabaseStore({
+    authService: { getStatus: async () => ({ authenticated: true, account: { phone: '17505270901', organizationId: null } }) },
+    localStore: {
+      dataDirectory: '/tmp/community-local-store',
+      read: async () => { readCount += 1; return { personnel: [{ id: 'old' }] }; },
+      write: async (value) => { saved = structuredClone(value); return { ok: true }; },
+    },
+  });
+
+  await store.read();
+  await store.read();
+  assert.equal(readCount, 1);
+  await store.write({ personnel: [{ id: 'new' }] });
+  assert.equal(saved.personnel[0].id, 'new');
+  assert.equal((await store.read()).personnel[0].id, 'new');
+  assert.equal(readCount, 1);
+});

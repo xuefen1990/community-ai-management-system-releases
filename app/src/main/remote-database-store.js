@@ -20,37 +20,94 @@ class RemoteDatabaseStore {
     this.dataDirectory = localStore.dataDirectory;
     this.onChanged = onChanged;
     this.stopSubscription = null;
+    this.snapshot = null;
+    this.snapshotWorkspaceKey = '';
+    this.readPromise = null;
   }
 
   async getWorkspaceStatus() {
     const status = await this.authService.getStatus();
+    const account = status?.account || {};
+    const organizationId = String(account.organizationId || '').trim();
+    const accountId = String(account.id || account.phone || '').trim();
+    const hasSharedWorkspace = Boolean(status?.authenticated && organizationId);
     return {
       authenticated: Boolean(status?.authenticated),
-      hasSharedWorkspace: Boolean(status?.authenticated && status?.account?.organizationId),
+      hasSharedWorkspace,
+      workspaceKey: hasSharedWorkspace ? `remote:${accountId}:${organizationId}` : 'local',
     };
   }
 
+  clearSnapshot() {
+    this.version = null;
+    this.snapshot = null;
+    this.readPromise = null;
+  }
+
+  async activateWorkspace(workspace) {
+    if (this.snapshotWorkspaceKey === workspace.workspaceKey) return;
+    if (this.stopSubscription) {
+      await this.stopSubscription();
+      this.stopSubscription = null;
+    }
+    this.snapshotWorkspaceKey = workspace.workspaceKey;
+    this.clearSnapshot();
+  }
+
+  cacheSnapshot(value) {
+    this.snapshot = clone(normalize(value));
+  }
+
   async read() {
-    if (!(await this.getWorkspaceStatus()).hasSharedWorkspace) return this.localStore.read();
-    await this.ensureSubscription();
-    const response = await this.authService.request('/unit/workspace/data');
-    this.version = response.version;
-    return clone(normalize(response.data));
+    const workspace = await this.getWorkspaceStatus();
+    await this.activateWorkspace(workspace);
+    if (this.snapshot) return clone(this.snapshot);
+    if (!this.readPromise) {
+      this.readPromise = (async () => {
+        if (!workspace.hasSharedWorkspace) {
+          const local = await this.localStore.read();
+          this.cacheSnapshot(local);
+          return this.snapshot;
+        }
+        await this.ensureSubscription();
+        const response = await this.authService.request('/unit/workspace/data');
+        this.version = response.version;
+        this.cacheSnapshot(response.data);
+        return this.snapshot;
+      })();
+    }
+    try {
+      return clone(await this.readPromise);
+    } finally {
+      this.readPromise = null;
+    }
   }
 
   async ensureSubscription() {
     if (this.stopSubscription) return;
-    this.stopSubscription = await this.authService.subscribeWorkspaceChanges((payload) => { this.version = null; this.onChanged(payload); });
+    this.stopSubscription = await this.authService.subscribeWorkspaceChanges((payload) => { this.clearSnapshot(); this.onChanged(payload); });
   }
 
   async write(value) {
     const snapshot = normalize(value);
     this.writeQueue = this.writeQueue.catch(() => {}).then(async () => {
-      if (!(await this.getWorkspaceStatus()).hasSharedWorkspace) return this.localStore.write(snapshot);
+      const workspace = await this.getWorkspaceStatus();
+      await this.activateWorkspace(workspace);
+      if (!workspace.hasSharedWorkspace) {
+        const result = await this.localStore.write(snapshot);
+        this.cacheSnapshot(snapshot);
+        return result;
+      }
       if (this.version === null) await this.read();
-      const response = await this.authService.request('/unit/workspace/data', { method: 'PUT', body: { data: snapshot, version: this.version } });
-      this.version = response.version;
-      return { ok: true, version: response.version };
+      try {
+        const response = await this.authService.request('/unit/workspace/data', { method: 'PUT', body: { data: snapshot, version: this.version } });
+        this.version = response.version;
+        this.cacheSnapshot(snapshot);
+        return { ok: true, version: response.version };
+      } catch (error) {
+        this.clearSnapshot();
+        throw error;
+      }
     });
     return this.writeQueue;
   }
