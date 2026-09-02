@@ -48,6 +48,9 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /DocumentDrafting\?\.openDocument/u);
   assert.match(source, /showCertHistoryModal/u);
   assert.match(source, /certHistoryKeyword/u);
+  assert.match(source, /recordSource\?\.kind === 'duty'/u);
+  assert.match(source, /dutyFlexibleState\.activeWeekOffset/u);
+  assert.match(source, /renderFlexibleDuty/u);
   assert.match(source, /已等待 \$\{seconds\} 秒/u);
   assert.match(source, /converseWithAiAssistant\(conversation\)/u);
   assert.match(source, /新建对话/u);

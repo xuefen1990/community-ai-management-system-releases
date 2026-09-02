@@ -440,6 +440,19 @@ if (typeof module !== 'undefined' && module.exports) {
         if (typeof window.onCertHistoryFilterChange === 'function') window.onCertHistoryFilterChange();
       }, 0);
     }
+    if (action.recordSource?.kind === 'duty' && /^\d{4}-\d{2}-\d{2}$/u.test(String(action.recordSource.date || ''))) {
+      const targetDate = new Date(`${action.recordSource.date}T12:00:00`);
+      const today = new Date();
+      const mondayOf = (value) => {
+        const monday = new Date(value.getFullYear(), value.getMonth(), value.getDate());
+        monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+        return monday;
+      };
+      const offset = Math.round((mondayOf(targetDate).getTime() - mondayOf(today).getTime()) / (7 * 24 * 60 * 60 * 1000));
+      window.dutyFlexibleState = window.dutyFlexibleState || {};
+      window.dutyFlexibleState.activeWeekOffset = offset;
+      if (typeof window.renderFlexibleDuty === 'function') window.renderFlexibleDuty();
+    }
   }
 
   async function sendAiMessage(preparedContent = '') {

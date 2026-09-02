@@ -510,6 +510,8 @@ test('answers an explicitly dated duty query from the duty page schedule', async
   assert.match(result.content, /共安排 2 名/u);
   assert.match(result.content, /张三、李四/u);
   assert.match(result.content, /当日排班台账/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.deepEqual(result.data.queryEvidence.records[0].sourceAction.recordSource, { kind: 'duty', date: '2026-09-01' });
 });
 
 test('creates and manually undoes a fully specified work item after confirmation', async () => {

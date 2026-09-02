@@ -1285,9 +1285,19 @@ class AiAssistantService {
     const date = this.resolveDutyDate(requested);
     if (!date) return { content: '请明确要查询哪一天的值班安排，例如“今天谁值班？”或“2026-09-02 谁值班？”。日期不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
     const names = database.dutyFlexible?.schedule?.[date];
-    if (!Array.isArray(names) || !names.length) return { content: `${date} 暂未安排值班人员。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [] } };
-    if (/(多少|几(?:个|人))/u.test(requested)) return { content: `${date} 共安排 ${names.length} 名值班人员：${names.join('、')}。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [...names] } };
-    return { content: `${date} 的值班人员是：${names.join('、')}。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [...names] } };
+    const dutyNames = Array.isArray(names) ? names : [];
+    const evidence = this.buildRecordEvidence({
+      title: `${date} 值班安排核对`, scope: '村里值班页面中该日期的当日排班台账',
+      metricLabel: '已安排值班人员', metricValue: `${dutyNames.length} 人`,
+      summary: [{ name: '排班日期', value: date }],
+      records: dutyNames.map((name) => this.navigationEvidenceRecord({
+        title: name, meta: date, value: '已安排值班', target: 'tab-duty', label: '村里值班', source: '当日排班台账', recordSource: { kind: 'duty', date },
+      })),
+      emptyMessage: `${date} 暂未安排值班人员。`,
+    });
+    if (!dutyNames.length) return { content: `${date} 暂未安排值班人员。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [], queryEvidence: evidence } };
+    if (/(多少|几(?:个|人))/u.test(requested)) return { content: `${date} 共安排 ${dutyNames.length} 名值班人员：${dutyNames.join('、')}。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [...dutyNames], queryEvidence: evidence } };
+    return { content: `${date} 的值班人员是：${dutyNames.join('、')}。查询范围：村里值班页面的当日排班台账。`, provider: 'system', handled: true, data: { date, names: [...dutyNames], queryEvidence: evidence } };
   }
 
   answerContractExpiryQuestion(database, message) {
