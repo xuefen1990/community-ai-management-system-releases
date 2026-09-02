@@ -78,6 +78,30 @@ test('answers an annual payment question from paid general and contract batches 
   assert.match(result.content, /¥2500\.00/u);
   assert.match(result.content, /共 2 笔/u);
   assert.match(result.content, /地力补贴台账目前没有/u);
+  assert.equal(result.data.queryEvidence.kind, 'payment-evidence');
+  assert.equal(result.data.queryEvidence.paidTotalCents, 250000);
+  assert.equal(result.data.queryEvidence.paidCount, 2);
+  assert.deepEqual(result.data.queryEvidence.categorySummary.map((item) => [item.name, item.amountCents]), [['固定工资', 200000], ['土地租金', 50000]]);
+  assert.deepEqual(result.data.queryEvidence.alerts.map((item) => [item.type, item.count, item.amountCents]), [['pending', 1, 80000]]);
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-contract-fees');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.evidenceSource.batchId, 'general-1');
+});
+
+test('shows pending funding as an alert rather than including it in paid totals', async () => {
+  const assistant = service({
+    personnel: [{ id: 'person-1', name: '张三', village_group: '一组' }],
+    disbursementBatches: [{ id: 'general-pending', categoryName: '固定工资', period: '2026 年 5 月', items: [
+      { personId: 'person-1', name: '张三', amountCents: 80000, paymentStatus: 'pending' },
+    ] }],
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '张三 2026 年还有多少待发资金？' }] });
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /¥800\.00/u);
+  assert.equal(result.data.queryEvidence.paidTotalCents, 0);
+  assert.equal(result.data.queryEvidence.empty, true);
+  assert.equal(result.data.queryEvidence.alerts[0].type, 'pending');
+  assert.equal(result.data.queryEvidence.records[0].statusLabel, '待发放');
 });
 
 test('answers a unique resident identity-card request from the local archive without calling online AI', async () => {

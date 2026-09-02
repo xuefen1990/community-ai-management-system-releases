@@ -202,8 +202,115 @@ if (typeof module !== 'undefined' && module.exports) {
   }
 
   function trimAssistantChat(container) {
-    const items = [...container.querySelectorAll('.chat-bubble, .ai-confirmation-card')];
+    const items = [...container.querySelectorAll('.chat-bubble, .ai-confirmation-card, .ai-query-evidence-card')];
     for (const item of items.slice(0, Math.max(0, items.length - MAX_RENDERED_CHAT_ITEMS))) item.remove();
+  }
+
+  function evidenceMoney(cents) {
+    const amount = Number(cents || 0) / 100;
+    return `¥${amount.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  function evidenceText(value, fallback = '—') {
+    const result = String(value || '').trim();
+    return result || fallback;
+  }
+
+  function appendQueryEvidenceCard(evidence) {
+    if (!evidence || evidence.kind !== 'payment-evidence') return;
+    const container = document.getElementById('aiDesktopChatContainer');
+    if (!container) return;
+    const card = document.createElement('section');
+    card.className = 'ai-query-evidence-card';
+    const heading = document.createElement('div');
+    heading.className = 'ai-query-evidence-heading';
+    const title = document.createElement('strong');
+    title.textContent = evidence.title || '查询依据';
+    const scope = document.createElement('p');
+    scope.textContent = `统计口径：${evidenceText(evidence.scope)}`;
+    heading.append(title, scope);
+
+    const total = document.createElement('div');
+    total.className = 'ai-query-evidence-total';
+    const totalLabel = document.createElement('span');
+    totalLabel.textContent = '已发放合计';
+    const totalValue = document.createElement('b');
+    totalValue.textContent = evidenceMoney(evidence.paidTotalCents);
+    const count = document.createElement('small');
+    count.textContent = `共 ${Number(evidence.paidCount || 0)} 笔已发放记录`;
+    total.append(totalLabel, totalValue, count);
+    card.append(heading, total);
+
+    if (evidence.empty) {
+      const empty = document.createElement('p');
+      empty.className = 'ai-query-evidence-empty';
+      empty.textContent = evidenceText(evidence.emptyMessage, '未查到符合条件的记录。');
+      card.appendChild(empty);
+    }
+
+    if (Array.isArray(evidence.categorySummary) && evidence.categorySummary.length) {
+      const summary = document.createElement('div');
+      summary.className = 'ai-query-evidence-summary';
+      for (const item of evidence.categorySummary) {
+        const row = document.createElement('div');
+        const label = document.createElement('span');
+        label.textContent = `${evidenceText(item.name)} · ${Number(item.count || 0)} 笔`;
+        const amount = document.createElement('b');
+        amount.textContent = evidenceMoney(item.amountCents);
+        row.append(label, amount);
+        summary.appendChild(row);
+      }
+      card.appendChild(summary);
+    }
+
+    if (Array.isArray(evidence.alerts) && evidence.alerts.length) {
+      const alerts = document.createElement('div');
+      alerts.className = 'ai-query-evidence-alerts';
+      const heading = document.createElement('strong');
+      heading.textContent = '待留意（不计入已发放合计）';
+      alerts.appendChild(heading);
+      for (const item of evidence.alerts) {
+        const alert = document.createElement('span');
+        alert.textContent = `${evidenceText(item.label)} ${Number(item.count || 0)} 笔 · ${evidenceMoney(item.amountCents)}`;
+        alerts.appendChild(alert);
+      }
+      card.appendChild(alerts);
+    }
+
+    const records = Array.isArray(evidence.records) ? evidence.records : [];
+    if (records.length) {
+      const details = document.createElement('details');
+      details.className = 'ai-query-evidence-details';
+      const toggle = document.createElement('summary');
+      toggle.textContent = `查看 ${records.length} 笔依据和明细`;
+      details.appendChild(toggle);
+      const list = document.createElement('div');
+      list.className = 'ai-query-evidence-record-list';
+      for (const record of records) {
+        const row = document.createElement('div');
+        row.className = 'ai-query-evidence-record';
+        const identity = document.createElement('div');
+        const name = document.createElement('strong');
+        name.textContent = evidenceText(record.recipientName, evidenceText(record.categoryName));
+        const meta = document.createElement('span');
+        meta.textContent = [record.categoryName, record.groupName, record.date, record.statusLabel].map((item) => evidenceText(item, '')).filter(Boolean).join(' · ');
+        identity.append(name, meta);
+        const amount = document.createElement('b');
+        amount.textContent = evidenceMoney(record.amountCents);
+        const source = document.createElement('button');
+        source.type = 'button';
+        source.className = 'ai-query-evidence-source';
+        source.textContent = '查看原始台账';
+        source.addEventListener('click', () => runAssistantAction(record.sourceAction));
+        row.append(identity, amount, source);
+        list.appendChild(row);
+      }
+      details.appendChild(list);
+      card.appendChild(details);
+    }
+    container.appendChild(card);
+    trimAssistantChat(container);
+    container.scrollTop = container.scrollHeight;
   }
 
   function appendPendingChatBubble() {
@@ -279,6 +386,9 @@ if (typeof module !== 'undefined' && module.exports) {
     if (menuItem) {
       document.querySelectorAll('.sidebar-menu .menu-item').forEach((item) => item.classList.toggle('active', item === menuItem));
     }
+    if (action.evidenceSource && typeof window.ContractFeeWorkspace?.openEvidenceSource === 'function') {
+      window.ContractFeeWorkspace.openEvidenceSource(action.evidenceSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
+    }
   }
 
   async function sendAiMessage(preparedContent = '') {
@@ -299,6 +409,7 @@ if (typeof module !== 'undefined' && module.exports) {
       pending.stop();
       pending.bubble.remove();
       appendChatBubble('bot', response.content);
+      appendQueryEvidenceCard(response.data?.queryEvidence);
       conversation.push({ role: 'assistant', content: response.content });
       if (conversation.length > MAX_CONVERSATION_MESSAGES) conversation = conversation.slice(-MAX_CONVERSATION_MESSAGES);
       appendConfirmationCard(response.action);

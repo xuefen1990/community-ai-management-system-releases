@@ -114,6 +114,7 @@ function paymentYear(item, batch) {
 function plannedPaymentYear(item, batch) {
   return yearFrom(batch?.batchDate)
     || yearFrom(batch?.period)
+    || yearFrom(batch?.completedAt)
     || yearFrom(item?.createdAt)
     || yearFrom(batch?.createdAt);
 }
@@ -628,6 +629,72 @@ class AiAssistantService {
     for (const record of records) categories.set(record.categoryName, (categories.get(record.categoryName) || 0) + 1);
     const sourceText = [...categories.entries()].map(([name, count]) => `${name}${count}笔`).join('、');
     return `${year} 年“${recipient.name}”已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔（${sourceText}）。统计范围：通用发放批次和合同发放批次，按实际登记的发放日期计入。${subsidyNotice}`;
+  }
+
+  paymentStatusLabel(status) {
+    return ({ paid: '已发放', pending: '待发放', unpaid: '本次未发放', failed: '发放失败' })[text(status)] || '待核对';
+  }
+
+  paymentEvidenceRecord(record) {
+    return {
+      source: record.source,
+      batchId: record.batchId,
+      categoryName: record.categoryName,
+      amountCents: record.amountCents,
+      status: text(record.status || 'paid'),
+      statusLabel: this.paymentStatusLabel(record.status || 'paid'),
+      date: record.date,
+      groupName: record.groupName,
+      recipientName: record.recipientName,
+      sourceAction: {
+        type: 'navigate',
+        target: 'tab-contract-fees',
+        label: '资金发放中心',
+        evidenceSource: { source: record.source, batchId: record.batchId },
+      },
+    };
+  }
+
+  buildPaymentEvidence({ year, subject, scope, paidRecords = [], pendingRecords = [] }) {
+    const byCategory = new Map();
+    for (const record of paidRecords) {
+      const current = byCategory.get(record.categoryName) || { name: record.categoryName, amountCents: 0, count: 0 };
+      current.amountCents += record.amountCents;
+      current.count += 1;
+      byCategory.set(record.categoryName, current);
+    }
+    const pendingByStatus = new Map();
+    for (const record of pendingRecords) {
+      const current = pendingByStatus.get(record.status) || { status: record.status, amountCents: 0, count: 0 };
+      current.amountCents += record.amountCents;
+      current.count += 1;
+      pendingByStatus.set(record.status, current);
+    }
+    const pendingTotalCents = pendingRecords.reduce((total, record) => total + record.amountCents, 0);
+    const paidTotalCents = paidRecords.reduce((total, record) => total + record.amountCents, 0);
+    const alerts = [...pendingByStatus.values()].map((item) => ({
+      type: item.status,
+      label: this.paymentStatusLabel(item.status),
+      count: item.count,
+      amountCents: item.amountCents,
+    }));
+    return {
+      kind: 'payment-evidence',
+      title: `${year} 年${subject}资金发放核对`,
+      year,
+      subject,
+      scope,
+      paidTotalCents,
+      paidCount: paidRecords.length,
+      categorySummary: [...byCategory.values()].sort((left, right) => right.amountCents - left.amountCents || left.name.localeCompare(right.name, 'zh-CN')),
+      alerts,
+      pendingTotalCents,
+      empty: paidRecords.length === 0,
+      emptyMessage: pendingRecords.length
+        ? `未查到已发放记录；另有 ${pendingRecords.length} 笔尚未计入实发合计，请查看待处理明细。`
+        : '未查到符合统计范围的发放记录。',
+      records: [...paidRecords, ...pendingRecords].map((record) => this.paymentEvidenceRecord(record)),
+    };
   }
 
   phoneUpdateProposal(database, message) {
@@ -2138,7 +2205,15 @@ class AiAssistantService {
     const database = await this.databaseStore.read();
     const paidRecords = this.collectPaidPayments(database, { year });
     if (/(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)|(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(text(message))) {
-      return { content: this.formatHighestGroupAnswer(year, paidRecords), provider: 'system', handled: true, data: { year, records: paidRecords } };
+      const pendingRecords = this.collectUnpaidPayments(database, { year });
+      return {
+        content: this.formatHighestGroupAnswer(year, paidRecords), provider: 'system', handled: true,
+        data: {
+          year,
+          records: paidRecords,
+          queryEvidence: this.buildPaymentEvidence({ year, subject: '各村民组', scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords, pendingRecords }),
+        },
+      };
     }
     const groupName = this.specifiedGroup(database, message);
     const categoryName = this.specifiedCategory(database, message);
@@ -2149,15 +2224,30 @@ class AiAssistantService {
     }
     if (resolved.kind === 'missing' && groupName) {
       const records = this.collectPaidPayments(database, { year, groupName, categoryName });
+      const pendingRecords = this.collectUnpaidPayments(database, { year, groupName, categoryName });
       const qualifier = categoryName ? `${groupName}${categoryName}` : groupName;
-      return { content: this.formatAggregateAnswer({ year, records, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true, data: { year, groupName, categoryName, records } };
+      return {
+        content: this.formatAggregateAnswer({ year, records, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
+        data: {
+          year, groupName, categoryName, records,
+          queryEvidence: this.buildPaymentEvidence({ year, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
+        },
+      };
     }
     if (resolved.kind === 'missing' && categoryName) {
       const records = this.collectPaidPayments(database, { year, categoryName });
-      return { content: this.formatAggregateAnswer({ year, records, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true, data: { year, categoryName, records } };
+      const pendingRecords = this.collectUnpaidPayments(database, { year, categoryName });
+      return {
+        content: this.formatAggregateAnswer({ year, records, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
+        data: {
+          year, categoryName, records,
+          queryEvidence: this.buildPaymentEvidence({ year, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
+        },
+      };
     }
     if (resolved.kind === 'missing') return { content: '我没有识别出要查询的人员、村民组或资金类别。请补充其中一个对象；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
     const records = this.collectPaidPayments(database, { recipient: resolved.recipient, year, categoryName });
+    const pendingRecords = this.collectUnpaidPayments(database, { recipient: resolved.recipient, year, categoryName });
     return {
       content: this.formatAnnualAnswer({
         recipient: resolved.recipient,
@@ -2167,7 +2257,16 @@ class AiAssistantService {
       }),
       provider: 'system',
       handled: true,
-      data: { year, recipient: resolved.recipient, records },
+      data: {
+        year, recipient: resolved.recipient, records,
+        queryEvidence: this.buildPaymentEvidence({
+          year,
+          subject: `“${resolved.recipient.name}”`,
+          scope: '通用发放批次和合同发放批次，按实际登记的发放日期计入；实发合计仅统计已发放记录',
+          paidRecords: records,
+          pendingRecords,
+        }),
+      },
     };
   }
 
@@ -2193,7 +2292,15 @@ class AiAssistantService {
     return {
       content: this.formatPendingFundingAnswer({ year, records, subject, scope: '资金发放中心的通用发放批次和合同发放批次' }),
       provider: 'system', handled: true,
-      data: { year, recipient, groupName, categoryName, records },
+      data: {
+        year, recipient, groupName, categoryName, records,
+        queryEvidence: this.buildPaymentEvidence({
+          year,
+          subject,
+          scope: '资金发放中心的通用发放批次和合同发放批次；本卡仅显示尚未登记为已发放的记录',
+          pendingRecords: records,
+        }),
+      },
     };
   }
 
@@ -2209,10 +2316,10 @@ class AiAssistantService {
     if (onlineAnalysisRequested(userMessage.content)) {
       return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
     }
-    const direct = await this.answerDirectQuestion(userMessage.content);
-    if (direct) return direct;
     const pendingFunding = this.answerPendingFundingQuestion(database, userMessage.content);
     if (pendingFunding) return pendingFunding;
+    const direct = await this.answerDirectQuestion(userMessage.content);
+    if (direct) return direct;
     const dutyAnswer = this.answerDutyQuestion(database, userMessage.content);
     if (dutyAnswer) return dutyAnswer;
     const contractExpiry = this.answerContractExpiryQuestion(database, userMessage.content);

@@ -39,6 +39,29 @@
     return state.database;
   }
 
+  async function openEvidenceSource(source = {}) {
+    await loadDatabase();
+    const batchId = text(source.batchId);
+    if (!batchId) throw new Error('这条查询依据缺少发放批次编号，暂时无法定位原始台账');
+    if (source.source === '通用发放批次') {
+      const batch = findById('disbursementBatches', batchId);
+      if (!batch) throw new Error('对应的通用发放批次已不存在，无法打开原始台账');
+      state.view = 'general-batches';
+      renderShell();
+      disbursementBatchModal(batch);
+      return;
+    }
+    if (source.source === '合同发放批次') {
+      const batch = findById('contractFeeBatches', batchId);
+      if (!batch) throw new Error('对应的合同发放批次已不存在，无法打开原始台账');
+      state.view = 'batches';
+      renderShell();
+      batchModal(batch, true);
+      return;
+    }
+    throw new Error('暂不支持打开这类原始台账');
+  }
+
   async function saveDatabase(message) {
     const result = await api.writeDb(state.database);
     if (!result?.ok) throw new Error(result?.error || '保存失败');
@@ -883,7 +906,7 @@
     document.addEventListener('click', onClick);
   }
 
-  root.ContractFeeWorkspace = Object.freeze({ init, loadDatabase, render: renderShell });
+  root.ContractFeeWorkspace = Object.freeze({ init, loadDatabase, render: renderShell, openEvidenceSource });
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
   else init();
 })(window);

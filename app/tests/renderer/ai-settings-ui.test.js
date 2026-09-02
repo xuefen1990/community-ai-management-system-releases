@@ -33,6 +33,10 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /MAX_CONVERSATION_MESSAGES = 60/u);
   assert.match(source, /MAX_RENDERED_CHAT_ITEMS = 80/u);
   assert.match(source, /appendPendingChatBubble/u);
+  assert.match(source, /appendQueryEvidenceCard/u);
+  assert.match(source, /查看原始台账/u);
+  assert.match(source, /queryEvidence/u);
+  assert.match(source, /openEvidenceSource/u);
   assert.match(source, /已等待 \$\{seconds\} 秒/u);
   assert.match(source, /converseWithAiAssistant\(conversation\)/u);
   assert.match(source, /新建对话/u);

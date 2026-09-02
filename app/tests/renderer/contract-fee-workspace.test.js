@@ -47,4 +47,7 @@ test('workspace module keeps the unified disbursement screens outside the legacy
   assert.match(script, /event\.stopPropagation\(\)/u);
   assert.match(script, /selectAndReadContractFeeExcel/u);
   assert.match(script, /exportContractFeeGroupFiles/u);
+  assert.match(script, /openEvidenceSource/u);
+  assert.match(script, /对应的通用发放批次已不存在/u);
+  assert.match(script, /对应的合同发放批次已不存在/u);
 });
