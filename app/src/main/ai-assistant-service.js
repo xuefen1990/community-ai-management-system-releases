@@ -1393,8 +1393,18 @@ class AiAssistantService {
       || (database.personnel || []).find((item) => personName(item) === resolved.recipient.name && personGroup(item) === resolved.recipient.groupName);
     const identityCard = personIdentityCard(person);
     const personLabel = `“${resolved.recipient.name}”${resolved.recipient.groupName ? `（${resolved.recipient.groupName}）` : ''}`;
-    if (!identityCard) return { content: `${personLabel}的村民档案尚未登记身份证号码。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard: '' } };
-    return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard } };
+    const evidence = this.buildRecordEvidence({
+      title: `${personLabel}居民档案核对`, scope: '本机村民一户一档中与该居民精确匹配的档案记录',
+      metricLabel: '身份证号码', metricValue: identityCard || '未登记',
+      summary: [{ name: '村民小组', value: resolved.recipient.groupName || '未登记' }],
+      records: [this.navigationEvidenceRecord({
+        title: resolved.recipient.name, meta: resolved.recipient.groupName || '村民小组未登记', value: identityCard || '身份证号码未登记',
+        target: 'tab-personnel', label: '村民一户一档', source: '居民档案', filters: { query: resolved.recipient.name },
+      })],
+      emptyMessage: `${personLabel}的村民档案尚未登记身份证号码。`,
+    });
+    if (!identityCard) return { content: `${personLabel}的村民档案尚未登记身份证号码。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard: '', queryEvidence: evidence } };
+    return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard, queryEvidence: evidence } };
   }
 
   answerResidentRelationshipQuestion(database, message) {
@@ -1528,10 +1538,22 @@ class AiAssistantService {
     if (!status || !/(哪些|哪几|多少|几项|有|查看|列出)/u.test(requested)) return null;
     const works = (database.workItems || []).filter((item) => !item.deletedAt && text(item.status) === status)
       .sort((left, right) => text(left.updatedAt).localeCompare(text(right.updatedAt)));
-    if (!works.length) return { content: `当前没有状态为“${status}”的工作事项。查询范围：工作管理台账，已排除回收状态的工作。`, provider: 'system', handled: true, data: { status, works: [] } };
+    const evidence = this.buildRecordEvidence({
+      title: `“${status}”工作事项核对`, scope: '工作管理台账中状态为该值、且未进入可恢复区的工作事项',
+      metricLabel: '符合条件的工作', metricValue: `${works.length} 项`,
+      summary: [{ name: '已排除', value: '回收状态工作' }],
+      records: works.map((item) => this.navigationEvidenceRecord({
+        title: text(item.name) || '未命名工作',
+        meta: [text(item.number), text(item.responsiblePerson) && `责任人：${text(item.responsiblePerson)}`].filter(Boolean).join(' · '),
+        value: text(item.status) || '未填写状态', target: 'tab-work-management', label: '工作管理', source: '工作管理台账',
+        recordSource: { kind: 'work', id: text(item.id) },
+      })),
+      emptyMessage: `当前没有状态为“${status}”的工作事项。`,
+    });
+    if (!works.length) return { content: `当前没有状态为“${status}”的工作事项。查询范围：工作管理台账，已排除回收状态的工作。`, provider: 'system', handled: true, data: { status, works: [], queryEvidence: evidence } };
     const list = works.slice(0, 10).map((item) => `“${text(item.name) || '未命名工作'}”${text(item.number) ? `（${text(item.number)}）` : ''}${text(item.responsiblePerson) ? `，责任人：${text(item.responsiblePerson)}` : ''}`).join('；');
     const more = works.length > 10 ? `；其余 ${works.length - 10} 项请进入工作管理查看。` : '。';
-    return { content: `当前共有 ${works.length} 项“${status}”工作：${list}${more} 查询范围：工作管理台账，已排除回收状态的工作。`, provider: 'system', handled: true, data: { status, works } };
+    return { content: `当前共有 ${works.length} 项“${status}”工作：${list}${more} 查询范围：工作管理台账，已排除回收状态的工作。`, provider: 'system', handled: true, data: { status, works, queryEvidence: evidence } };
   }
 
   answerFinalDocumentQuestion(database, message) {

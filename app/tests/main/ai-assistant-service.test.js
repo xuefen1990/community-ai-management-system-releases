@@ -118,6 +118,9 @@ test('answers a unique resident identity-card request from the local archive wit
   assert.equal(result.provider, 'system');
   assert.match(result.content, /321302199009011634/u);
   assert.match(result.content, /本机村民一户一档/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-personnel');
+  assert.equal(result.data.queryEvidence.records[0].sourceAction.filters.query, '薛锋');
   assert.equal(onlineCalled, false);
 });
 
@@ -957,6 +960,9 @@ test('answers a work status question without counting deleted work items', async
   assert.match(result.content, /河道清理/u);
   assert.doesNotMatch(result.content, /道路修补/u);
   assert.match(result.content, /已排除回收状态/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(result.data.queryEvidence.metricValue, '1 项');
+  assert.deepEqual(result.data.queryEvidence.records[0].sourceAction.recordSource, { kind: 'work', id: 'work-1' });
 });
 
 test('answers a final document question while excluding archived drafts', async () => {

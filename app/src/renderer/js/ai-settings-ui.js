@@ -404,11 +404,21 @@ if (typeof module !== 'undefined' && module.exports) {
         if (typeof window.filterLand === 'function') window.filterLand();
       }
     }
+    if (query && action.target === 'tab-personnel') {
+      const input = document.getElementById('searchPersonnel');
+      if (input) {
+        input.value = query;
+        if (typeof window.filterPersonnel === 'function') window.filterPersonnel();
+      }
+    }
     if (action.evidenceSource && typeof window.ContractFeeWorkspace?.openEvidenceSource === 'function') {
       window.ContractFeeWorkspace.openEvidenceSource(action.evidenceSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
     }
     if (action.recordSource && typeof window.ContractFeeWorkspace?.openRecordSource === 'function') {
       window.ContractFeeWorkspace.openRecordSource(action.recordSource).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
+    }
+    if (action.recordSource?.kind === 'work' && typeof window.WorkManagement?.openWork === 'function') {
+      window.WorkManagement.openWork(action.recordSource.id).catch((error) => notify(error.message || '未能打开原始台账', 'error'));
     }
   }
 
