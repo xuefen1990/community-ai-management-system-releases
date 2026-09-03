@@ -56,6 +56,9 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /系统未进行任何修改/u);
   assert.match(source, /服务暂不可用/u);
   assert.match(source, /converseWithAiAssistant\(conversation\)/u);
+  assert.match(source, /typeof preparedContent === 'string' \? preparedContent : ''/u);
+  assert.match(source, /\['aiDesktopSendBtn', \(\) => sendAiMessage\(\)\]/u);
+  assert.doesNotMatch(source, /String\(preparedContent \|\| input\.value/u);
   assert.match(source, /新建对话/u);
   assert.match(source, /const button = event\.currentTarget/u);
   assert.match(source, /configureSafeDrawerToggle/u);

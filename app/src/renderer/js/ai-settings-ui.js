@@ -458,9 +458,13 @@ if (typeof module !== 'undefined' && module.exports) {
   async function sendAiMessage(preparedContent = '') {
     const input = document.getElementById('aiDesktopInputText');
     const button = document.getElementById('aiDesktopSendBtn');
-    const content = String(preparedContent || input.value || '').trim();
+    // A DOM click handler receives PointerEvent as its first argument. Only
+    // confirmation cards intentionally pass a text command; all other entry
+    // points must read the value currently shown in the input box.
+    const command = typeof preparedContent === 'string' ? preparedContent : '';
+    const content = String(command || input.value || '').trim();
     if (!content || button.disabled) return;
-    if (!preparedContent) input.value = '';
+    if (!command) input.value = '';
     appendChatBubble('user', content);
     conversation.push({ role: 'user', content });
     if (conversation.length > MAX_CONVERSATION_MESSAGES) conversation = conversation.slice(-MAX_CONVERSATION_MESSAGES);
@@ -774,7 +778,7 @@ if (typeof module !== 'undefined' && module.exports) {
     window.toggleInternalAiService = toggleLocalRuntime;
     window.checkLocalAIStatus = async () => updateRuntimeStatus(await api.getInternalAiServerStatus());
     window.sendDesktopAiMessage = sendAiMessage;
-    for (const [id, handler] of [['btnScanModels', scanModels], ['btnToggleInternalAi', toggleLocalRuntime], ['aiDesktopSendBtn', sendAiMessage]]) {
+    for (const [id, handler] of [['btnScanModels', scanModels], ['btnToggleInternalAi', toggleLocalRuntime], ['aiDesktopSendBtn', () => sendAiMessage()]]) {
       const button = document.getElementById(id);
       if (!button) continue;
       button.removeAttribute('onclick');
