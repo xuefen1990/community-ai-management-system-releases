@@ -129,6 +129,15 @@ test('duty scheduler actions keep gray labels on pale green surfaces', async () 
   assert.match(style, /body\.light-theme #tab-duty button svg/u);
 });
 
+test('AI assistant controls keep green surfaces after glass-theme overrides', async () => {
+  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+  assert.match(style, /\.ai-records-link\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, #d9f1e4/u);
+  assert.match(style, /\.ai-chip\s*\{[\s\S]*?color:\s*#42534d/u);
+  assert.match(style, /\.ai-confirmation-cancel\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, #d9f1e4/u);
+  assert.match(style, /\.ai-query-evidence-source\s*\{[\s\S]*?color:\s*#42534d/u);
+  assert.match(style, /body\.light-theme \.ai-operation-center \.btn\.btn-outline/u);
+});
+
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   const start = source.indexOf('async function prepareAuthorizedStartup()');
