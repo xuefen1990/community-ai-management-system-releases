@@ -310,6 +310,29 @@
     return [...new Set(values.map((value) => text(typeof value === 'string' ? value : value?.label)).filter(Boolean))];
   }
 
+  function templateFieldKey(value, index = 0) {
+    const source = text(typeof value === 'string' ? value : value?.key || value?.label);
+    return text(source.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/gu, '_').replace(/^_+|_+$/gu, '')) || `field_${index + 1}`;
+  }
+
+  function normalizeTemplateColumns(value) {
+    const source = Array.isArray(value?.columns) && value.columns.length ? value.columns : (Array.isArray(value?.fields) ? value.fields : text(value?.fields).split(/[、，,\n]/u));
+    const seen = new Set();
+    return source.map((field, index) => {
+      const label = text(typeof field === 'string' ? field : field?.label || field?.key);
+      if (!label) return null;
+      let key = templateFieldKey(field, index); let suffix = 2;
+      while (seen.has(key)) { key = `${templateFieldKey(field, index)}_${suffix}`; suffix += 1; }
+      seen.add(key);
+      const sourceType = text(typeof field === 'string' ? '' : field?.source) || 'manual';
+      return {
+        key, label, source: ['resident', 'batch', 'manual', 'calculation'].includes(sourceType) ? sourceType : 'manual',
+        residentField: text(typeof field === 'string' ? '' : field?.residentField), calculation: text(typeof field === 'string' ? '' : field?.calculation),
+        width: Math.max(60, Math.min(360, Math.round(numberValue(typeof field === 'string' ? 120 : field?.width || 120) || 120))), visible: typeof field === 'string' ? true : field?.visible !== false,
+      };
+    }).filter(Boolean);
+  }
+
   function normalizeDisbursementTemplate(value, { now = new Date(), id } = {}) {
     const name = text(value?.name);
     if (!name) throw new Error('请填写发放模板名称');
@@ -323,6 +346,8 @@
       key: text(value?.key) || `custom_${Date.now()}`,
       name, categoryCode: text(value?.categoryCode), builtIn: Boolean(value?.builtIn), active: value?.active !== false,
       paper, rowsPerPage, title: text(value?.title) || name, description: text(value?.description), fields,
+      columns: normalizeTemplateColumns(value), orientation: text(value?.orientation || 'portrait') === 'landscape' ? 'landscape' : 'portrait',
+      showBankCard: value?.showBankCard !== false, showSigners: value?.showSigners !== false,
       createdAt: text(value?.createdAt) || nowIso(now), updatedAt: nowIso(now),
     };
   }
@@ -396,6 +421,51 @@
   function markTemplateDisbursementPrinted(batch, { now = new Date() } = {}) {
     if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能打印');
     return { ...structuredClone(batch), status: 'printed', printedAt: nowIso(now), updatedAt: nowIso(now) };
+  }
+
+  function disbursementResidentCandidates(item, personnel = []) {
+    const idCard = normalizedIdCard(item?.idCard || item?.id_card || item?.residentSnapshot?.idCard);
+    const name = text(item?.name); const groupName = text(item?.groupName);
+    const seen = new Set(); const candidates = [];
+    const add = (person, reason) => {
+      const id = personId(person); if (!id || seen.has(id)) return;
+      seen.add(id); candidates.push({ person, personId: id, reason });
+    };
+    if (idCard) personnel.filter((person) => normalizedIdCard(person?.id_card || person?.idCard) === idCard).forEach((person) => add(person, '身份证号一致'));
+    if (name && groupName) personnel.filter((person) => personName(person) === name && personGroup(person) === groupName).forEach((person) => add(person, '同组同名'));
+    if (name) personnel.filter((person) => personName(person) === name).forEach((person) => add(person, '同名待确认'));
+    return candidates;
+  }
+
+  function disbursementResidentSyncPlan(batch, personnel = [], resolutions = {}) {
+    return (batch?.items || []).map((item) => {
+      const rowId = text(item.id); const resolution = resolutions[rowId] || {}; const candidateId = text(resolution.personId || item.personId);
+      const candidates = disbursementResidentCandidates(item, personnel); const person = personnel.find((entry) => personId(entry) === candidateId) || (candidates.length === 1 ? candidates[0].person : null);
+      if (!person) return { itemId: rowId, status: candidates.length > 1 ? 'manual' : 'missing', reason: candidates.length > 1 ? '存在重名或多个居民候选，必须人工确认' : '未找到居民档案', candidates, item };
+      const incomingCard = normalizeBankCard(item.bankCard); const existingCard = defaultBankCard(person);
+      const decision = text(resolution.bankCardDecision || (incomingCard && existingCard && incomingCard !== existingCard ? '' : 'sync'));
+      if (incomingCard && existingCard && incomingCard !== existingCard && !['once', 'sync'].includes(decision)) return { itemId: rowId, status: 'manual', reason: '银行卡与居民默认卡不同，请选择仅本次使用或同步居民档案', personId: personId(person), person, item };
+      return { itemId: rowId, status: incomingCard && existingCard && incomingCard !== existingCard ? (decision === 'sync' ? 'update-default-card' : 'once-only') : 'matched', personId: personId(person), person, item, bankCardDecision: decision || 'sync' };
+    });
+  }
+
+  function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date() } = {}) {
+    if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能登记为发放完成');
+    const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan(nextBatch, nextPersonnel, resolutions);
+    const unresolved = plan.filter((entry) => ['manual', 'missing'].includes(entry.status));
+    if (unresolved.length) throw new Error(`仍有 ${unresolved.length} 条居民关联或银行卡待处理：${unresolved.map((entry) => entry.reason).join('；')}`);
+    const syncResults = [];
+    for (const entry of plan) {
+      const item = nextBatch.items.find((row) => text(row.id) === entry.itemId); const person = nextPersonnel.find((row) => personId(row) === entry.personId);
+      if (!item || !person) continue;
+      const beforeCard = defaultBankCard(person); item.personId = personId(person); item.recipientKind = 'resident'; item.residentSnapshot = { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard: normalizeBankCard(item.bankCard) || beforeCard };
+      const shouldSync = entry.bankCardDecision !== 'once' && normalizeBankCard(item.bankCard);
+      if (shouldSync) setDefaultBankCard(person, item.bankCard, { source: 'disbursement-complete', now });
+      syncResults.push({ itemId: item.id, personId: personId(person), status: entry.status, bankCardDecision: entry.bankCardDecision || 'sync', previousCard: beforeCard, nextCard: shouldSync ? defaultBankCard(person) : beforeCard, syncedAt: nowIso(now) });
+    }
+    nextBatch.status = 'completed'; nextBatch.completedAt = nowIso(now); nextBatch.updatedAt = nowIso(now); nextBatch.residentSyncResults = syncResults;
+    nextBatch.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); });
+    return { batch: nextBatch, personnel: nextPersonnel, results: syncResults };
   }
 
   function normalizedSubsidyRecord(value, personnel = [], { now = new Date(), id } = {}) {
@@ -609,7 +679,8 @@
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
     defaultDisbursementCategories, defaultDisbursementTemplates, normalizeDisbursementTemplate, createDisbursementTemplate, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
-    DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch, prepareTemplateDisbursementBatch, markTemplateDisbursementPrinted,
+    DISBURSEMENT_TEMPLATE_KEYS, normalizeTemplateColumns, normalizeProfile, templateItem, createTemplateDisbursementBatch, prepareTemplateDisbursementBatch, markTemplateDisbursementPrinted,
+    disbursementResidentCandidates, disbursementResidentSyncPlan, completeTemplateDisbursementBatch,
     normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyRecordsNeedingResidentSync, subsidyResidentImportPlan, importFarmlandSubsidyResidents, resolveFarmlandSubsidyResidentConflict, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

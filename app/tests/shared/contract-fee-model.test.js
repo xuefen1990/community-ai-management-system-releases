@@ -150,6 +150,35 @@ test('manages reusable disbursement templates and keeps their print snapshot wit
   assert.equal(model.markTemplateDisbursementPrinted(model.prepareTemplateDisbursementBatch(batch, { now }), { now }).status, 'printed');
 });
 
+test('keeps configured template columns while remaining compatible with earlier field lists', () => {
+  const template = model.createDisbursementTemplate({
+    name: '临时慰问金', categoryCode: 'subsidy', paper: 'A5', rowsPerPage: 10, title: '临时慰问金发放表',
+    fields: [{ label: '身份证号', source: 'resident', residentField: 'idCard', width: 180 }, { label: '慰问事项', source: 'manual' }],
+  }, { now, id: 'column-template' });
+  assert.deepEqual(template.fields, ['身份证号', '慰问事项']);
+  assert.equal(template.columns[0].source, 'resident');
+  assert.equal(template.columns[0].residentField, 'idCard');
+  assert.equal(template.columns[1].source, 'manual');
+  const older = model.createDisbursementTemplate({ name: '旧表', fields: '事项、金额' }, { now, id: 'old-template' });
+  assert.deepEqual(older.columns.map((item) => item.label), ['事项', '金额']);
+});
+
+test('requires an explicit bank-card decision before completing an imported disbursement batch', () => {
+  const residents = [{ id: 'p-card', name: '王五', village_group: '东一组', id_card: '320000199001010099', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] }];
+  const batch = model.createTemplateDisbursementBatch({
+    categoryId: 'category-subsidy', categoryName: '补贴', templateKey: 'custom_import', templateId: 'template-import', period: '2026年9月',
+    items: [{ name: '王五', groupName: '东一组', bankCard: '62220002', finalAmount: 100, customData: { 身份证号: '320000199001010099' } }],
+  }, { personnel: [], now, id: 'import-batch' });
+  batch.items[0].idCard = '320000199001010099';
+  assert.throws(() => model.completeTemplateDisbursementBatch(batch, { personnel: residents, now }), /银行卡.*选择/u);
+  const once = model.completeTemplateDisbursementBatch(batch, { personnel: residents, resolutions: { [batch.items[0].id]: { personId: 'p-card', bankCardDecision: 'once' } }, now });
+  assert.equal(once.batch.status, 'completed');
+  assert.equal(model.defaultBankCard(once.personnel[0]), '62220001');
+  const synced = model.completeTemplateDisbursementBatch(batch, { personnel: residents, resolutions: { [batch.items[0].id]: { personId: 'p-card', bankCardDecision: 'sync' } }, now });
+  assert.equal(model.defaultBankCard(synced.personnel[0]), '62220002');
+  assert.equal(synced.batch.residentSyncResults[0].status, 'update-default-card');
+});
+
 test('requires explicit confirmation for duplicate names and records a manual amount adjustment reason', () => {
   assert.throws(() => model.templateItem({ name: '张三', unitPrice: 100, quantity: 1 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, { now }), /重名/u);
   assert.throws(() => model.templateItem({ personId: 'p-2', unitPrice: 100, quantity: 2, finalAmount: 150 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, { now }), /调整原因/u);
