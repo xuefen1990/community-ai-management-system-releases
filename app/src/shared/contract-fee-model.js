@@ -257,6 +257,7 @@
   function normalizeDisbursementCollections(database) {
     if (!Array.isArray(database.disbursementCategories) || !database.disbursementCategories.length) database.disbursementCategories = defaultDisbursementCategories();
     if (!Array.isArray(database.disbursementBatches)) database.disbursementBatches = [];
+    if (!Array.isArray(database.disbursementRecycleBin)) database.disbursementRecycleBin = [];
     const storedTemplates = Array.isArray(database.disbursementTemplates) ? database.disbursementTemplates : [];
     const storedByKey = new Map(storedTemplates.map((item) => [text(item?.key), item]));
     database.disbursementTemplates = [
@@ -275,7 +276,7 @@
     if (!name) throw new Error('每一笔发放都必须填写收款人');
     const amountCents = amountToCents(value.amount);
     if (amountCents < 0) throw new Error('发放金额不能小于零');
-    return { id: id || identifier('disbursement-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : '', recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName), bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard), amountCents, paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), createdAt: nowIso(now), updatedAt: nowIso(now) };
+    return { id: id || identifier('disbursement-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : '', recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName), idCard: normalizedIdCard(value.idCard || value.id_card), phone: normalizedPhone(value.phone || value.mobile), bankName: text(value.bankName || value.bank), bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard), amountCents, paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), createdAt: nowIso(now), updatedAt: nowIso(now) };
   }
   function createDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
     if (!text(value?.categoryId) || !text(value?.categoryName)) throw new Error('请选择资金类别');
@@ -285,12 +286,57 @@
     const directPaid = Boolean(value.directPaid);
     if (directPaid && !text(value.directPaymentReason)) throw new Error('直接登记为已发放时必须填写经办说明');
     const batchId = id || identifier('disbursement-batch', now instanceof Date ? now.getTime() : Date.now());
-    return { id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), period: text(value.period), batchDate: text(value.batchDate), contractId: text(value.contractId), status: directPaid ? 'completed' : 'draft', directPaymentReason: text(value.directPaymentReason), items: items.map((item, index) => ({ ...item, id: `${batchId}-item-${index + 1}`, paymentStatus: directPaid ? 'paid' : item.paymentStatus, paidAt: directPaid ? nowIso(now) : null })), attachments: Array.isArray(value.attachments) ? value.attachments : [], notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), reviewedAt: null, completedAt: directPaid ? nowIso(now) : null };
+    return { id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), period: text(value.period), batchDate: text(value.batchDate), contractId: text(value.contractId), status: directPaid ? 'completed' : 'draft', directPaymentReason: text(value.directPaymentReason), isTest: Boolean(value.isTest), items: items.map((item, index) => ({ ...item, id: `${batchId}-item-${index + 1}`, paymentStatus: directPaid ? 'paid' : item.paymentStatus, paidAt: directPaid ? nowIso(now) : null })), attachments: Array.isArray(value.attachments) ? value.attachments : [], notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), reviewedAt: null, completedAt: directPaid ? nowIso(now) : null };
   }
   function summarizeDisbursementBatch(batch) { return { totalCents: (batch?.items || []).reduce((sum, item) => sum + Number(item.amountCents || 0), 0), recipientCount: (batch?.items || []).length, paidCount: (batch?.items || []).filter((item) => item.paymentStatus === 'paid').length }; }
   function reviewDisbursementBatch(batch, { now = new Date() } = {}) { if (!batch?.items?.length) throw new Error('批次没有收款明细'); return { ...structuredClone(batch), status: 'reviewed', reviewedAt: nowIso(now), updatedAt: nowIso(now) }; }
   function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft', 'prepared', 'printed'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
   function summarizeDisbursementDashboard(batches = []) { const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; for (const batch of batches) { const total = summarizeDisbursementBatch(batch).totalCents; totalCents += total; totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total; if (batch.status === 'draft') pendingReview += 1; if (batch.status === 'completed') completed += 1; } return { totalCents, pendingReview, completed, totalsByCategory }; }
+
+  function recycleDisbursementBatch(batch, { now = new Date(), reason = '' } = {}) {
+    if (!batch?.id) throw new Error('未找到要清理的发放批次');
+    return { ...structuredClone(batch), recycleInfo: { recycledAt: nowIso(now), reason: text(reason), previousStatus: text(batch.status) || 'draft' } };
+  }
+
+  function restoreDisbursementBatch(batch, { now = new Date() } = {}) {
+    if (!batch?.recycleInfo) throw new Error('该批次不在回收站中');
+    const next = structuredClone(batch); next.status = text(next.recycleInfo.previousStatus) || 'draft'; delete next.recycleInfo; next.updatedAt = nowIso(now); return next;
+  }
+
+  function copyDisbursementBatch(batch, personnel = [], { now = new Date(), id } = {}) {
+    if (!batch?.items?.length) throw new Error('该批次没有可复制的发放明细');
+    const batchId = id || identifier('disbursement-batch-copy', now instanceof Date ? now.getTime() : Date.now());
+    const next = structuredClone(batch); next.id = batchId; next.copiedFromBatchId = text(batch.id); next.status = 'draft'; next.preparedAt = null; next.printedAt = null; next.reviewedAt = null; next.completedAt = null; next.createdAt = nowIso(now); next.updatedAt = nowIso(now); delete next.recycleInfo;
+    next.items = next.items.map((item, index) => {
+      const person = (personnel || []).find((entry) => personId(entry) === text(item.personId));
+      const bankCard = person ? defaultBankCard(person) : normalizeBankCard(item.bankCard);
+      return { ...item, id: `${batchId}-item-${index + 1}`, name: person ? personName(person) : item.name, groupName: person ? personGroup(person) : item.groupName, bankCard, paymentStatus: 'pending', paidAt: null, paymentNote: '', residentSnapshot: person ? { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard } : item.residentSnapshot, createdAt: nowIso(now), updatedAt: nowIso(now) };
+    });
+    next.residentSyncResults = []; return next;
+  }
+
+  function disbursementBatchIssues(batch, personnel = []) {
+    const issues = [];
+    const seen = new Set();
+    for (const item of batch?.items || []) {
+      const key = `${text(item.name)}|${text(item.groupName)}`;
+      if (seen.has(key)) issues.push({ type: 'duplicate', itemId: item.id, message: `${item.name}在本批次重复出现` }); else seen.add(key);
+      if (!normalizeBankCard(item.bankCard)) issues.push({ type: 'missing-bank-card', itemId: item.id, message: `${item.name}缺少银行卡号` });
+      if (Number(item.amountCents) !== Number(item.automaticAmountCents ?? item.amountCents) && text(item.adjustmentReason)) issues.push({ type: 'adjusted-amount', itemId: item.id, message: `${item.name}已手动调整金额` });
+      const candidates = disbursementResidentCandidates(item, personnel);
+      if (!text(item.personId) && candidates.length > 1) issues.push({ type: 'ambiguous-person', itemId: item.id, message: `${item.name}存在重名居民，待人工确认` });
+      const person = (personnel || []).find((entry) => personId(entry) === text(item.personId));
+      if (person && normalizeBankCard(item.bankCard) && defaultBankCard(person) && normalizeBankCard(item.bankCard) !== defaultBankCard(person)) issues.push({ type: 'updated-bank-card', itemId: item.id, message: `${item.name}的银行卡与居民档案不同` });
+    }
+    return issues;
+  }
+
+  function disbursementBatchSyncStatus(batch, personnel = []) {
+    if (Array.isArray(batch?.residentSyncResults) && batch.residentSyncResults.length >= (batch?.items || []).length) return { code: 'synced', label: '已同步', count: 0 };
+    const plan = disbursementResidentSyncPlan(batch, personnel);
+    const manual = plan.filter((item) => ['manual', 'missing'].includes(item.status));
+    return manual.length ? { code: 'manual', label: '待人工确认', count: manual.length } : { code: 'pending', label: `待同步 ${plan.length} 人`, count: plan.length };
+  }
 
   const DISBURSEMENT_TEMPLATE_KEYS = Object.freeze({ positionSalary: 'position_salary', publicService: 'public_service', casualLabor: 'casual_labor', contractFee: 'contract_fee' });
 
@@ -348,6 +394,7 @@
       paper, rowsPerPage, title: text(value?.title) || name, description: text(value?.description), fields,
       columns: normalizeTemplateColumns(value), orientation: text(value?.orientation || 'portrait') === 'landscape' ? 'landscape' : 'portrait',
       showBankCard: value?.showBankCard !== false, showSigners: value?.showSigners !== false,
+      previewLayout: value?.previewLayout && typeof value.previewLayout === 'object' ? structuredClone(value.previewLayout) : {},
       createdAt: text(value?.createdAt) || nowIso(now), updatedAt: nowIso(now),
     };
   }
@@ -390,7 +437,7 @@
       recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName),
       // Imported Excel details may contain an ID card before a resident is chosen.
       // Keep it with the draft so the completion step can match the resident safely.
-      idCard: normalizedIdCard(value.idCard || value.id_card),
+      idCard: normalizedIdCard(value.idCard || value.id_card), phone: normalizedPhone(value.phone || value.mobile), bankName: text(value.bankName || value.bank),
       role: text(value.role), responsibilityArea: text(value.responsibilityArea), workDate: text(value.workDate), workItem: text(value.workItem),
       bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
       unitPriceCents, quantity, deductionsCents, calculatedAmountCents, automaticAmountCents, amountCents: finalAmountCents,
@@ -433,7 +480,7 @@
       templateId: text(value.templateId), templateSnapshot: value.templateSnapshot ? structuredClone(value.templateSnapshot) : null,
       printSettings: normalizeTemplatePrintSettings({ ...value.printSettings, paper: value.printSettings?.paper || value.paper, rowsPerPage: value.printSettings?.rowsPerPage || value.rowsPerPage, orientation: value.printSettings?.orientation || value.orientation }, templateKey),
       title: text(value.title), villageName: text(value.villageName), unitName: text(value.unitName), signers: { approver: text(value.approver), maker: text(value.maker), handler: text(value.handler) },
-      status: 'draft', items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), preparedAt: null, printedAt: null, reviewedAt: null, completedAt: null,
+      status: 'draft', isTest: Boolean(value.isTest), items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), preparedAt: null, printedAt: null, reviewedAt: null, completedAt: null,
     };
   }
 
@@ -473,6 +520,89 @@
     });
   }
 
+  function disbursementResidentHistory(batch, item, now) {
+    return {
+      id: `disbursement-source-${text(batch?.id)}-${text(item?.id)}`,
+      sourceType: 'disbursement', batchId: text(batch?.id), recordId: text(item?.id), categoryName: text(batch?.categoryName),
+      templateKey: text(batch?.templateKey), period: text(batch?.period), batchDate: text(batch?.batchDate), groupName: text(item?.groupName),
+      amountCents: Number(item?.amountCents || 0), paymentStatus: text(item?.paymentStatus) || 'pending', importedAt: nowIso(now),
+    };
+  }
+
+  function appendDisbursementResidentHistory(person, history) {
+    const records = Array.isArray(person.disbursementHistory) ? person.disbursementHistory : [];
+    const index = records.findIndex((item) => text(item.batchId) === text(history.batchId) && text(item.recordId) === text(history.recordId));
+    if (index >= 0) records.splice(index, 1, { ...records[index], ...history }); else records.push(history);
+    person.disbursementHistory = records;
+    const sources = Array.isArray(person.importSources) ? person.importSources : [];
+    const source = { ...history, sourceType: 'disbursement_import' };
+    const sourceIndex = sources.findIndex((item) => text(item.batchId) === text(history.batchId) && text(item.recordId) === text(history.recordId));
+    if (sourceIndex >= 0) sources.splice(sourceIndex, 1, { ...sources[sourceIndex], ...source }); else sources.push(source);
+    person.importSources = sources;
+  }
+
+  function disbursementResidentImportPlan(batch, personnel = [], resolutions = {}) {
+    return (batch?.items || []).map((item) => {
+      const resolution = resolutions[text(item.id)] || {};
+      const selectedId = text(resolution.personId || item.personId);
+      const candidates = disbursementResidentCandidates(item, personnel);
+      const person = (personnel || []).find((entry) => personId(entry) === selectedId) || (candidates.length === 1 ? candidates[0].person : null);
+      const idCard = normalizedIdCard(item.idCard);
+      if (!person) {
+        if (candidates.length > 1) return { itemId: item.id, status: 'manual', reason: '存在重名或多个居民候选，必须人工确认', candidates, item };
+        if (!idCard) return { itemId: item.id, status: 'manual', reason: '缺少身份证号，不能自动新建居民档案', candidates, item };
+        if (!text(item.name)) return { itemId: item.id, status: 'manual', reason: '缺少姓名，不能新建居民档案', candidates, item };
+        return { itemId: item.id, status: 'create', reason: '未找到同身份证居民，将新建档案', item };
+      }
+      const conflicts = [];
+      const compare = (field, existing, incoming) => { if (text(existing) && text(incoming) && text(existing) !== text(incoming)) conflicts.push({ field, residentValue: text(existing), disbursementValue: text(incoming) }); };
+      compare('姓名', personName(person), item.name); compare('村民组', personGroup(person), item.groupName);
+      const existingId = normalizedIdCard(person.id_card || person.idCard); if (existingId && idCard && existingId !== idCard) conflicts.push({ field: '身份证号', residentValue: existingId, disbursementValue: idCard });
+      compare('手机号', residentPhone(person), normalizedPhone(item.phone));
+      const incomingCard = normalizeBankCard(item.bankCard); const cards = bankAccounts(person); const hasIncomingCard = incomingCard && cards.some((account) => normalizeBankCard(account.cardNumber) === incomingCard);
+      if (incomingCard && cards.length && !hasIncomingCard) conflicts.push({ field: '银行卡号', residentValue: cards.map((account) => normalizeBankCard(account.cardNumber)).join('、'), disbursementValue: incomingCard });
+      compare('开户行', residentBankName(person, incomingCard), item.bankName);
+      if (conflicts.length && !['keep', 'adopt'].includes(text(resolution.conflictResolution))) return { itemId: item.id, status: 'manual', reason: conflicts.map((entry) => `${entry.field}与居民档案不一致`).join('；'), conflicts, candidates, personId: personId(person), person, item };
+      return { itemId: item.id, status: conflicts.length ? 'resolved' : 'merge', reason: conflicts.length ? '已人工确认资料处理方式' : '自动补充居民档案空白信息', conflicts, personId: personId(person), person, item, conflictResolution: text(resolution.conflictResolution) || 'keep' };
+    });
+  }
+
+  function fillResidentFromDisbursement(person, item, batch, now, { adopt = false } = {}) {
+    const changedFields = []; const fill = (key, value, aliases = []) => {
+      if (!text(value) || (text(person[key] || aliases.map((alias) => person[alias]).find((entry) => text(entry))) && !adopt)) return;
+      if (text(person[key]) !== text(value)) { person[key] = text(value); changedFields.push(key); }
+    };
+    fill('name', item.name, ['person_name', 'resident_name']); fill('village_group', item.groupName, ['villageGroup', 'group', 'group_name']); fill('phone', normalizedPhone(item.phone), ['mobile', 'mobile_phone']);
+    const idCard = normalizedIdCard(item.idCard); if (idCard && (!normalizedIdCard(person.id_card || person.idCard) || adopt) && normalizedIdCard(person.id_card || person.idCard) !== idCard) { person.id_card = idCard; person.idCard = idCard; changedFields.push('idCard'); }
+    const card = normalizeBankCard(item.bankCard); const knownAccount = card && bankAccounts(person).find((account) => normalizeBankCard(account.cardNumber) === card);
+    if (card && (!defaultBankCard(person) || adopt)) {
+      if (defaultBankCard(person) !== card) { setDefaultBankCard(person, card, { source: 'disbursement-sync', now }); changedFields.push('bankCard'); }
+      const account = bankAccounts(person).find((entry) => normalizeBankCard(entry.cardNumber) === card); if (account && text(item.bankName)) account.bankName = text(item.bankName);
+    } else if (knownAccount && !text(knownAccount.bankName) && text(item.bankName)) { knownAccount.bankName = text(item.bankName); changedFields.push('bankName'); }
+    if (text(item.bankName) && (!text(person.bank_name || person.bankName) || adopt) && text(person.bank_name || person.bankName) !== text(item.bankName)) { person.bank_name = text(item.bankName); changedFields.push('bankName'); }
+    appendDisbursementResidentHistory(person, disbursementResidentHistory(batch, item, now)); person.updated_at = nowIso(now);
+    return [...new Set(changedFields)];
+  }
+
+  function syncDisbursementBatchResidents({ batch, personnel = [], resolutions = {} } = {}, { now = new Date() } = {}) {
+    const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentImportPlan(nextBatch, nextPersonnel, resolutions); const results = []; let serial = 0;
+    for (const entry of plan) {
+      if (entry.status === 'manual') { results.push(entry); continue; }
+      const item = nextBatch.items.find((row) => text(row.id) === text(entry.itemId)); let person;
+      if (entry.status === 'create') { serial += 1; person = { id: `personnel-disbursement-${now instanceof Date ? now.getTime() : Date.now()}-${serial}`, created_at: nowIso(now) }; nextPersonnel.push(person); }
+      else person = nextPersonnel.find((row) => personId(row) === entry.personId);
+      if (!item || !person) { results.push({ ...entry, status: 'manual', reason: '未找到待同步居民档案' }); continue; }
+      const changedFields = fillResidentFromDisbursement(person, item, nextBatch, now, { adopt: entry.conflictResolution === 'adopt' });
+      item.personId = personId(person); item.recipientKind = 'resident'; item.residentSnapshot = { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard: normalizeBankCard(item.bankCard) || defaultBankCard(person) };
+      results.push({ ...entry, status: entry.status === 'create' ? 'created' : (entry.status === 'resolved' ? 'resolved' : 'merged'), personId: personId(person), changedFields });
+    }
+    nextBatch.residentSyncResults = results.filter((entry) => !['manual'].includes(entry.status)).map((entry) => ({ itemId: entry.itemId, personId: entry.personId, status: entry.status, changedFields: entry.changedFields || [], syncedAt: nowIso(now) }));
+    nextBatch.residentSyncDecisions = Object.fromEntries(results.filter((entry) => entry.personId).map((entry) => [entry.itemId, { personId: entry.personId, bankCardDecision: entry.conflictResolution === 'keep' ? 'once' : 'sync' }]));
+    nextBatch.updatedAt = nowIso(now);
+    const summary = results.reduce((result, entry) => { if (entry.status === 'created') result.created += 1; else if (['merged', 'resolved'].includes(entry.status)) result.merged += 1; else result.manual += 1; return result; }, { created: 0, merged: 0, manual: 0 });
+    return { batch: nextBatch, personnel: nextPersonnel, plan, results, summary };
+  }
+
   function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date() } = {}) {
     if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能登记为发放完成');
     const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan(nextBatch, nextPersonnel, resolutions);
@@ -485,6 +615,7 @@
       const beforeCard = defaultBankCard(person); item.personId = personId(person); item.recipientKind = 'resident'; item.residentSnapshot = { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard: normalizeBankCard(item.bankCard) || beforeCard };
       const shouldSync = entry.bankCardDecision !== 'once' && normalizeBankCard(item.bankCard);
       if (shouldSync) setDefaultBankCard(person, item.bankCard, { source: 'disbursement-complete', now });
+      appendDisbursementResidentHistory(person, disbursementResidentHistory(nextBatch, item, now));
       syncResults.push({ itemId: item.id, personId: personId(person), status: entry.status, bankCardDecision: entry.bankCardDecision || 'sync', previousCard: beforeCard, nextCard: shouldSync ? defaultBankCard(person) : beforeCard, syncedAt: nowIso(now) });
     }
     nextBatch.status = 'completed'; nextBatch.completedAt = nowIso(now); nextBatch.updatedAt = nowIso(now); nextBatch.residentSyncResults = syncResults;
@@ -702,9 +833,9 @@
     copyLedger, replaceLedgerPerson, createBatch, summarizeBatch, validateBatch, deriveBatchStatus, reviewBatch,
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
     defaultDisbursementCategories, defaultDisbursementTemplates, normalizeDisbursementTemplate, createDisbursementTemplate, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
-    summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
+    summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard, recycleDisbursementBatch, restoreDisbursementBatch, copyDisbursementBatch, disbursementBatchIssues, disbursementBatchSyncStatus,
     DISBURSEMENT_TEMPLATE_KEYS, normalizeTemplateColumns, normalizeProfile, templateItem, createTemplateDisbursementBatch, prepareTemplateDisbursementBatch, markTemplateDisbursementPrinted,
-    disbursementResidentCandidates, disbursementResidentSyncPlan, completeTemplateDisbursementBatch,
+    disbursementResidentCandidates, disbursementResidentSyncPlan, disbursementResidentImportPlan, syncDisbursementBatchResidents, completeTemplateDisbursementBatch,
     normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyRecordsNeedingResidentSync, subsidyResidentImportPlan, importFarmlandSubsidyResidents, resolveFarmlandSubsidyResidentConflict, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

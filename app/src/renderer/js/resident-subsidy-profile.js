@@ -14,16 +14,18 @@
   function profileContent(person, tab) {
     const bankAccounts = Array.isArray(person.bankAccounts) ? person.bankAccounts : (text(person.bank_card || person.bank_account || person.bankCard) ? [{ cardNumber: person.bank_card || person.bank_account || person.bankCard, isDefault: true }] : []);
     const histories = Array.isArray(person.farmlandSubsidyHistory) ? person.farmlandSubsidyHistory : [];
+    const disbursementHistories = Array.isArray(person.disbursementHistory) ? person.disbursementHistory : [];
     const sources = Array.isArray(person.importSources) ? person.importSources : [];
     if (tab === 'bank') return bankAccounts.length ? `<table class="cf-table"><thead><tr><th>银行卡号</th><th>开户行</th><th>默认卡</th><th>来源</th></tr></thead><tbody>${bankAccounts.map((account) => `<tr><td>${escapeHtml(account.cardNumber || '—')}</td><td>${escapeHtml(account.bankName || person.bank_name || person.bankName || '—')}</td><td>${account.isDefault ? '是' : '否'}</td><td>${escapeHtml(account.source || '居民档案')}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">暂未登记银行卡资料。</div>';
     if (tab === 'subsidy') return histories.length ? `<table class="cf-table"><thead><tr><th>年度</th><th>村民组</th><th>应补面积</th><th>标准</th><th>补贴金额</th><th>导入时间</th></tr></thead><tbody>${histories.map((item) => `<tr><td>${escapeHtml(item.ledgerYear || '—')}</td><td>${escapeHtml(item.groupName || '—')}</td><td>${escapeHtml(item.eligibleArea || 0)} 亩</td><td>${money(item.standardCents)}</td><td>${money(item.amountCents)}</td><td>${escapeHtml(text(item.importedAt).replace('T', ' ').slice(0, 16) || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">暂未导入地力补贴记录。</div>';
+    if (tab === 'funds') return disbursementHistories.length ? `<table class="cf-table"><thead><tr><th>类别</th><th>期间</th><th>金额</th><th>状态</th><th>来源批次</th></tr></thead><tbody>${disbursementHistories.map((item) => `<tr><td>${escapeHtml(item.categoryName || '其他发放')}</td><td>${escapeHtml(item.period || '—')}</td><td>${money(item.amountCents)}</td><td>${escapeHtml(item.paymentStatus === 'paid' ? '已发放' : '已登记')}</td><td>${escapeHtml(item.batchId || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">暂未登记工资、承包费、杂工或其他资金发放记录。</div>';
     if (tab === 'sources') return sources.length ? `<table class="cf-table"><thead><tr><th>资料来源</th><th>补贴年度</th><th>关联记录</th><th>导入时间</th></tr></thead><tbody>${sources.map((item) => `<tr><td>${escapeHtml(item.sourceType === 'farmland_subsidy_import' ? '地力补贴批量导入' : item.sourceType || '居民档案')}</td><td>${escapeHtml(item.ledgerYear || '—')}</td><td>${escapeHtml(item.recordId || '—')}</td><td>${escapeHtml(text(item.importedAt).replace('T', ' ').slice(0, 16) || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">暂未记录资料来源。</div>';
     return `<div class="cf-record-summary"><strong>${escapeHtml(personName(person) || '未填写姓名')}</strong><br>身份证号：${escapeHtml(personIdCard(person) || '未填写')}<br>村民组：${escapeHtml(personGroup(person) || '未填写')}<br>联系电话：${escapeHtml(personPhone(person) || '未填写')}</div>`;
   }
 
   function showProfile(person, activeTab = 'basic') {
     const overlay = document.getElementById('resident-subsidy-profile-overlay'); if (!overlay || !person) return;
-    const tabs = [['basic', '基本信息'], ['bank', '联系与银行卡'], ['subsidy', '补贴与发放记录'], ['sources', '来源与更正记录']];
+    const tabs = [['basic', '基本信息'], ['bank', '联系与银行卡'], ['subsidy', '地力补贴记录'], ['funds', '资金记录'], ['sources', '来源与更正记录']];
     overlay.querySelector('.resident-profile-tabs').innerHTML = tabs.map(([key, label]) => `<button data-resident-profile-tab="${key}" class="${key === activeTab ? 'active' : ''}">${label}</button>`).join('');
     overlay.querySelector('.resident-profile-body').innerHTML = profileContent(person, activeTab);
     overlay.querySelectorAll('[data-resident-profile-tab]').forEach((button) => button.addEventListener('click', () => showProfile(person, button.dataset.residentProfileTab)));

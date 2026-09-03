@@ -266,6 +266,37 @@ test('syncs an already associated subsidy resident with blank contact and bank f
   assert.equal(model.subsidyRecordsNeedingResidentSync(result.ledger).length, 0);
 });
 
+test('previews all disbursement resident fields before syncing and preserves conflicting resident data by default', () => {
+  const residents = [{ id: 'p-disbursement', name: '张三', village_group: '东一组', id_card: '320000199001010011', phone: '13800000000', bankAccounts: [{ cardNumber: '62220001', bankName: '旧开户行', isDefault: true }] }];
+  const batch = model.createTemplateDisbursementBatch({
+    templateKey: 'casual_labor', categoryName: '杂工工资', period: '2026 年 9 月',
+    items: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', phone: '13900000000', bankName: '农商行', bankCard: '62220009', amount: 100 }],
+  }, { personnel: [], now, id: 'disbursement-sync-preview' });
+  const plan = model.disbursementResidentImportPlan(batch, residents);
+  assert.equal(plan[0].status, 'manual');
+  assert.match(plan[0].reason, /手机号/u);
+  const result = model.syncDisbursementBatchResidents({ batch, personnel: residents, resolutions: { [batch.items[0].id]: { personId: 'p-disbursement', conflictResolution: 'keep' } } }, { now });
+  assert.deepEqual(result.summary, { created: 0, merged: 1, manual: 0 });
+  assert.equal(result.personnel[0].phone, '13800000000');
+  assert.equal(model.defaultBankCard(result.personnel[0]), '62220001');
+  assert.equal(result.personnel[0].disbursementHistory[0].categoryName, '杂工工资');
+  assert.equal(result.batch.residentSyncDecisions[batch.items[0].id].bankCardDecision, 'once');
+  assert.equal(model.disbursementBatchSyncStatus(result.batch, result.personnel).code, 'synced');
+});
+
+test('creates a resident from identified disbursement data and records its funding history', () => {
+  const batch = model.createTemplateDisbursementBatch({
+    templateKey: 'public_service', categoryName: '公共服务运行人员工资', period: '2026 年第三季度',
+    items: [{ name: '王五', groupName: '东二组', idCard: '320000199001010055', phone: '13800000001', bankName: '农商行', bankCard: '62220005', amount: 2100 }],
+  }, { personnel: [], now, id: 'disbursement-create-person' });
+  const result = model.syncDisbursementBatchResidents({ batch, personnel: [] }, { now });
+  assert.deepEqual(result.summary, { created: 1, merged: 0, manual: 0 });
+  assert.equal(result.personnel[0].name, '王五');
+  assert.equal(result.personnel[0].phone, '13800000001');
+  assert.equal(model.defaultBankCard(result.personnel[0]), '62220005');
+  assert.equal(result.personnel[0].disbursementHistory[0].period, '2026 年第三季度');
+});
+
 test('requires manual confirmation before replacing a resident phone or bank card from subsidy data', () => {
   const people = [{ id: 'p-conflict', name: '张三', village_group: '东一组', id_card: '320000199001010011', phone: '13900000000', bankAccounts: [{ cardNumber: '62220009', bankName: '旧开户行', isDefault: true }] }];
   const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', phone: '13800000000', bankName: '农商行', bankCard: '62220001', eligibleArea: 1, standard: 120 }] }, { personnel: people, now, id: 'subsidy-conflict' });
