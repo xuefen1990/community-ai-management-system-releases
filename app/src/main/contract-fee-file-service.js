@@ -147,6 +147,45 @@ class ContractFeeFileService {
     return { ok: true, files, outputDirectory: resolvedDirectory };
   }
 
+  async exportTemplateDisbursementWorkbook(value = {}) {
+    let outputDirectory = requestedPath(value.outputDirectory);
+    if (!outputDirectory) {
+      if (!this.dialog) throw new Error('当前环境无法选择导出文件夹');
+      const selected = await this.dialog.showOpenDialog({ title: '选择发放表 Excel 保存文件夹', properties: ['openDirectory', 'createDirectory'] });
+      if (selected.canceled || !selected.filePaths[0]) return { ok: false, canceled: true, file: null };
+      [outputDirectory] = selected.filePaths;
+    }
+    const batch = value.batch || {}; const template = batch.templateSnapshot || {};
+    if (!Array.isArray(batch.items) || !batch.items.length) throw new Error('发放批次没有可导出的明细');
+    const custom = !template.builtIn && Array.isArray(template.columns);
+    const columns = (template.columns || []).filter((column) => column.visible !== false);
+    const headers = custom
+      ? ['序号', '姓名', '组别', ...columns.map((column) => column.label), ...(template.showBankCard === false ? [] : ['银行卡号']), '实发金额', '备注']
+      : batch.templateKey === 'casual_labor'
+        ? ['序号', '用工日期', '姓名', '用工事项', '工日', '单价', '金额', '银行账号', '备注']
+        : batch.templateKey === 'public_service'
+          ? ['序号', '姓名', '负责区域', '账号', '金额', '备注']
+          : ['序号', '姓名', '职务', '元/月', '合计月份', '扣除款', '实发金额', '账号', '备注'];
+    const yuan = (cents) => Number(cents || 0) / 100;
+    const rows = batch.items.map((item, index) => custom
+      ? [index + 1, item.name || '', item.groupName || '', ...columns.map((column) => item.customData?.[column.label] || ''), ...(template.showBankCard === false ? [] : [String(item.bankCard || '')]), yuan(item.amountCents), item.remark || '']
+      : batch.templateKey === 'casual_labor'
+        ? [index + 1, item.workDate || '', item.name || '', item.workItem || '', item.quantity || '', yuan(item.unitPriceCents), yuan(item.amountCents), String(item.bankCard || ''), item.remark || '']
+        : batch.templateKey === 'public_service'
+          ? [index + 1, item.name || '', item.responsibilityArea || '', String(item.bankCard || ''), yuan(item.amountCents), item.remark || '']
+          : [index + 1, item.name || '', item.role || '', yuan(item.unitPriceCents), item.quantity || '', yuan(item.deductionsCents), yuan(item.amountCents), String(item.bankCard || ''), item.remark || '']);
+    const totalCents = batch.items.reduce((sum, item) => sum + Number(item.amountCents || 0), 0);
+    const title = String(batch.title || template.title || '资金发放表');
+    const heading = [[title], [`编制单位：${batch.villageName || ''}`], [`发放期间：${batch.period || ''}　发放日期：${batch.batchDate || ''}`], []];
+    const worksheet = XLSX.utils.aoa_to_sheet(heading); XLSX.utils.sheet_add_aoa(worksheet, [headers, ...rows, ['合计', ...Array(Math.max(0, headers.length - 3)).fill(''), yuan(totalCents), '']], { origin: 'A5' });
+    worksheet['!cols'] = headers.map((header) => ({ wch: /卡|账号/u.test(header) ? 24 : /事项|区域|备注/u.test(header) ? 22 : 14 }));
+    const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, '发放表');
+    const directory = path.resolve(outputDirectory); await fs.mkdir(directory, { recursive: true });
+    const fileName = `${safeFilePart(`${title}-${batch.period || '未填写期间'}`)}.xlsx`; const filePath = await availableFilePath(directory, fileName);
+    XLSX.writeFile(workbook, filePath);
+    return { ok: true, file: { path: filePath, fileName, sheetNames: workbook.SheetNames }, outputDirectory: directory };
+  }
+
   async exportFarmlandSubsidyWorkbook(value = {}) {
     let outputDirectory = requestedPath(value.outputDirectory);
     if (!outputDirectory) {

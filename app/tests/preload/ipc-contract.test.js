@@ -6,7 +6,7 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 102);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 103);
   assert.equal(Object.keys(SEND_CHANNELS).length, 1);
   assert.equal(Object.keys(EVENT_CHANNELS).length, 5);
   assert.equal(INVOKE_CHANNELS.readDb, 'read-db');
@@ -55,6 +55,7 @@ test('compatibility contract retains all original preload API entries', () => {
   assert.equal(INVOKE_CHANNELS.importWorkAttachments, 'import-work-attachments');
   assert.equal(INVOKE_CHANNELS.selectAndReadContractFeeExcel, 'select-and-read-contract-fee-excel');
   assert.equal(INVOKE_CHANNELS.selectAndReadDisbursementExcel, 'select-and-read-disbursement-excel');
+  assert.equal(INVOKE_CHANNELS.exportTemplateDisbursementWorkbook, 'export-template-disbursement-workbook');
   assert.equal(INVOKE_CHANNELS.importContractFeeAttachments, 'import-contract-fee-attachments');
   assert.equal(INVOKE_CHANNELS.exportContractFeeGroupFiles, 'export-contract-fee-group-files');
   assert.equal(INVOKE_CHANNELS.selectAndReadFarmlandSubsidyExcel, 'select-and-read-farmland-subsidy-excel');

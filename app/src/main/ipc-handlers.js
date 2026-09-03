@@ -112,6 +112,9 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.selectAndReadDisbursementExcel, async () => {
     try { return await contractFeeFiles.selectAndReadDisbursementExcel(); } catch (error) { return { ok: false, error: error.message }; }
   });
+  handle(INVOKE_CHANNELS.exportTemplateDisbursementWorkbook, async (_event, value) => {
+    try { return await contractFeeFiles.exportTemplateDisbursementWorkbook(value || {}); } catch (error) { return { ok: false, error: error.message, file: null }; }
+  });
   handle(INVOKE_CHANNELS.importContractFeeAttachments, async () => {
     try { return await contractFeeFiles.importAttachments(); } catch (error) { return { ok: false, error: error.message, data: [] }; }
   });

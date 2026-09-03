@@ -60,6 +60,16 @@ test('returns cancellation without writing files', async () => {
   assert.deepEqual(await service.exportGroupedFiles({ groups: [] }), { ok: false, canceled: true, files: [] });
 });
 
+test('exports a template disbursement workbook from the immutable batch snapshot', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'template-disbursement-export-'));
+  const service = new ContractFeeFileService({ userDataPath: directory });
+  const result = await service.exportTemplateDisbursementWorkbook({ outputDirectory: directory, batch: { title: '杂工补贴发放表', period: '2026 年 9 月', villageName: '陆庄社区', batchDate: '2026-09-03', templateKey: 'casual_labor', templateSnapshot: { builtIn: true }, items: [{ name: '张三', workDate: '9.1', workItem: '保洁', quantity: 2, unitPriceCents: 10000, amountCents: 20000, bankCard: '62220001', remark: '' }] } });
+  assert.equal(result.ok, true);
+  const workbook = XLSX.readFile(result.file.path); const grid = XLSX.utils.sheet_to_json(workbook.Sheets['发放表'], { header: 1, defval: '' });
+  assert.equal(grid[0][0], '杂工补贴发放表'); assert.equal(grid[4][2], '姓名'); assert.equal(grid[5][2], '张三');
+  await fs.rm(directory, { recursive: true, force: true });
+});
+
 test('reads a complete farmland subsidy workbook and exports the five connected attachments', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'farmland-subsidy-'));
   const sourcePath = path.join(directory, '补贴.xlsx'); const source = XLSX.utils.book_new();
