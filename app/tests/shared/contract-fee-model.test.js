@@ -152,10 +152,12 @@ test('manages reusable disbursement templates and keeps their print snapshot wit
   assert.deepEqual(template.fields, ['慰问事项', '发放依据']);
   const batch = model.createTemplateDisbursementBatch({
     categoryId: 'category-subsidy', categoryName: '补贴', templateId: template.id, templateKey: template.key, templateSnapshot: template,
-    period: '2026 年 9 月', printSettings: { paper: 'A4', rowsPerPage: 20 }, items: [{ personId: 'p-2', amount: 200, customData: { 慰问事项: '困难慰问' } }],
+    period: '2026 年 9 月', printSettings: { paper: 'A4', orientation: 'landscape', rowsPerPage: 20, margins: { top: 0, bottom: 10, left: 14, right: 16 } }, items: [{ personId: 'p-2', amount: 200, customData: { 慰问事项: '困难慰问' } }],
   }, { personnel: people, now, id: 'custom-batch-1' });
   assert.equal(batch.templateSnapshot.title, '临时慰问金发放表');
   assert.equal(batch.printSettings.rowsPerPage, 20);
+  assert.equal(batch.printSettings.orientation, 'landscape');
+  assert.deepEqual(batch.printSettings.margins, { top: 0, bottom: 10, left: 14, right: 16 });
   assert.equal(model.markTemplateDisbursementPrinted(model.prepareTemplateDisbursementBatch(batch, { now }), { now }).status, 'printed');
 });
 

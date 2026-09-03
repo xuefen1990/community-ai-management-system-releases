@@ -400,6 +400,27 @@
     };
   }
 
+  function normalizePrintMargins(value = {}) {
+    const clamp = (input, fallback) => {
+      const raw = text(input);
+      return Math.max(0, Math.min(40, Math.round(raw === '' ? fallback : numberValue(input))));
+    };
+    return {
+      top: clamp(value.top, 12), bottom: clamp(value.bottom, 12),
+      left: clamp(value.left, 12), right: clamp(value.right, 12),
+    };
+  }
+
+  function normalizeTemplatePrintSettings(value = {}, templateKey = '') {
+    const paper = text(value.paper || (templateKey === DISBURSEMENT_TEMPLATE_KEYS.contractFee ? 'A4' : 'A5')).toUpperCase();
+    return {
+      paper: ['A4', 'A5'].includes(paper) ? paper : 'A5',
+      orientation: text(value.orientation) === 'landscape' ? 'landscape' : 'portrait',
+      rowsPerPage: Math.max(1, Math.min(50, Math.round(numberValue(value.rowsPerPage || (paper === 'A4' ? 20 : 10)) || 10))),
+      margins: normalizePrintMargins(value.margins),
+    };
+  }
+
   function createTemplateDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
     const templateKey = text(value.templateKey);
     if (!Object.values(DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey) && !text(value.templateId)) throw new Error('请选择发放模板');
@@ -410,7 +431,7 @@
     return {
       id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), templateKey, period: text(value.period), batchDate: text(value.batchDate),
       templateId: text(value.templateId), templateSnapshot: value.templateSnapshot ? structuredClone(value.templateSnapshot) : null,
-      printSettings: { paper: text(value.printSettings?.paper || value.paper || (templateKey === DISBURSEMENT_TEMPLATE_KEYS.contractFee ? 'A4' : 'A5')).toUpperCase(), rowsPerPage: Math.max(1, Math.min(50, Math.round(numberValue(value.printSettings?.rowsPerPage || value.rowsPerPage || (templateKey === DISBURSEMENT_TEMPLATE_KEYS.contractFee ? 20 : 10)) || 10))) },
+      printSettings: normalizeTemplatePrintSettings({ ...value.printSettings, paper: value.printSettings?.paper || value.paper, rowsPerPage: value.printSettings?.rowsPerPage || value.rowsPerPage, orientation: value.printSettings?.orientation || value.orientation }, templateKey),
       title: text(value.title), villageName: text(value.villageName), unitName: text(value.unitName), signers: { approver: text(value.approver), maker: text(value.maker), handler: text(value.handler) },
       status: 'draft', items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), preparedAt: null, printedAt: null, reviewedAt: null, completedAt: null,
     };

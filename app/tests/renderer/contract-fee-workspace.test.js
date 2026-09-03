@@ -39,6 +39,12 @@ test('workspace module keeps the unified disbursement screens outside the legacy
   assert.match(script, /cf-preview-workspace/u);
   assert.match(script, /打印设置/u);
   assert.match(script, /页面缩略/u);
+  for (const label of ['页面边距', '窄（8 毫米）', '自定义', '修改', '删除', '输入姓名后自动关联居民']) assert.match(script, new RegExp(label, 'u'));
+  assert.match(script, /data-cf-preview-setting/u);
+  assert.match(script, /data-cf-preview-margin/u);
+  assert.match(script, /edit-template-preview-item/u);
+  assert.match(script, /delete-template-preview-item/u);
+  assert.match(script, /fillTemplateResidentRow/u);
   assert.match(script, /pageSize/u);
   assert.match(script, /landscape/u);
   for (const label of ['按地亩数分配', '按全组人口平均分配']) assert.match(script, new RegExp(label, 'u'));
