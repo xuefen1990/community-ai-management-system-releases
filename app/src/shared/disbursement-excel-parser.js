@@ -20,7 +20,7 @@
       const mapped = {}; (grid[index] || []).forEach((cell, column) => { const field = fieldFor(cell); if (field && mapped[field] === undefined) mapped[field] = column; });
       if (mapped.name !== undefined && Object.keys(mapped).length >= 2) { headerIndex = index; fields = mapped; break; }
     }
-    if (headerIndex < 0) return { requiresMapping: true, columns: (grid.find((row) => row?.some((cell) => text(cell))) || []).map(text), sampleRows: grid.slice(0, 8), rows: [] };
+    if (headerIndex < 0) return { requiresMapping: true, columns: (grid.find((row) => row?.some((cell) => text(cell))) || []).map(text), sampleRows: grid.slice(0, 8), rawGrid: grid.slice(0, 80), rows: [] };
     const rows = [];
     for (let index = headerIndex + 1; index < grid.length; index += 1) {
       const source = grid[index] || []; if (isFooter(source)) continue;
