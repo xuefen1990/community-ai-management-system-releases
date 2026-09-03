@@ -22,6 +22,7 @@ const INVOKE_CHANNELS = Object.freeze({
   readExcelColumns: 'read-excel-columns',
   selectExcelFile: 'select-excel-file',
   selectAndReadContractFeeExcel: 'select-and-read-contract-fee-excel',
+  selectAndReadDisbursementExcel: 'select-and-read-disbursement-excel',
   importContractFeeAttachments: 'import-contract-fee-attachments',
   exportContractFeeGroupFiles: 'export-contract-fee-group-files',
   selectAndReadFarmlandSubsidyExcel: 'select-and-read-farmland-subsidy-excel',

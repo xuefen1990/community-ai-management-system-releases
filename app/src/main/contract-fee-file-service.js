@@ -6,6 +6,7 @@ const XLSX = require('xlsx');
 
 const { parseContractFeeExcelGrid } = require('../shared/contract-fee-excel-parser');
 const { parseFarmlandSubsidyWorkbook } = require('../shared/farmland-subsidy-excel-parser');
+const { parseDisbursementExcelGrid } = require('../shared/disbursement-excel-parser');
 
 function safeFilePart(value, fallback = '未命名') {
   const cleaned = String(value ?? '').trim().replace(/[\\/:*?"<>|\u0000-\u001f]/gu, '-').replace(/\.+$/u, '').slice(0, 80);
@@ -46,6 +47,22 @@ class ContractFeeFileService {
     if (!sheetName) throw new Error('表格中没有可读取的工作表');
     const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
     return { ...parseContractFeeExcelGrid(grid), fileName: path.basename(filePath), sheetName };
+  }
+
+  async selectAndReadDisbursementExcel() {
+    if (!this.dialog) throw new Error('当前环境无法选择 Excel 文件');
+    const selected = await this.dialog.showOpenDialog({ title: '选择现成发放明细', properties: ['openFile'], filters: [{ name: 'Excel 表格', extensions: ['xlsx', 'xls', 'csv'] }] });
+    if (selected.canceled || !selected.filePaths[0]) return { ok: false, canceled: true };
+    return { ok: true, data: this.readDisbursementExcel(selected.filePaths[0]) };
+  }
+
+  readDisbursementExcel(value) {
+    const filePath = requestedPath(value); if (!filePath) throw new TypeError('未指定 Excel 文件');
+    if (!['.xlsx', '.xls', '.csv'].includes(path.extname(filePath).toLowerCase())) throw new Error('请选择 .xlsx、.xls 或 .csv 表格文件');
+    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false }); const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new Error('表格中没有可读取的工作表');
+    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
+    return { ...parseDisbursementExcelGrid(grid), fileName: path.basename(filePath), sheetName };
   }
 
   async selectAndReadFarmlandSubsidyExcel() {

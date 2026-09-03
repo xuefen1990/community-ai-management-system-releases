@@ -109,6 +109,9 @@ function registerCompatibilityHandlers({
   handle(INVOKE_CHANNELS.selectAndReadContractFeeExcel, async () => {
     try { return await contractFeeFiles.selectAndReadExcel(); } catch (error) { return { ok: false, error: error.message }; }
   });
+  handle(INVOKE_CHANNELS.selectAndReadDisbursementExcel, async () => {
+    try { return await contractFeeFiles.selectAndReadDisbursementExcel(); } catch (error) { return { ok: false, error: error.message }; }
+  });
   handle(INVOKE_CHANNELS.importContractFeeAttachments, async () => {
     try { return await contractFeeFiles.importAttachments(); } catch (error) { return { ok: false, error: error.message, data: [] }; }
   });

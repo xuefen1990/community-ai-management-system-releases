@@ -36,6 +36,7 @@ const api = {
   readExcelColumns: (value) => invoke('readExcelColumns', value),
   selectExcelFile: () => invoke('selectExcelFile'),
   selectAndReadContractFeeExcel: () => invoke('selectAndReadContractFeeExcel'),
+  selectAndReadDisbursementExcel: () => invoke('selectAndReadDisbursementExcel'),
   importContractFeeAttachments: () => invoke('importContractFeeAttachments'),
   exportContractFeeGroupFiles: (value) => invoke('exportContractFeeGroupFiles', value),
   selectAndReadFarmlandSubsidyExcel: () => invoke('selectAndReadFarmlandSubsidyExcel'),
