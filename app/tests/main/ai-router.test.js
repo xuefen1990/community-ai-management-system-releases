@@ -27,3 +27,16 @@ test('auto mode falls back to configured online AI when local is stopped', async
   assert.equal(result.content, 'online');
   assert.equal(result.provider, 'online');
 });
+
+test('explains how to re-enter an API key for this session when secure storage is unavailable', async () => {
+  const router = new AiRouter({
+    settingsStore: {
+      readRaw: async () => ({ mode: 'online' }),
+      getOnlineCredentials: async () => ({ apiKey: '', credentialStatus: 'secure-storage-unavailable' }),
+    },
+    localRuntime: { getStatus: () => ({ running: false }) },
+    onlineClient: { chat: async () => ({ content: 'unexpected' }) },
+  });
+
+  await assert.rejects(() => router.chat({ messages: [{ role: 'user', content: 'hi' }] }), /只在本次打开软件期间有效/u);
+});

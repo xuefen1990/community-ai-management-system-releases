@@ -18,6 +18,9 @@ class AiSettingsStore {
     this.directory = path.join(userDataPath, 'settings');
     this.filePath = path.join(this.directory, 'ai.json');
     this.safeStorage = safeStorage;
+    // Used only while this process is open when macOS Keychain is unavailable.
+    // It is deliberately never written to the settings file.
+    this.sessionApiKey = '';
   }
 
   async readRaw() {
@@ -37,13 +40,18 @@ class AiSettingsStore {
 
   async getPublicSettings() {
     const settings = await this.readRaw();
+    const safeStorageAvailable = Boolean(this.safeStorage?.isEncryptionAvailable());
+    const keyStorage = this.sessionApiKey ? 'session'
+      : settings.online.encryptedApiKey ? (safeStorageAvailable ? 'secure' : 'unavailable')
+        : 'none';
     return {
       mode: settings.mode,
       localModelPath: settings.localModelPath,
       online: {
         baseUrl: settings.online.baseUrl,
         model: settings.online.model,
-        hasApiKey: Boolean(settings.online.encryptedApiKey),
+        hasApiKey: keyStorage === 'secure' || keyStorage === 'session',
+        keyStorage,
       },
     };
   }
@@ -60,9 +68,12 @@ class AiSettingsStore {
         throw new Error('远程在线 AI 接口必须使用 HTTPS；HTTP 仅允许本机地址');
       }
     }
-    const encryptedApiKey = input.online?.apiKey
-      ? this.encryptApiKey(input.online.apiKey)
-      : current.online.encryptedApiKey;
+    const requestedApiKey = String(input.online?.apiKey || '').trim();
+    let encryptedApiKey = current.online.encryptedApiKey;
+    if (requestedApiKey) {
+      if (this.safeStorage?.isEncryptionAvailable()) encryptedApiKey = this.encryptApiKey(requestedApiKey);
+      else this.sessionApiKey = requestedApiKey;
+    }
     const settings = {
       mode: input.mode,
       localModelPath: String(input.localModelPath || ''),
@@ -88,8 +99,11 @@ class AiSettingsStore {
 
   async getOnlineCredentials() {
     const settings = await this.readRaw();
+    if (this.sessionApiKey) return { ...settings.online, apiKey: this.sessionApiKey, credentialStatus: 'session' };
     if (!settings.online.encryptedApiKey) return { ...settings.online, apiKey: '' };
-    if (!this.safeStorage?.isEncryptionAvailable()) throw new Error('macOS 安全存储当前不可用');
+    if (!this.safeStorage?.isEncryptionAvailable()) {
+      return { ...settings.online, apiKey: '', credentialStatus: 'secure-storage-unavailable' };
+    }
     return {
       baseUrl: settings.online.baseUrl,
       model: settings.online.model,

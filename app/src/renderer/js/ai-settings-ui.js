@@ -182,8 +182,12 @@ if (typeof module !== 'undefined' && module.exports) {
       },
     });
     document.getElementById('communityAiApiKey').value = '';
-    document.getElementById('communityAiApiKey').placeholder = settings.online.hasApiKey ? 'API 密钥已安全保存；留空表示不更改' : 'API 密钥';
-    if (showSuccess) notify('AI 配置已保存');
+    document.getElementById('communityAiApiKey').placeholder = settings.online.keyStorage === 'session'
+      ? 'API 密钥仅本次运行有效；关闭软件后自动清除'
+      : settings.online.hasApiKey ? 'API 密钥已安全保存；留空表示不更改' : 'API 密钥';
+    if (showSuccess) notify(settings.online.keyStorage === 'session'
+      ? 'macOS 安全存储不可用，API 密钥只在本次打开软件期间有效'
+      : 'AI 配置已保存');
     return settings;
   }
 
@@ -770,7 +774,11 @@ if (typeof module !== 'undefined' && module.exports) {
     document.getElementById('communityAiMode').value = settings.mode;
     document.getElementById('communityAiBaseUrl').value = settings.online.baseUrl;
     document.getElementById('communityAiModel').value = settings.online.model;
-    document.getElementById('communityAiApiKey').placeholder = settings.online.hasApiKey ? 'API 密钥已安全保存；留空表示不更改' : 'API 密钥';
+    document.getElementById('communityAiApiKey').placeholder = settings.online.keyStorage === 'session'
+      ? 'API 密钥仅本次运行有效；关闭软件后自动清除'
+      : settings.online.keyStorage === 'unavailable'
+        ? 'macOS 安全存储不可用，请重新输入 API 密钥（仅本次运行有效）'
+        : settings.online.hasApiKey ? 'API 密钥已安全保存；留空表示不更改' : 'API 密钥';
     await scanModels(settings.localModelPath);
     updateRuntimeStatus(await api.getInternalAiServerStatus());
 
