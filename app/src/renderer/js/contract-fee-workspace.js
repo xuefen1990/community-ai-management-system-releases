@@ -18,7 +18,7 @@
   const ledgerForContract = (contractId) => (state.database?.contractFeeLedgers || []).find((item) => item.contractId === contractId);
   const landItems = () => (state.database?.landParcel?.length ? state.database.landParcel : state.database?.lands) || [];
   const landName = (land) => text(land?.land_name || land?.name || land?.parcel_name || land?.code || land?.id);
-  const statusLabels = { draft: '草稿', reviewed: '已核对', exported: '已导出', partial: '部分成功', completed: '已完成' };
+  const statusLabels = { draft: '草稿', prepared: '待打印', printed: '已打印', reviewed: '已核对', exported: '已导出', partial: '部分成功', completed: '已完成' };
   const paymentLabels = { pending: '待发放', unpaid: '未发放', failed: '发放失败', paid: '已发放' };
 
   function notify(message, type = 'success') {
@@ -116,7 +116,7 @@
     const summary = stats();
     section.innerHTML = `
       <div class="cf-header"><div><h2>资金发放中心</h2><p>统一管理承包费、补贴、工资和其他资金发放；合同仅在承包费办理时按需关联。</p></div>
-        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="manage-categories">管理类别</button><button class="btn btn-outline" data-cf-action="manage-profiles">固定人员台账</button><button class="btn btn-outline" data-cf-action="manage-subsidies">地力补贴台账</button><button class="btn btn-primary" data-cf-action="new-disbursement-batch">＋ 新建发放批次</button></div></div>
+        <div class="cf-actions"><button class="btn btn-outline" data-cf-action="manage-categories">管理类别</button><button class="btn btn-outline" data-cf-action="manage-templates">管理发放模板</button><button class="btn btn-outline" data-cf-action="manage-profiles">固定人员台账</button><button class="btn btn-outline" data-cf-action="manage-subsidies">地力补贴台账</button><button class="btn btn-primary" data-cf-action="new-disbursement-batch">＋ 新建发放批次</button></div></div>
       <div class="cf-stats"><div class="cf-stat"><span>发放总额</span><strong>${money(summary.totalCents)}</strong></div><div class="cf-stat"><span>待审核批次</span><strong>${summary.pendingReview}</strong></div><div class="cf-stat"><span>已发放批次</span><strong>${summary.completed}</strong></div><div class="cf-stat"><span>资金类别</span><strong>${state.database.disbursementCategories.filter((item) => item.active !== false).length}</strong></div></div>
       <div class="cf-nav">${[['overview', '汇总看板'], ['general-batches', '全部发放批次'], ['profiles', '固定人员台账'], ['subsidies', '年度地力补贴'], ['ledger', '承包费历史台账'], ['batches', '历史承包费记录']].map(([key, label]) => `<button class="${state.view === key ? 'active' : ''}" data-cf-view="${key}">${label}</button>`).join('')}</div>
       <div id="cf-view"></div>`;
@@ -149,6 +149,17 @@
 
   function templateLabel(templateKey) {
     return ({ position_salary: '岗位工资/补贴（A5）', public_service: '公共服务报酬（A5）', casual_labor: '杂工补贴（A5）', contract_fee: '承包费（A4）' })[templateKey] || '通用发放';
+  }
+
+  function templateFor(templateRef, batch = null) {
+    const templates = state.database.disbursementTemplates || [];
+    return templates.find((item) => item.id === templateRef || item.key === templateRef) || batch?.templateSnapshot || null;
+  }
+
+  function residentLabel(person) {
+    const idCard = text(person.id_card || person.idCard); const bankCard = model.defaultBankCard(person);
+    const tail = idCard ? `身份证尾号${idCard.slice(-4)}` : (bankCard ? `卡尾号${bankCard.slice(-4)}` : '无证件尾号');
+    return `${model.personName(person)} · ${model.personGroup(person) || '未分组'} · ${tail}`;
   }
 
   function renderProfiles() {
@@ -208,9 +219,17 @@
     });
     overlay.addEventListener('change', async (event) => {
       const pageSizeControl = event.target.closest('[data-cf-page-size-action]');
-      if (!pageSizeControl || !overlay.contains(pageSizeControl)) return;
-      try { await handleAction(pageSizeControl.dataset.cfPageSizeAction, pageSizeControl); }
-      catch (error) { notify(error.message || '操作失败', 'error'); }
+      if (pageSizeControl && overlay.contains(pageSizeControl)) {
+        try { await handleAction(pageSizeControl.dataset.cfPageSizeAction, pageSizeControl); }
+        catch (error) { notify(error.message || '操作失败', 'error'); }
+        return;
+      }
+      const personControl = event.target.closest('[data-cf-template-person]');
+      if (!personControl || !overlay.contains(personControl)) return;
+      const person = state.database.personnel.find((item) => model.personId(item) === personControl.value); if (!person) return;
+      const row = personControl.closest('.cf-template-item');
+      const fill = (name, value) => { const input = row?.querySelector(`[name="${name}"]`); if (input && !text(input.value)) input.value = value || ''; };
+      fill('name', model.personName(person)); fill('bankCard', model.defaultBankCard(person));
     });
     document.body.appendChild(overlay);
   }
@@ -510,37 +529,58 @@
   }
 
   function templateChooserModal() {
-    openModal('选择发放模板', `<div class="cf-template-choices"><button data-cf-action="new-template-batch" data-template="position_salary"><strong>岗位工资 / 补贴</strong><span>村组干部、党小组长、监督委员；月标准 × 月数</span><em>A5</em></button><button data-cf-action="new-template-batch" data-template="public_service"><strong>公共服务人员报酬</strong><span>负责区域、账号、金额</span><em>A5</em></button><button data-cf-action="new-template-batch" data-template="casual_labor"><strong>杂工补贴</strong><span>用工日期、事项、工日 × 单价</span><em>A5</em></button><button data-cf-action="new-disbursement-generic"><strong>其他资金发放</strong><span>补贴或其他类别的通用明细</span><em>通用</em></button></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button>' });
+    const templates = (state.database.disbursementTemplates || []).filter((item) => item.active !== false);
+    openModal('选择发放模板', `<div class="cf-hint">先选择模板，再选择居民档案。银行卡、组别等资料会随所选居民自动带入；同名居民会显示组别和尾号，必须人工确认。</div><div class="cf-template-choices">${templates.map((template) => `<button data-cf-action="new-template-batch" data-template="${escapeHtml(template.key)}" data-template-id="${escapeHtml(template.id)}"><strong>${escapeHtml(template.name)}</strong><span>${escapeHtml(template.description || '可按实际业务填写发放明细')}</span><em>${escapeHtml(template.paper || 'A5')} · 每页 ${escapeHtml(template.rowsPerPage || 10)} 人</em></button>`).join('')}<button data-cf-action="new-disbursement-generic"><strong>其他资金发放</strong><span>不套用打印模板的临时补贴或其他类别明细</span><em>通用</em></button></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">取消</button>' });
   }
 
-  function templateItemHtml(templateKey, item = {}) {
-    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), item.personId)}>${escapeHtml(model.personName(person))} · ${escapeHtml(model.personGroup(person) || '未分组')}</option>`).join('');
-    const fixed = templateKey !== 'casual_labor';
+  function templateManagementModal() {
+    const rows = (state.database.disbursementTemplates || []).map((template) => `<tr><td><strong>${escapeHtml(template.name)}</strong><br><span class="text-secondary">${template.builtIn ? '系统模板' : '自定义模板'}</span></td><td>${escapeHtml(template.paper)} · 每页 ${escapeHtml(template.rowsPerPage)} 人</td><td>${escapeHtml((template.fields || []).join('、'))}</td><td>${template.active === false ? statusBadge('unpaid') : statusBadge('completed')}</td><td>${template.builtIn ? '系统维护' : `<button data-cf-action="edit-template" data-id="${escapeHtml(template.id)}">编辑</button>`}</td></tr>`).join('');
+    openModal('管理发放模板', `<div class="cf-hint">系统模板可直接使用。自定义模板可设置打印标题、纸张、每页人数及要填写的字段；每次发放仍可临时调整标题、签字人和每页人数。</div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>模板</th><th>打印</th><th>业务字段</th><th>状态</th><th>操作</th></tr></thead><tbody>${rows}</tbody></table></div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="new-template">＋ 新建自定义模板</button>' });
+  }
+
+  function templateEditorModal(template = null) {
+    const current = template || { name: '', categoryCode: '', paper: 'A5', rowsPerPage: 10, title: '', description: '', fields: ['事项', '数量', '单价', '金额', '备注'] };
+    state.modal = { type: 'template-editor', templateId: current.id || '' };
+    const categories = state.database.disbursementCategories.filter((item) => item.active !== false);
+    openModal(template ? `编辑模板 · ${template.name}` : '新建自定义发放模板', `<form id="cf-template-editor-form" class="cf-form-grid">${field('模板名称 *', `<input name="name" value="${escapeHtml(current.name)}" placeholder="例如：临时补贴发放表">`)}${field('资金类别', `<select name="categoryCode"><option value="">不限定类别</option>${categories.map((item) => `<option value="${escapeHtml(item.code)}"${selected(item.code, current.categoryCode)}>${escapeHtml(item.name)}</option>`).join('')}</select>`)}${field('表格打印标题 *', `<input name="title" value="${escapeHtml(current.title)}" placeholder="打印时显示的标题">`, true)}${field('打印纸张', `<select name="paper"><option value="A5"${selected(current.paper, 'A5')}>A5</option><option value="A4"${selected(current.paper, 'A4')}>A4</option></select>`)}${field('每页人数', `<input name="rowsPerPage" type="number" min="1" max="50" value="${escapeHtml(current.rowsPerPage)}">`)}${field('使用说明', `<input name="description" value="${escapeHtml(current.description)}" placeholder="说明该模板适用的发放事项">`, true)}${field('自定义字段 *', `<textarea name="fields" placeholder="例如：岗位、月份、单价、金额">${escapeHtml((current.fields || []).join('、'))}</textarea><p class="cf-hint">用顿号、逗号或换行分隔。姓名、组别、银行卡、实发金额和备注始终可用，并会与居民档案联动。</p>`, true)}<p id="cf-template-editor-error" class="cf-error" role="alert" style="display:none"></p></form>`, { footer: '<button class="btn btn-outline" data-cf-action="manage-templates">取消</button><button class="btn btn-primary" data-cf-action="save-template">保存模板</button>' });
+  }
+
+  async function saveTemplate() {
+    const form = document.getElementById('cf-template-editor-form'); const error = document.getElementById('cf-template-editor-error'); if (error) error.style.display = 'none';
+    try { const values = Object.fromEntries(new FormData(form).entries()); const current = findById('disbursementTemplates', state.modal?.templateId); const next = model.normalizeDisbursementTemplate({ ...current, ...values, fields: values.fields }, { id: current?.id }); if (current) state.database.disbursementTemplates.splice(state.database.disbursementTemplates.indexOf(current), 1, next); else state.database.disbursementTemplates.push(model.createDisbursementTemplate(values)); await saveDatabase('发放模板已保存'); templateManagementModal(); }
+    catch (reason) { if (error) { error.textContent = reason.message || '保存模板失败'; error.style.display = 'block'; } else throw reason; }
+  }
+
+  function templateItemHtml(templateKey, item = {}, template = null) {
+    const people = state.database.personnel.map((person) => `<option value="${escapeHtml(model.personId(person))}"${selected(model.personId(person), item.personId)}>${escapeHtml(residentLabel(person))}</option>`).join('');
+    const fixed = templateKey !== 'casual_labor'; const isCustom = !Object.values(model.DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey);
     const fields = templateKey === 'position_salary'
       ? `<input name="role" value="${escapeHtml(item.role || '')}" placeholder="职务"><input name="quantity" type="number" min="0" step="1" value="${escapeHtml(item.quantity || '')}" placeholder="月份"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="月标准"><input name="deductions" type="number" min="0" step="0.01" value="${item.deductionsCents === undefined ? '' : yuanValue(item.deductionsCents)}" placeholder="扣除款">`
       : templateKey === 'public_service'
         ? `<input name="responsibilityArea" value="${escapeHtml(item.responsibilityArea || '')}" placeholder="负责区域"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="实发金额">`
-        : `<input name="workDate" value="${escapeHtml(item.workDate || '')}" placeholder="用工日期"><input name="workItem" value="${escapeHtml(item.workItem || '')}" placeholder="用工事项"><input name="quantity" type="number" min="0" step="0.1" value="${escapeHtml(item.quantity || '')}" placeholder="工日"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="单价">`;
-    return `<div class="cf-template-item"><select name="personId"><option value="">${fixed ? '选择居民档案或手工填写' : '临时人员（可手工填写）'}</option>${people}</select><input name="name" value="${escapeHtml(item.name || '')}" placeholder="姓名">${fields}<input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行账号"><input name="finalAmount" type="number" min="0" step="0.01" value="${item.amountCents === undefined ? '' : yuanValue(item.amountCents)}" placeholder="实发金额（可改）"><input name="remark" value="${escapeHtml(item.remark || '')}" placeholder="备注"></div>`;
+        : isCustom
+          ? (template?.fields || []).map((label) => `<input data-template-custom-field="${escapeHtml(label)}" value="${escapeHtml(item.customData?.[label] || '')}" placeholder="${escapeHtml(label)}">`).join('')
+          : `<input name="workDate" value="${escapeHtml(item.workDate || '')}" placeholder="用工日期"><input name="workItem" value="${escapeHtml(item.workItem || '')}" placeholder="用工事项"><input name="quantity" type="number" min="0" step="0.1" value="${escapeHtml(item.quantity || '')}" placeholder="工日"><input name="unitPrice" type="number" min="0" step="0.01" value="${item.unitPriceCents === undefined ? '' : yuanValue(item.unitPriceCents)}" placeholder="单价">`;
+    return `<div class="cf-template-item"><select name="personId" data-cf-template-person><option value="">${fixed ? '选择居民档案或手工填写' : '临时人员（可手工填写）'}</option>${people}</select><input name="name" value="${escapeHtml(item.name || '')}" placeholder="姓名">${fields}<input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行账号"><input name="finalAmount" type="number" min="0" step="0.01" value="${item.amountCents === undefined ? '' : yuanValue(item.amountCents)}" placeholder="实发金额（可改）"><input name="adjustmentReason" value="${escapeHtml(item.adjustmentReason || '')}" placeholder="手工调整原因"><input name="remark" value="${escapeHtml(item.remark || '')}" placeholder="备注"></div>`;
   }
 
-  function templateBatchModal(templateKey, batch = null) {
-    const key = templateKey || batch?.templateKey; const categoryCode = key === 'casual_labor' ? 'casual_labor' : key === 'public_service' ? 'public_service_salary' : 'salary'; const category = state.database.disbursementCategories.find((item) => item.code === categoryCode) || {};
+  function templateBatchModal(templateKey, batch = null, templateId = '') {
+    const template = templateFor(templateId || templateKey, batch); const key = template?.key || templateKey || batch?.templateKey; const categoryCode = template?.categoryCode || (key === 'casual_labor' ? 'casual_labor' : key === 'public_service' ? 'public_service_salary' : key === 'contract_fee' ? 'contract_fee' : 'salary'); const category = state.database.disbursementCategories.find((item) => item.code === categoryCode) || {};
     const profiles = state.database.disbursementProfiles.filter((item) => item.active !== false && ((key === 'position_salary' && item.templateKey === 'position_salary') || (key === 'public_service' && item.templateKey === 'public_service')));
     const initialItems = batch?.items || (key === 'casual_labor' ? [{}] : profiles.map((profile) => ({ personId: profile.personId, name: profile.name, groupName: profile.groupName, role: profile.role, responsibilityArea: profile.responsibilityArea, bankCard: profile.bankCard, unitPriceCents: profile.standardCents, quantity: key === 'position_salary' ? 1 : 0 })));
-    state.modal = { type: 'template-batch', templateKey: key, batchId: batch?.id || '' };
-    const title = batch?.title || ({ position_salary: '工资结算单', public_service: '农村公共服务运行维护人员报酬发放表', casual_labor: '村级务工补贴发放表' })[key];
+    state.modal = { type: 'template-batch', templateKey: key, templateId: template?.id || '', batchId: batch?.id || '' };
+    const title = batch?.title || template?.title || ({ position_salary: '工资结算单', public_service: '农村公共服务运行维护人员报酬发放表', casual_labor: '村级务工补贴发放表' })[key];
     openModal(batch ? `查看 ${templateLabel(key)}` : `新建 ${templateLabel(key)}`, `<form id="cf-template-batch-form" class="cf-form-grid"><input type="hidden" name="categoryId" value="${escapeHtml(batch?.categoryId || category.id || '')}"><input type="hidden" name="categoryName" value="${escapeHtml(batch?.categoryName || category.name || '')}">
-      ${field('表格标题 *', `<input name="title" value="${escapeHtml(title)}">`, true)}${field('发放期间 *', `<input name="period" value="${escapeHtml(batch?.period || `${new Date().getFullYear()} 年 ${new Date().getMonth() + 1} 月`)}">`)}${field('发放日期', `<input name="batchDate" type="date" value="${escapeHtml(batch?.batchDate || today())}">`)}${field('编制单位 / 村居', `<input name="villageName" value="${escapeHtml(batch?.villageName || state.database.settings?.villageName || '')}">`)}${field('审批人', `<input name="approver" value="${escapeHtml(batch?.signers?.approver || '')}">`)}${field('制表人', `<input name="maker" value="${escapeHtml(batch?.signers?.maker || '')}">`)}${field('经办人', `<input name="handler" value="${escapeHtml(batch?.signers?.handler || '')}">`)}${field('备注', `<input name="notes" value="${escapeHtml(batch?.notes || '')}">`, true)}
-      <div class="cf-field full"><label>发放明细</label><div id="cf-template-items">${initialItems.map((item) => templateItemHtml(key, item)).join('')}</div>${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-template-item">＋ 添加人员</button>'}<p id="cf-template-error" class="cf-error" role="alert" style="display:none"></p></div></form>`, { footer: batch ? `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="preview-template" data-id="${batch.id}">打印预览</button>` : '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-template-batch">保存并预览</button>' });
+      ${field('表格标题 *', `<input name="title" value="${escapeHtml(title)}">`, true)}${field('发放期间 *', `<input name="period" value="${escapeHtml(batch?.period || `${new Date().getFullYear()} 年 ${new Date().getMonth() + 1} 月`)}">`)}${field('发放日期', `<input name="batchDate" type="date" value="${escapeHtml(batch?.batchDate || today())}">`)}${field('编制单位 / 村居', `<input name="villageName" value="${escapeHtml(batch?.villageName || state.database.settings?.villageName || '')}">`)}${field('打印纸张', `<select name="paper"><option value="A5"${selected(batch?.printSettings?.paper || template?.paper, 'A5')}>A5</option><option value="A4"${selected(batch?.printSettings?.paper || template?.paper, 'A4')}>A4</option></select>`)}${field('每页人数', `<input name="rowsPerPage" type="number" min="1" max="50" value="${escapeHtml(batch?.printSettings?.rowsPerPage || template?.rowsPerPage || 10)}">`)}${field('审批人', `<input name="approver" value="${escapeHtml(batch?.signers?.approver || '')}">`)}${field('制表人', `<input name="maker" value="${escapeHtml(batch?.signers?.maker || '')}">`)}${field('经办人', `<input name="handler" value="${escapeHtml(batch?.signers?.handler || '')}">`)}${field('备注', `<input name="notes" value="${escapeHtml(batch?.notes || '')}">`, true)}
+      <div class="cf-field full"><label>发放明细</label><div class="cf-hint">选择居民后自动带入姓名、组别和默认银行卡。同名居民必须从带有组别和尾号的选项中手工选择；实发金额与自动计算不同，必须填写调整原因。</div><div id="cf-template-items">${initialItems.map((item) => templateItemHtml(key, item, template)).join('')}</div>${batch ? '' : '<button type="button" class="btn btn-outline" data-cf-action="add-template-item">＋ 添加人员</button>'}<p id="cf-template-error" class="cf-error" role="alert" style="display:none"></p></div></form>`, { footer: batch ? `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="preview-template" data-id="${batch.id}">打印预览</button>` : '<button class="btn btn-outline" data-cf-action="close-modal">取消</button><button class="btn btn-primary" data-cf-action="save-template-batch">保存并预览</button>' });
   }
 
-  function addTemplateItem() { const target = document.getElementById('cf-template-items'); if (target) target.insertAdjacentHTML('beforeend', templateItemHtml(state.modal.templateKey, {})); }
+  function addTemplateItem() { const target = document.getElementById('cf-template-items'); if (target) target.insertAdjacentHTML('beforeend', templateItemHtml(state.modal.templateKey, {}, templateFor(state.modal.templateId || state.modal.templateKey))); }
 
   async function saveTemplateBatch() {
     const form = document.getElementById('cf-template-batch-form'); const error = document.getElementById('cf-template-error'); if (error) error.style.display = 'none';
-    try { const values = Object.fromEntries(new FormData(form).entries()); const items = [...form.querySelectorAll('.cf-template-item')].map((row) => ({ personId: itemValue(row, 'personId'), name: itemValue(row, 'name'), role: itemValue(row, 'role'), responsibilityArea: itemValue(row, 'responsibilityArea'), workDate: itemValue(row, 'workDate'), workItem: itemValue(row, 'workItem'), quantity: itemValue(row, 'quantity'), unitPrice: itemValue(row, 'unitPrice'), deductions: itemValue(row, 'deductions'), bankCard: itemValue(row, 'bankCard'), finalAmount: itemValue(row, 'finalAmount'), remark: itemValue(row, 'remark') })).filter((item) => item.personId || item.name);
-      const batch = model.createTemplateDisbursementBatch({ ...values, templateKey: state.modal.templateKey, items }, { personnel: state.database.personnel }); state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存，请核对打印预览'); templateBatchModal(batch.templateKey, batch); }
+    try { const values = Object.fromEntries(new FormData(form).entries()); const template = templateFor(state.modal.templateId || state.modal.templateKey); const items = [...form.querySelectorAll('.cf-template-item')].map((row) => { const customData = Object.fromEntries([...row.querySelectorAll('[data-template-custom-field]')].map((input) => [input.dataset.templateCustomField, input.value])); return { personId: itemValue(row, 'personId'), name: itemValue(row, 'name'), role: itemValue(row, 'role'), responsibilityArea: itemValue(row, 'responsibilityArea'), workDate: itemValue(row, 'workDate'), workItem: itemValue(row, 'workItem'), quantity: itemValue(row, 'quantity'), unitPrice: itemValue(row, 'unitPrice'), deductions: itemValue(row, 'deductions'), bankCard: itemValue(row, 'bankCard'), finalAmount: itemValue(row, 'finalAmount'), adjustmentReason: itemValue(row, 'adjustmentReason'), remark: itemValue(row, 'remark'), customData }; }).filter((item) => item.personId || item.name);
+      const batch = model.createTemplateDisbursementBatch({ ...values, templateId: template?.id, templateSnapshot: template, templateKey: state.modal.templateKey, items, printSettings: { paper: values.paper, rowsPerPage: values.rowsPerPage } }, { personnel: state.database.personnel }); state.database.disbursementBatches.push(batch); await saveDatabase('发放批次已保存，请核对打印预览'); templateBatchModal(batch.templateKey, batch, batch.templateId); }
     catch (reason) { if (error) { error.textContent = reason.message || '保存失败'; error.style.display = 'block'; } else throw reason; }
   }
 
@@ -727,15 +767,17 @@
   }
 
   function templatePreviewHtml(batch) {
-    const headers = batch.templateKey === 'casual_labor' ? ['序号', '用工日期', '姓名', '用工事项', '工日', '单价', '金额', '银行账号', '备注'] : batch.templateKey === 'public_service' ? ['序号', '姓名', '负责区域', '账号', '金额', '备注'] : ['序号', '姓名', '职务', '元/月', '合计月份', '扣除款', '实发金额', '账号', '备注'];
-    const rows = batch.items.map((item, index) => { const cells = batch.templateKey === 'casual_labor' ? [index + 1, item.workDate, item.name, item.workItem, item.quantity, yuanValue(item.unitPriceCents), yuanValue(item.amountCents), item.bankCard, item.remark] : batch.templateKey === 'public_service' ? [index + 1, item.name, item.responsibilityArea, item.bankCard, yuanValue(item.amountCents), item.remark] : [index + 1, item.name, item.role, yuanValue(item.unitPriceCents), item.quantity, yuanValue(item.deductionsCents), yuanValue(item.amountCents), item.bankCard, item.remark]; return `<tr>${cells.map((cell) => `<td>${escapeHtml(cell || '')}</td>`).join('')}</tr>`; }).join('');
-    const total = model.summarizeDisbursementBatch(batch).totalCents;
-    return `<article class="cf-print-sheet ${batch.templateKey === 'contract_fee' ? 'a4' : 'a5'}"><h1>${escapeHtml(batch.title || templateLabel(batch.templateKey))}</h1><div class="cf-print-meta"><span>编制单位：${escapeHtml(batch.villageName || '')}</span><span>期间：${escapeHtml(batch.period || '')}</span><span>日期：${escapeHtml(batch.batchDate || '')}</span><span>单位：元</span></div><table><thead><tr>${headers.map((header) => `<th>${header}</th>`).join('')}</tr></thead><tbody>${rows}<tr><td colspan="${headers.length - 3}">合计</td><td colspan="3">${money(total)}　共 ${batch.items.length} 人</td></tr></tbody></table><div class="cf-print-signers"><span>审批人：${escapeHtml(batch.signers?.approver || '')}</span><span>制表人：${escapeHtml(batch.signers?.maker || '')}</span>${batch.templateKey === 'casual_labor' ? `<span>经办人：${escapeHtml(batch.signers?.handler || '')}</span>` : ''}</div></article>`;
+    const template = templateFor(batch.templateId || batch.templateKey, batch); const custom = template && !template.builtIn;
+    const headers = custom ? ['序号', '姓名', '组别', ...(template.fields || []), '银行卡号', '实发金额', '备注'] : batch.templateKey === 'casual_labor' ? ['序号', '用工日期', '姓名', '用工事项', '工日', '单价', '金额', '银行账号', '备注'] : batch.templateKey === 'public_service' ? ['序号', '姓名', '负责区域', '账号', '金额', '备注'] : ['序号', '姓名', '职务', '元/月', '合计月份', '扣除款', '实发金额', '账号', '备注'];
+    const rowCells = (item, index) => custom ? [index + 1, item.name, item.groupName, ...(template.fields || []).map((fieldName) => item.customData?.[fieldName] || ''), item.bankCard, yuanValue(item.amountCents), item.remark] : batch.templateKey === 'casual_labor' ? [index + 1, item.workDate, item.name, item.workItem, item.quantity, yuanValue(item.unitPriceCents), yuanValue(item.amountCents), item.bankCard, item.remark] : batch.templateKey === 'public_service' ? [index + 1, item.name, item.responsibilityArea, item.bankCard, yuanValue(item.amountCents), item.remark] : [index + 1, item.name, item.role, yuanValue(item.unitPriceCents), item.quantity, yuanValue(item.deductionsCents), yuanValue(item.amountCents), item.bankCard, item.remark];
+    const total = model.summarizeDisbursementBatch(batch).totalCents; const paper = text(batch.printSettings?.paper || template?.paper || (batch.templateKey === 'contract_fee' ? 'A4' : 'A5')).toLowerCase(); const perPage = Math.max(1, Number(batch.printSettings?.rowsPerPage || template?.rowsPerPage || (paper === 'a4' ? 20 : 10))); const pages = [];
+    for (let index = 0; index < batch.items.length; index += perPage) pages.push(batch.items.slice(index, index + perPage));
+    return pages.map((items, pageIndex) => { const rows = items.map((item, index) => `<tr>${rowCells(item, pageIndex * perPage + index).map((cell) => `<td>${escapeHtml(cell || '')}</td>`).join('')}</tr>`).join(''); const isLast = pageIndex === pages.length - 1; return `<article class="cf-print-sheet ${paper}"><h1>${escapeHtml(batch.title || template?.title || templateLabel(batch.templateKey))}</h1><div class="cf-print-meta"><span>编制单位：${escapeHtml(batch.villageName || '')}</span><span>期间：${escapeHtml(batch.period || '')}</span><span>日期：${escapeHtml(batch.batchDate || '')}</span><span>单位：元</span></div><table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join('')}</tr></thead><tbody>${rows}${isLast ? `<tr><td colspan="${Math.max(1, headers.length - 3)}">合计</td><td colspan="3">${money(total)}　共 ${batch.items.length} 人</td></tr>` : ''}</tbody></table><div class="cf-print-signers"><span>审批人：${escapeHtml(batch.signers?.approver || '')}</span><span>制表人：${escapeHtml(batch.signers?.maker || '')}</span>${batch.templateKey === 'casual_labor' ? `<span>经办人：${escapeHtml(batch.signers?.handler || '')}</span>` : ''}<span>第 ${pageIndex + 1}/${pages.length} 页</span></div></article>`; }).join('');
   }
 
-  function templatePreviewModal(batch) { state.modal = { type: 'template-preview', batchId: batch.id }; openModal('打印预览', `<div id="cf-template-preview">${templatePreviewHtml(batch)}</div>`, { footer: '<button class="btn btn-outline" data-cf-action="close-modal">关闭</button><button class="btn btn-primary" data-cf-action="print-template">打印</button>' }); }
+  function templatePreviewModal(batch) { state.modal = { type: 'template-preview', batchId: batch.id }; openModal('打印预览', `<div class="cf-hint">已按 ${escapeHtml(batch.printSettings?.paper || 'A5')}、每页 ${escapeHtml(batch.printSettings?.rowsPerPage || 10)} 人自动分页；打印后可登记“已打印”。</div><div id="cf-template-preview">${templatePreviewHtml(batch)}</div>`, { footer: `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>${batch.status === 'draft' ? `<button class="btn btn-outline" data-cf-action="prepare-template" data-id="${batch.id}">准备打印</button>` : ''}<button class="btn btn-primary" data-cf-action="print-template">打印</button>` }); }
 
-  function printTemplate() { const source = document.getElementById('cf-template-preview')?.innerHTML; if (!source) return; const popup = root.open('', '_blank'); if (!popup) throw new Error('未能打开打印窗口，请允许本软件打开打印预览'); popup.document.write(`<html><head><title>发放表打印</title><style>body{margin:0;font-family:"Songti SC",serif;color:#000}.cf-print-sheet{box-sizing:border-box;margin:0 auto;padding:12mm}.cf-print-sheet.a5{width:148mm;min-height:210mm}.cf-print-sheet.a4{width:210mm;min-height:297mm}.cf-print-sheet h1{text-align:center;font-size:18pt;margin:0 0 8mm}.cf-print-meta,.cf-print-signers{display:flex;justify-content:space-between;gap:8px;margin:4mm 0;font-size:10pt}.cf-print-sheet table{border-collapse:collapse;width:100%;font-size:9pt}.cf-print-sheet th,.cf-print-sheet td{border:1px solid #000;padding:2.2mm 1.5mm;text-align:center;word-break:break-all}@page{size:A5 portrait;margin:0}@media print{.cf-print-sheet{margin:0}.cf-print-sheet.a4{page:landscape}}</style></head><body>${source}<script>window.onload=()=>window.print()<\/script></body></html>`); popup.document.close(); }
+  async function printTemplate() { const source = document.getElementById('cf-template-preview')?.innerHTML; if (!source) return; const popup = root.open('', '_blank'); if (!popup) throw new Error('未能打开打印窗口，请允许本软件打开打印预览'); popup.document.write(`<html><head><title>发放表打印</title><style>body{margin:0;font-family:"Songti SC",serif;color:#000}.cf-print-sheet{box-sizing:border-box;margin:0 auto;padding:12mm;page-break-after:always}.cf-print-sheet:last-child{page-break-after:auto}.cf-print-sheet.a5{width:148mm;min-height:210mm}.cf-print-sheet.a4{width:210mm;min-height:297mm}.cf-print-sheet h1{text-align:center;font-size:18pt;margin:0 0 8mm}.cf-print-meta,.cf-print-signers{display:flex;justify-content:space-between;gap:8px;margin:4mm 0;font-size:10pt}.cf-print-sheet table{border-collapse:collapse;width:100%;font-size:9pt}.cf-print-sheet th,.cf-print-sheet td{border:1px solid #000;padding:2.2mm 1.5mm;text-align:center;word-break:break-all}@page{size:auto;margin:0}@media print{.cf-print-sheet{margin:0}.cf-print-sheet.a4{page:landscape}}</style></head><body>${source}<script>window.onload=()=>window.print()<\/script></body></html>`); popup.document.close(); const current = findById('disbursementBatches', state.modal?.batchId); if (current && typeof model.markTemplateDisbursementPrinted === 'function') { const next = model.markTemplateDisbursementPrinted(current); state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(current), 1, next); await saveDatabase('已登记打印时间'); } }
 
   function disbursementBatchModal(batch = null) {
     const categories = state.database.disbursementCategories.filter((item) => item.active !== false);
@@ -803,6 +845,10 @@
   async function handleAction(action, element) {
     if (action === 'close-modal') return closeModal();
     if (action === 'manage-categories') return categoryModal();
+    if (action === 'manage-templates') return templateManagementModal();
+    if (action === 'new-template') return templateEditorModal();
+    if (action === 'edit-template') return templateEditorModal(findById('disbursementTemplates', element.dataset.id));
+    if (action === 'save-template') return saveTemplate();
     if (action === 'save-category') return saveCategory();
     if (action === 'manage-profiles') { state.view = 'profiles'; return renderShell(); }
     if (action === 'manage-subsidies') { state.view = 'subsidies'; return renderShell(); }
@@ -812,10 +858,11 @@
     if (action === 'import-profiles') return importProfiles();
     if (action === 'new-disbursement-batch') return templateChooserModal();
     if (action === 'new-disbursement-generic') return disbursementBatchModal();
-    if (action === 'new-template-batch') return templateBatchModal(element.dataset.template);
+    if (action === 'new-template-batch') return templateBatchModal(element.dataset.template, null, element.dataset.templateId);
     if (action === 'add-template-item') return addTemplateItem();
     if (action === 'save-template-batch') return saveTemplateBatch();
     if (action === 'preview-template') return templatePreviewModal(findById('disbursementBatches', element.dataset.id));
+    if (action === 'prepare-template') { const current = findById('disbursementBatches', element.dataset.id); const next = model.prepareTemplateDisbursementBatch(current); state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(current), 1, next); await saveDatabase('批次已准备打印'); return templatePreviewModal(next); }
     if (action === 'print-template') return printTemplate();
     if (action === 'new-subsidy') return subsidyLedgerModal();
     if (action === 'import-subsidy') return importSubsidyLedger();
@@ -858,7 +905,7 @@
     if (action === 'add-disbursement-item') return appendDisbursementItem();
     if (action === 'import-disbursement-excel') return importDisbursementExcel();
     if (action === 'save-disbursement') return saveDisbursementBatch();
-    if (action === 'view-disbursement') { const batch = findById('disbursementBatches', element.dataset.id); return batch?.templateKey ? templateBatchModal(batch.templateKey, batch) : disbursementBatchModal(batch); }
+    if (action === 'view-disbursement') { const batch = findById('disbursementBatches', element.dataset.id); return batch?.templateKey ? templateBatchModal(batch.templateKey, batch, batch.templateId) : disbursementBatchModal(batch); }
     if (action === 'review-disbursement') return reviewDisbursement(element.dataset.id);
     if (action === 'pay-disbursement') return payDisbursement(element.dataset.id);
     if (action === 'new-contract') return contractModal();

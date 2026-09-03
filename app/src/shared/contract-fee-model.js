@@ -257,6 +257,12 @@
   function normalizeDisbursementCollections(database) {
     if (!Array.isArray(database.disbursementCategories) || !database.disbursementCategories.length) database.disbursementCategories = defaultDisbursementCategories();
     if (!Array.isArray(database.disbursementBatches)) database.disbursementBatches = [];
+    const storedTemplates = Array.isArray(database.disbursementTemplates) ? database.disbursementTemplates : [];
+    const storedByKey = new Map(storedTemplates.map((item) => [text(item?.key), item]));
+    database.disbursementTemplates = [
+      ...defaultDisbursementTemplates().map((template) => ({ ...template, ...(storedByKey.get(template.key) || {}), id: template.id, key: template.key, builtIn: true, fields: normalizeTemplateFields(storedByKey.get(template.key)?.fields || template.fields) })),
+      ...storedTemplates.filter((template) => !DEFAULT_DISBURSEMENT_TEMPLATES.some((defaultTemplate) => defaultTemplate.key === text(template?.key))).map((template) => normalizeDisbursementTemplate(template, { id: template.id || undefined })),
+    ];
     return database;
   }
   function createDisbursementCategory(value, { now = new Date(), id } = {}) {
@@ -283,10 +289,45 @@
   }
   function summarizeDisbursementBatch(batch) { return { totalCents: (batch?.items || []).reduce((sum, item) => sum + Number(item.amountCents || 0), 0), recipientCount: (batch?.items || []).length, paidCount: (batch?.items || []).filter((item) => item.paymentStatus === 'paid').length }; }
   function reviewDisbursementBatch(batch, { now = new Date() } = {}) { if (!batch?.items?.length) throw new Error('批次没有收款明细'); return { ...structuredClone(batch), status: 'reviewed', reviewedAt: nowIso(now), updatedAt: nowIso(now) }; }
-  function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
+  function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft', 'prepared', 'printed'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
   function summarizeDisbursementDashboard(batches = []) { const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; for (const batch of batches) { const total = summarizeDisbursementBatch(batch).totalCents; totalCents += total; totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total; if (batch.status === 'draft') pendingReview += 1; if (batch.status === 'completed') completed += 1; } return { totalCents, pendingReview, completed, totalsByCategory }; }
 
   const DISBURSEMENT_TEMPLATE_KEYS = Object.freeze({ positionSalary: 'position_salary', publicService: 'public_service', casualLabor: 'casual_labor', contractFee: 'contract_fee' });
+
+  const DEFAULT_DISBURSEMENT_TEMPLATES = Object.freeze([
+    { id: 'template-position-salary', key: 'position_salary', name: '岗位工资 / 补贴', categoryCode: 'salary', builtIn: true, paper: 'A5', rowsPerPage: 10, title: '工资结算单', description: '村组干部、党小组长、监督委员；月标准 × 月数', fields: ['职务', '月份', '月标准', '扣除款', '实发金额'] },
+    { id: 'template-public-service', key: 'public_service', name: '公共服务人员报酬', categoryCode: 'public_service_salary', builtIn: true, paper: 'A5', rowsPerPage: 10, title: '农村公共服务运行维护人员报酬发放表', description: '负责区域、银行卡号和报酬金额', fields: ['负责区域', '实发金额'] },
+    { id: 'template-casual-labor', key: 'casual_labor', name: '杂工补贴', categoryCode: 'casual_labor', builtIn: true, paper: 'A5', rowsPerPage: 10, title: '村级务工补贴发放表', description: '用工日期、事项、工日 × 单价', fields: ['用工日期', '用工事项', '工日', '单价', '实发金额'] },
+    { id: 'template-contract-fee', key: 'contract_fee', name: '承包费', categoryCode: 'contract_fee', builtIn: true, paper: 'A4', rowsPerPage: 20, title: '土地租金发放明细', description: '按人口或地亩数核算的承包费明细', fields: ['姓名', '人口/亩数', '单价', '金额', '银行卡号'] },
+  ]);
+
+  function defaultDisbursementTemplates() {
+    return DEFAULT_DISBURSEMENT_TEMPLATES.map((template) => ({ ...structuredClone(template), active: true, createdAt: null, updatedAt: null }));
+  }
+
+  function normalizeTemplateFields(fields) {
+    const values = Array.isArray(fields) ? fields : text(fields).split(/[、，,\n]/u);
+    return [...new Set(values.map((value) => text(typeof value === 'string' ? value : value?.label)).filter(Boolean))];
+  }
+
+  function normalizeDisbursementTemplate(value, { now = new Date(), id } = {}) {
+    const name = text(value?.name);
+    if (!name) throw new Error('请填写发放模板名称');
+    const paper = text(value?.paper || 'A5').toUpperCase();
+    if (!['A4', 'A5'].includes(paper)) throw new Error('打印纸张仅支持 A4 或 A5');
+    const rowsPerPage = Math.max(1, Math.min(50, Math.round(numberValue(value?.rowsPerPage || (paper === 'A5' ? 10 : 20)) || 10)));
+    const fields = normalizeTemplateFields(value?.fields);
+    if (!fields.length) throw new Error('请至少保留一个自定义字段');
+    return {
+      id: id || text(value?.id) || identifier('disbursement-template', now instanceof Date ? now.getTime() : Date.now()),
+      key: text(value?.key) || `custom_${Date.now()}`,
+      name, categoryCode: text(value?.categoryCode), builtIn: Boolean(value?.builtIn), active: value?.active !== false,
+      paper, rowsPerPage, title: text(value?.title) || name, description: text(value?.description), fields,
+      createdAt: text(value?.createdAt) || nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function createDisbursementTemplate(value, options = {}) { return normalizeDisbursementTemplate({ ...value, builtIn: false }, options); }
 
   function normalizeProfile(value, personnel = [], { now = new Date(), id } = {}) {
     const person = personnel.find((item) => personId(item) === text(value.personId));
@@ -305,38 +346,56 @@
 
   function templateItem(value, personnel = [], templateKey, { now = new Date(), id } = {}) {
     const person = personnel.find((item) => personId(item) === text(value.personId));
+    const sameNamePeople = !person && text(value.name) ? personnel.filter((item) => personName(item) === text(value.name)) : [];
+    if (sameNamePeople.length > 1) throw new Error(`${text(value.name)}在居民档案中有重名，请按组别和证件或银行卡尾号手工确认具体人员`);
     const name = person ? personName(person) : text(value.name);
     if (!name) throw new Error('每一笔发放都必须填写收款人');
     const unitPriceCents = amountToCents(value.unitPrice || value.standard || 0);
     const quantity = numberValue(value.quantity || value.months || value.workDays || 0);
     const deductionsCents = amountToCents(value.deductions || 0);
-    let calculatedAmountCents = amountToCents(value.amount || 0);
+    let calculatedAmountCents = amountToCents(value.amount || value.finalAmount || 0);
     if (templateKey === DISBURSEMENT_TEMPLATE_KEYS.positionSalary || templateKey === DISBURSEMENT_TEMPLATE_KEYS.casualLabor) calculatedAmountCents = Math.round(quantity * unitPriceCents);
     if (templateKey === DISBURSEMENT_TEMPLATE_KEYS.publicService && !calculatedAmountCents) calculatedAmountCents = unitPriceCents;
-    const finalAmountCents = value.finalAmount === undefined || text(value.finalAmount) === '' ? calculatedAmountCents - deductionsCents : amountToCents(value.finalAmount);
+    const automaticAmountCents = calculatedAmountCents - deductionsCents;
+    const finalAmountCents = value.finalAmount === undefined || text(value.finalAmount) === '' ? automaticAmountCents : amountToCents(value.finalAmount);
     if (finalAmountCents < 0) throw new Error(`${name}的实发金额不能小于零`);
+    if (value.finalAmount !== undefined && text(value.finalAmount) !== '' && finalAmountCents !== automaticAmountCents && !text(value.adjustmentReason)) throw new Error(`${name}的实发金额已手工调整，请填写调整原因`);
     return {
       id: id || identifier('template-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : text(value.personId),
       recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName),
       role: text(value.role), responsibilityArea: text(value.responsibilityArea), workDate: text(value.workDate), workItem: text(value.workItem),
       bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
-      unitPriceCents, quantity, deductionsCents, calculatedAmountCents, amountCents: finalAmountCents,
+      unitPriceCents, quantity, deductionsCents, calculatedAmountCents, automaticAmountCents, amountCents: finalAmountCents,
+      adjustmentReason: text(value.adjustmentReason), residentSnapshot: person ? { personId: personId(person), name, groupName: personGroup(person), bankCard: normalizeBankCard(value.bankCard) || defaultBankCard(person) } : null,
+      customData: value.customData && typeof value.customData === 'object' ? structuredClone(value.customData) : {},
       paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), remark: text(value.remark), createdAt: nowIso(now), updatedAt: nowIso(now),
     };
   }
 
   function createTemplateDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
     const templateKey = text(value.templateKey);
-    if (!Object.values(DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey)) throw new Error('请选择发放模板');
+    if (!Object.values(DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey) && !text(value.templateId)) throw new Error('请选择发放模板');
     if (!text(value.period)) throw new Error('请填写发放期间');
     const batchId = id || identifier('template-disbursement-batch', now instanceof Date ? now.getTime() : Date.now());
     const items = (value.items || []).map((item, index) => templateItem(item, personnel, templateKey, { now, id: `${batchId}-item-${index + 1}` }));
     if (!items.length) throw new Error('请至少添加一名收款人');
     return {
       id: batchId, categoryId: text(value.categoryId), categoryName: text(value.categoryName), templateKey, period: text(value.period), batchDate: text(value.batchDate),
+      templateId: text(value.templateId), templateSnapshot: value.templateSnapshot ? structuredClone(value.templateSnapshot) : null,
+      printSettings: { paper: text(value.printSettings?.paper || value.paper || (templateKey === DISBURSEMENT_TEMPLATE_KEYS.contractFee ? 'A4' : 'A5')).toUpperCase(), rowsPerPage: Math.max(1, Math.min(50, Math.round(numberValue(value.printSettings?.rowsPerPage || value.rowsPerPage || (templateKey === DISBURSEMENT_TEMPLATE_KEYS.contractFee ? 20 : 10)) || 10))) },
       title: text(value.title), villageName: text(value.villageName), unitName: text(value.unitName), signers: { approver: text(value.approver), maker: text(value.maker), handler: text(value.handler) },
-      status: 'draft', items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), reviewedAt: null, completedAt: null,
+      status: 'draft', items, notes: text(value.notes), createdAt: nowIso(now), updatedAt: nowIso(now), preparedAt: null, printedAt: null, reviewedAt: null, completedAt: null,
     };
+  }
+
+  function prepareTemplateDisbursementBatch(batch, { now = new Date() } = {}) {
+    if (!batch?.items?.length) throw new Error('批次没有发放明细');
+    return { ...structuredClone(batch), status: 'prepared', preparedAt: nowIso(now), updatedAt: nowIso(now) };
+  }
+
+  function markTemplateDisbursementPrinted(batch, { now = new Date() } = {}) {
+    if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能打印');
+    return { ...structuredClone(batch), status: 'printed', printedAt: nowIso(now), updatedAt: nowIso(now) };
   }
 
   function normalizedSubsidyRecord(value, personnel = [], { now = new Date(), id } = {}) {
@@ -548,9 +607,9 @@
     bankAccounts, defaultBankCard, setDefaultBankCard, calculateAmount, matchImportedRows, createContract, createLedger,
     copyLedger, replaceLedgerPerson, createBatch, summarizeBatch, validateBatch, deriveBatchStatus, reviewBatch,
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
-    defaultDisbursementCategories, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
+    defaultDisbursementCategories, defaultDisbursementTemplates, normalizeDisbursementTemplate, createDisbursementTemplate, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard,
-    DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch,
+    DISBURSEMENT_TEMPLATE_KEYS, normalizeProfile, templateItem, createTemplateDisbursementBatch, prepareTemplateDisbursementBatch, markTemplateDisbursementPrinted,
     normalizedSubsidyRecord, createFarmlandSubsidyLedger, summarizeFarmlandSubsidyLedger, validateFarmlandSubsidyLedger, farmlandSubsidyPersonCandidates, subsidyRecordsNeedingResidentSync, subsidyResidentImportPlan, importFarmlandSubsidyResidents, resolveFarmlandSubsidyResidentConflict, correctFarmlandSubsidyRecord,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

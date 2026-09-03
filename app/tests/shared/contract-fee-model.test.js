@@ -135,6 +135,30 @@ test('creates fixed salary, casual labor and public service records with the app
   assert.equal(service.amountCents, 210000);
 });
 
+test('manages reusable disbursement templates and keeps their print snapshot with a batch', () => {
+  const database = { disbursementCategories: model.defaultDisbursementCategories(), disbursementBatches: [] };
+  model.normalizeDisbursementCollections(database);
+  assert.equal(database.disbursementTemplates.filter((item) => item.builtIn).length, 4);
+  const template = model.createDisbursementTemplate({ name: '临时慰问金', categoryCode: 'subsidy', paper: 'A4', rowsPerPage: 20, title: '临时慰问金发放表', fields: '慰问事项、发放依据' }, { now, id: 'custom-template-1' });
+  assert.deepEqual(template.fields, ['慰问事项', '发放依据']);
+  const batch = model.createTemplateDisbursementBatch({
+    categoryId: 'category-subsidy', categoryName: '补贴', templateId: template.id, templateKey: template.key, templateSnapshot: template,
+    period: '2026 年 9 月', printSettings: { paper: 'A4', rowsPerPage: 20 }, items: [{ personId: 'p-2', amount: 200, customData: { 慰问事项: '困难慰问' } }],
+  }, { personnel: people, now, id: 'custom-batch-1' });
+  assert.equal(batch.templateSnapshot.title, '临时慰问金发放表');
+  assert.equal(batch.printSettings.rowsPerPage, 20);
+  assert.equal(model.markTemplateDisbursementPrinted(model.prepareTemplateDisbursementBatch(batch, { now }), { now }).status, 'printed');
+});
+
+test('requires explicit confirmation for duplicate names and records a manual amount adjustment reason', () => {
+  assert.throws(() => model.templateItem({ name: '张三', unitPrice: 100, quantity: 1 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, { now }), /重名/u);
+  assert.throws(() => model.templateItem({ personId: 'p-2', unitPrice: 100, quantity: 2, finalAmount: 150 }, people, model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, { now }), /调整原因/u);
+  const item = model.templateItem({ personId: 'p-2', unitPrice: 100, quantity: 2, finalAmount: 150, adjustmentReason: '考勤核减' }, people, model.DISBURSEMENT_TEMPLATE_KEYS.positionSalary, { now });
+  assert.equal(item.automaticAmountCents, 20000);
+  assert.equal(item.amountCents, 15000);
+  assert.equal(item.adjustmentReason, '考勤核减');
+});
+
 test('keeps a farmland subsidy master record authoritative and requires correction reasons', () => {
   const subsidyPeople = [{ id: 'p-4', name: '张三', village_group: '东一组', id_card: '320000199001010011', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] }];
   const ledger = model.createFarmlandSubsidyLedger({ year: 2026, villageName: '陆庄社区', records: [{ name: '张三', groupName: '东一组', idCard: '320000199001010011', bankName: '农商行', bankCard: '62220001', eligibleArea: 2.4, standard: 120 }] }, { personnel: subsidyPeople, now, id: 'subsidy-1' });
