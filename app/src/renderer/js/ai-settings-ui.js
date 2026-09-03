@@ -55,6 +55,12 @@ if (typeof module !== 'undefined' && module.exports) {
 
 (function installAiSettingsUi() {
   if (typeof window === 'undefined') return;
+  if (!document.querySelector('script[data-settings-tab-ui]')) {
+    const settingsTabScript = document.createElement('script');
+    settingsTabScript.src = 'js/settings-tab-ui.js';
+    settingsTabScript.dataset.settingsTabUi = 'true';
+    document.head.appendChild(settingsTabScript);
+  }
   const api = window.api;
   if (!api?.getAiSettings) return;
   let status = { running: false };
