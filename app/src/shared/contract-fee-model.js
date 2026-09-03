@@ -388,6 +388,9 @@
     return {
       id: id || identifier('template-item', now instanceof Date ? now.getTime() : Date.now()), personId: person ? personId(person) : text(value.personId),
       recipientKind: person ? 'resident' : 'temporary', name, groupName: person ? personGroup(person) : text(value.groupName),
+      // Imported Excel details may contain an ID card before a resident is chosen.
+      // Keep it with the draft so the completion step can match the resident safely.
+      idCard: normalizedIdCard(value.idCard || value.id_card),
       role: text(value.role), responsibilityArea: text(value.responsibilityArea), workDate: text(value.workDate), workItem: text(value.workItem),
       bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
       unitPriceCents, quantity, deductionsCents, calculatedAmountCents, automaticAmountCents, amountCents: finalAmountCents,

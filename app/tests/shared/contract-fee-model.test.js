@@ -38,6 +38,15 @@ test('adds and changes the default bank card without losing earlier cards', () =
   assert.equal(person.bankAccounts.length, 2);
 });
 
+test('keeps imported ID cards and groups for safe template-disbursement matching', () => {
+  const batch = model.createTemplateDisbursementBatch({
+    templateKey: 'casual_labor', period: '2026 年 9 月',
+    items: [{ name: '李四', idCard: '320000200001010011', groupName: '二组', bankCard: '62220001', amount: '100' }],
+  }, { personnel: people, now, id: 'template-import-1' });
+  assert.equal(batch.items[0].idCard, '320000200001010011');
+  assert.equal(batch.items[0].groupName, '二组');
+});
+
 test('creates a ledger and keeps completed batch snapshots unchanged after replacement', () => {
   const matches = model.matchImportedRows({ rows: [{ id: 'r1', name: '张三', population: 2, unitPrice: 100, amount: 200, bankCard: '6222' }], personnel: people, selectedGroups: ['一组'] });
   const ledger = model.createLedger({ contractId: 'c-1', matches }, { now, id: 'l-1' });
