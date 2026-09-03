@@ -104,6 +104,35 @@ test('shows pending funding as an alert rather than including it in paid totals'
   assert.equal(result.data.queryEvidence.records[0].statusLabel, '待发放');
 });
 
+test('stops safely when the local ledger cannot be read', async () => {
+  let onlineCalled = false;
+  let generalChatCalled = false;
+  const assistant = new AiAssistantService({
+    databaseStore: {
+      read: async () => { throw new Error('数据库文件暂不可读取'); },
+    },
+    aiRouter: {
+      onlineChat: async () => {
+        onlineCalled = true;
+        return { content: JSON.stringify({ canonicalMessage: '查询张三本年度发放金额', intent: 'query', needsFacts: true, dataScope: 'related_records' }) };
+      },
+      chat: async () => {
+        generalChatCalled = true;
+        return { content: '不应继续调用' };
+      },
+    },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '张三这年度共计发了多少钱？' }] });
+
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /暂时无法读取本机台账/u);
+  assert.match(result.content, /不会查询、修改或执行任何操作/u);
+  assert.equal(onlineCalled, true);
+  assert.equal(generalChatCalled, false);
+  assert.equal(assistant.pendingAction, null);
+});
+
 test('answers a unique resident identity-card request from the local archive without calling online AI', async () => {
   let onlineCalled = false;
   const assistant = service({

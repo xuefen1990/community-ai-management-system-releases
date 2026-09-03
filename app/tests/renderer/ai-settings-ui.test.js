@@ -52,6 +52,9 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /dutyFlexibleState\.activeWeekOffset/u);
   assert.match(source, /renderFlexibleDuty/u);
   assert.match(source, /已等待 \$\{seconds\} 秒/u);
+  assert.match(source, /本次未能完成查询/u);
+  assert.match(source, /系统未进行任何修改/u);
+  assert.match(source, /服务暂不可用/u);
   assert.match(source, /converseWithAiAssistant\(conversation\)/u);
   assert.match(source, /新建对话/u);
   assert.match(source, /const button = event\.currentTarget/u);

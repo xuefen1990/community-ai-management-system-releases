@@ -2379,11 +2379,10 @@ class AiAssistantService {
     return { ok: true, message: `已撤销${outcome.result.name || '该操作'}。` };
   }
 
-  async answerDirectQuestion(message) {
+  async answerDirectQuestion(database, message) {
     if (!isPaymentQuestion(message)) return null;
     const year = this.resolveYear(message);
     if (!year) return { content: '请告诉我需要查询哪一年，例如“张三 2026 年共计发了多少钱？”或“2026 年哪个组发放最多？”。我会只统计该年度已登记发放的记录。', provider: 'system', handled: true };
-    const database = await this.databaseStore.read();
     const paidRecords = this.collectPaidPayments(database, { year });
     if (/(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)|(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(text(message))) {
       const pendingRecords = this.collectUnpaidPayments(database, { year });
@@ -2493,13 +2492,23 @@ class AiAssistantService {
     const conversation = recentConversation(messages);
     const onlinePlan = await this.understandConversation(conversation);
     if (onlinePlan?.canonicalMessage) userMessage = { ...userMessage, content: onlinePlan.canonicalMessage };
-    const database = await this.databaseStore.read();
+    let database;
+    try {
+      database = await this.databaseStore.read();
+    } catch {
+      return {
+        content: '暂时无法读取本机台账。为保护现有资料，本次不会查询、修改或执行任何操作；请稍后重试，若持续出现请先检查本机数据服务。',
+        provider: 'system',
+        handled: true,
+        needsConfirmation: true,
+      };
+    }
     if (onlineAnalysisRequested(userMessage.content)) {
       return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
     }
     const pendingFunding = this.answerPendingFundingQuestion(database, userMessage.content);
     if (pendingFunding) return pendingFunding;
-    const direct = await this.answerDirectQuestion(userMessage.content);
+    const direct = await this.answerDirectQuestion(database, userMessage.content);
     if (direct) return direct;
     const dutyAnswer = this.answerDutyQuestion(database, userMessage.content);
     if (dutyAnswer) return dutyAnswer;

@@ -482,7 +482,10 @@ if (typeof module !== 'undefined' && module.exports) {
       if (drawerStatus) drawerStatus.textContent = response.provider === 'system' ? '系统数据已核对' : response.provider === 'local' ? '本地 AI 已回复' : '在线 AI 已回复';
     } catch (error) {
       pending.stop();
-      pending.bubble.querySelector('p').textContent = `请求失败：${error.message}`;
+      const message = cleanOnlineAiError(error);
+      pending.bubble.querySelector('p').textContent = `本次未能完成查询：${message}。系统未进行任何修改，您可以稍后重试。`;
+      const drawerStatus = document.getElementById('aiDrawerModelStatus');
+      if (drawerStatus) drawerStatus.textContent = '服务暂不可用';
     } finally {
       button.disabled = false;
     }
