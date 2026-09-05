@@ -9,7 +9,7 @@
   const personPhone = (person) => text(person?.phone || person?.mobile || person?.mobile_phone);
   const money = (cents) => `¥${(Number(cents || 0) / 100).toFixed(2)}`;
   const model = () => window.ContractFeeModel || {};
-  const state = { personId: '', activeTab: 'basic', operationPage: 1, operationPageSize: 10 };
+  const state = { personId: '', activeTab: 'basic', operationPage: 1, operationPageSize: 10, mode: 'edit', entryContext: 'standalone' };
   const database = () => window.dbState || {};
   const personnel = () => Array.isArray(database().personnel) ? database().personnel : [];
   const close = () => document.getElementById('resident-subsidy-profile-overlay')?.remove();
@@ -34,16 +34,17 @@
     return Array.isArray(value) ? value : [];
   }
 
-  function fieldInput(field, value) {
+  function fieldInput(field, value, readOnly = false) {
     const key = escapeHtml(field.id);
-    if (field.type === 'number') return `<input type="number" data-resident-custom-field="${key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.name)}">`;
-    if (field.type === 'date') return `<input type="date" data-resident-custom-field="${key}" value="${escapeHtml(value)}">`;
-    if (field.type === 'boolean') return `<select data-resident-custom-field="${key}"><option value="">未填写</option><option value="是"${text(value) === '是' ? ' selected' : ''}>是</option><option value="否"${text(value) === '否' ? ' selected' : ''}>否</option></select>`;
+    const disabled = readOnly ? ' disabled' : '';
+    if (field.type === 'number') return `<input type="number" data-resident-custom-field="${key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.name)}"${disabled}>`;
+    if (field.type === 'date') return `<input type="date" data-resident-custom-field="${key}" value="${escapeHtml(value)}"${disabled}>`;
+    if (field.type === 'boolean') return `<select data-resident-custom-field="${key}"${disabled}><option value="">未填写</option><option value="是"${text(value) === '是' ? ' selected' : ''}>是</option><option value="否"${text(value) === '否' ? ' selected' : ''}>否</option></select>`;
     if (field.type === 'select' || field.type === 'multi_select') {
       const choices = Array.isArray(field.options) ? field.options : [];
-      return `<select data-resident-custom-field="${key}"><option value="">未填写</option>${choices.map((item) => `<option value="${escapeHtml(item)}"${text(value) === text(item) ? ' selected' : ''}>${escapeHtml(item)}</option>`).join('')}</select>`;
+      return `<select data-resident-custom-field="${key}"${disabled}><option value="">未填写</option>${choices.map((item) => `<option value="${escapeHtml(item)}"${text(value) === text(item) ? ' selected' : ''}>${escapeHtml(item)}</option>`).join('')}</select>`;
     }
-    return `<input data-resident-custom-field="${key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.name)}">`;
+    return `<input data-resident-custom-field="${key}" value="${escapeHtml(value)}" placeholder="${escapeHtml(field.name)}"${disabled}>`;
   }
 
   function pagination(total, page, pageSize) {
@@ -56,10 +57,16 @@
     const disbursementHistories = Array.isArray(person.disbursementHistory) ? person.disbursementHistory : [];
     const sources = Array.isArray(person.importSources) ? person.importSources : [];
     const definitions = fieldDefinitions().filter((field) => field.active !== false);
+    const editable = state.mode === 'edit';
     if (tab === 'accounts') {
       const accounts = accountsFor(person);
       const values = person.customFields && typeof person.customFields === 'object' ? person.customFields : {};
-      return `<section class="resident-profile-section"><div class="cf-section-head"><div><h4>收款账户</h4><p>可保存多张银行卡；默认卡会在新建发放时自动带入。</p></div></div>${accounts.length ? `<div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>银行卡号</th><th>开户行 / 开户人</th><th>默认卡</th><th>资料来源</th><th>操作</th></tr></thead><tbody>${accounts.map((account) => `<tr><td>${escapeHtml(maskCard(account.cardNumber))}</td><td>${escapeHtml(account.bankName || '未填写')}<br><span class="text-secondary">${escapeHtml(account.accountName || personName(person) || '—')}</span></td><td>${account.isDefault ? '是' : '否'}</td><td>${escapeHtml(account.source || '居民档案')}</td><td>${account.isDefault ? '当前默认卡' : `<button class="btn btn-outline" data-resident-set-default-card="${escapeHtml(account.cardNumber)}">设为默认卡</button>`}</td></tr>`).join('')}</tbody></table></div>` : '<div class="cf-empty">暂未登记银行卡资料。</div>'}<div class="resident-account-form"><strong>添加银行卡</strong><input data-resident-new-card placeholder="银行卡号"><input data-resident-new-bank placeholder="开户行（可选）"><input data-resident-new-account-name placeholder="开户人（可选）"><label class="cf-check"><input type="checkbox" data-resident-new-default${accounts.length ? '' : ' checked'}> 设为默认卡</label><button class="btn btn-outline" data-resident-add-card>添加银行卡</button></div></section><section class="resident-profile-section"><div class="cf-section-head"><div><h4>扩展资料</h4><p>管理员创建的字段默认面向全体居民；不适用时可留空。</p></div><button class="btn btn-outline" data-resident-manage-fields>管理字段</button></div>${definitions.length ? `<div class="resident-custom-fields">${definitions.map((field) => `<label><span>${escapeHtml(field.name)}</span>${fieldInput(field, values[field.id])}</label>`).join('')}</div><div class="cf-row-actions"><button class="btn btn-primary" data-resident-save-custom-fields>保存扩展资料</button></div>` : '<div class="cf-empty">尚未创建扩展字段。可点击“管理字段”创建文字、数字、日期或选择项。</div>'}</section>`;
+      const accountActionHeader = editable ? '<th>操作</th>' : '';
+      const accountActions = (account) => editable ? `<td>${account.isDefault ? '当前默认卡' : `<button class="btn btn-outline" data-resident-set-default-card="${escapeHtml(account.cardNumber)}">设为默认卡</button>`}</td>` : '';
+      const addAccount = editable ? `<div class="resident-account-form"><strong>添加银行卡</strong><input data-resident-new-card placeholder="银行卡号"><input data-resident-new-bank placeholder="开户行（可选）"><input data-resident-new-account-name placeholder="开户人（可选）"><label class="cf-check"><input type="checkbox" data-resident-new-default${accounts.length ? '' : ' checked'}> 设为默认卡</label><button class="btn btn-outline" data-resident-add-card>添加银行卡</button></div>` : '<div class="cf-hint">当前为只读查看。请从居民列表点击“编辑信息”后维护收款账户。</div>';
+      const fieldActions = editable ? '<button class="btn btn-outline" data-resident-manage-fields>管理字段</button>' : '';
+      const saveFields = editable ? '<div class="cf-row-actions"><button class="btn btn-primary" data-resident-save-custom-fields>保存扩展资料</button></div>' : '';
+      return `<section class="resident-profile-section"><div class="cf-section-head"><div><h4>收款账户</h4><p>可保存多张银行卡；默认卡会在新建发放时自动带入。</p></div></div>${accounts.length ? `<div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>银行卡号</th><th>开户行 / 开户人</th><th>默认卡</th><th>资料来源</th>${accountActionHeader}</tr></thead><tbody>${accounts.map((account) => `<tr><td>${escapeHtml(maskCard(account.cardNumber))}</td><td>${escapeHtml(account.bankName || '未填写')}<br><span class="text-secondary">${escapeHtml(account.accountName || personName(person) || '—')}</span></td><td>${account.isDefault ? '是' : '否'}</td><td>${escapeHtml(account.source || '居民档案')}</td>${accountActions(account)}</tr>`).join('')}</tbody></table></div>` : '<div class="cf-empty">暂未登记银行卡资料。</div>'}${addAccount}</section><section class="resident-profile-section"><div class="cf-section-head"><div><h4>扩展资料</h4><p>管理员创建的字段默认面向全体居民；不适用时可留空。</p></div>${fieldActions}</div>${definitions.length ? `<div class="resident-custom-fields">${definitions.map((field) => `<label><span>${escapeHtml(field.name)}</span>${fieldInput(field, values[field.id], !editable)}</label>`).join('')}</div>${saveFields}` : `<div class="cf-empty">尚未创建扩展字段。${editable ? '可点击“管理字段”创建文字、数字、日期或选择项。' : ''}</div>`}</section>`;
     }
     if (tab === 'subsidy') return histories.length ? `<table class="cf-table"><thead><tr><th>年度</th><th>村民组</th><th>应补面积</th><th>标准</th><th>补贴金额</th><th>导入时间</th></tr></thead><tbody>${histories.map((item) => `<tr><td>${escapeHtml(item.ledgerYear || '—')}</td><td>${escapeHtml(item.groupName || '—')}</td><td>${escapeHtml(item.eligibleArea || 0)} 亩</td><td>${money(item.standardCents)}</td><td>${money(item.amountCents)}</td><td>${formatTime(item.importedAt)}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">暂未导入地力补贴记录。</div>';
     if (tab === 'funds') return disbursementHistories.length ? `<table class="cf-table"><thead><tr><th>日期</th><th>类别 / 事项</th><th>金额</th><th>收款账户</th><th>来源批次</th></tr></thead><tbody>${disbursementHistories.map((item) => `<tr><td>${escapeHtml(item.batchDate || item.period || '—')}</td><td>${escapeHtml(item.categoryName || '其他发放')}<br><span class="text-secondary">${escapeHtml(item.workItem || item.role || item.responsibilityArea || item.remark || item.period || '—')}</span></td><td>${money(item.amountCents)}</td><td>${escapeHtml(maskCard(item.bankCard || ''))}</td><td>${escapeHtml(item.batchId || '—')}</td></tr>`).join('')}</tbody></table>` : '<div class="cf-empty">发放完成后，工资、承包费、杂工、补贴等会自动显示在这里。</div>';
@@ -110,17 +117,54 @@
     overlay.querySelectorAll('[data-resident-operation-page]').forEach((button) => button.addEventListener('click', () => { state.operationPage = Number(button.dataset.residentOperationPage) || 1; showProfile(person, 'operations'); }));
   }
 
-  function openProfileDialog() {
+  function residentById(value) {
+    const key = text(value);
+    return personnel().find((person) => text(person.id) === key || personIdCard(person) === key);
+  }
+
+  function personFromEntry(element) {
+    if (!element) return null;
+    const scope = element.closest('tr') || element.closest('.modal-card') || element.closest('[role="dialog"]') || element.parentElement;
+    const source = `${text(element.getAttribute?.('onclick'))} ${text(scope?.textContent)}`;
+    const byKey = personnel().filter((person) => [text(person.id), personIdCard(person)].filter(Boolean).some((key) => source.includes(key)));
+    if (byKey.length === 1) return byKey[0];
+    const rowName = text(scope?.querySelector?.('a')?.textContent || scope?.querySelector?.('td')?.textContent);
+    const rowGroup = text(scope?.querySelectorAll?.('td')?.[6]?.textContent);
+    const byName = personnel().filter((person) => personName(person) === rowName && (!rowGroup || personGroup(person) === rowGroup));
+    return byName.length === 1 ? byName[0] : null;
+  }
+
+  function openProfileDialog(options = {}) {
+    const directPerson = residentById(options.personId);
+    state.mode = options.mode === 'read' ? 'read' : 'edit'; state.entryContext = options.entryContext || 'standalone'; state.activeTab = 'basic'; state.operationPage = 1;
     close(); const overlay = document.createElement('div'); overlay.id = 'resident-subsidy-profile-overlay'; overlay.className = 'cf-modal-overlay';
-    overlay.innerHTML = `<div class="cf-modal"><div class="cf-modal-head"><h3>居民档案资料</h3><button class="cf-close" data-resident-profile-action="close">×</button></div><div class="cf-modal-body"><div class="cf-subsidy-search"><input id="resident-profile-query" placeholder="输入姓名、身份证号或村民组"><button class="btn btn-primary" data-resident-profile-action="search">查询居民</button></div><div id="resident-profile-results" class="cf-row-actions"></div><div class="resident-profile-tabs"></div><div class="resident-profile-body"><div class="cf-empty">请先查询并选择一名居民。</div></div></div><div class="cf-modal-foot"><button class="btn btn-outline" data-resident-profile-action="close">关闭</button></div></div>`;
+    const modeLabel = state.mode === 'read' ? '只读查看' : '可编辑';
+    const searchArea = directPerson ? '' : '<div class="cf-subsidy-search"><input id="resident-profile-query" placeholder="输入姓名、身份证号或村民组"><button class="btn btn-primary" data-resident-profile-action="search">查询居民</button></div><div id="resident-profile-results" class="cf-row-actions"></div>';
+    const returnLabel = state.entryContext === 'legacy' && state.mode === 'edit' ? '返回基础信息编辑' : '关闭';
+    overlay.innerHTML = `<div class="cf-modal"><div class="cf-modal-head"><h3>${directPerson ? escapeHtml(personName(directPerson)) + ' · ' : ''}居民档案资料 <span class="cf-badge ${state.mode === 'read' ? '' : 'ok'}">${modeLabel}</span></h3><button class="cf-close" data-resident-profile-action="close">×</button></div><div class="cf-modal-body">${searchArea}<div class="resident-profile-tabs"></div><div class="resident-profile-body"><div class="cf-empty">${directPerson ? '正在载入居民档案…' : '请先查询并选择一名居民。'}</div></div></div><div class="cf-modal-foot"><button class="btn btn-outline" data-resident-profile-action="close">${returnLabel}</button></div></div>`;
     document.body.appendChild(overlay);
-    const search = () => { const needle = text(document.getElementById('resident-profile-query')?.value).toLowerCase(); const matches = personnel().filter((person) => !needle || [personName(person), personIdCard(person), personGroup(person)].some((value) => text(value).toLowerCase().includes(needle))).slice(0, 20); const result = overlay.querySelector('#resident-profile-results'); result.innerHTML = matches.length ? matches.map((person) => `<button class="btn btn-outline" data-resident-profile-person="${escapeHtml(person.id)}">${escapeHtml(personName(person))} · ${escapeHtml(personGroup(person) || '未分组')}</button>`).join('') : '<span class="text-secondary">未找到居民档案。</span>'; result.querySelectorAll('[data-resident-profile-person]').forEach((button) => button.addEventListener('click', () => { state.operationPage = 1; showProfile(personnel().find((person) => text(person.id) === text(button.dataset.residentProfilePerson))); })); };
-    overlay.querySelectorAll('[data-resident-profile-action="close"]').forEach((button) => button.addEventListener('click', close)); overlay.querySelector('[data-resident-profile-action="search"]').addEventListener('click', search); overlay.querySelector('#resident-profile-query').addEventListener('keydown', (event) => { if (event.key === 'Enter') search(); }); overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+    const search = () => { const needle = text(document.getElementById('resident-profile-query')?.value).toLowerCase(); const matches = personnel().filter((person) => !needle || [personName(person), personIdCard(person), personGroup(person)].some((value) => text(value).toLowerCase().includes(needle))).slice(0, 20); const result = overlay.querySelector('#resident-profile-results'); if (!result) return; result.innerHTML = matches.length ? matches.map((person) => `<button class="btn btn-outline" data-resident-profile-person="${escapeHtml(person.id)}">${escapeHtml(personName(person))} · ${escapeHtml(personGroup(person) || '未分组')}</button>`).join('') : '<span class="text-secondary">未找到居民档案。</span>'; result.querySelectorAll('[data-resident-profile-person]').forEach((button) => button.addEventListener('click', () => { state.operationPage = 1; showProfile(residentById(button.dataset.residentProfilePerson)); })); };
+    overlay.querySelectorAll('[data-resident-profile-action="close"]').forEach((button) => button.addEventListener('click', close)); overlay.querySelector('[data-resident-profile-action="search"]')?.addEventListener('click', search); overlay.querySelector('#resident-profile-query')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') search(); }); overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
+    if (directPerson) showProfile(directPerson, 'basic');
+  }
+
+  function openFromLegacyEntry(element, mode) {
+    const person = personFromEntry(element); if (!person) return;
+    window.setTimeout(() => openProfileDialog({ personId: person.id, mode, entryContext: 'legacy' }), 80);
+  }
+
+  function handleResidentEntryClick(event) {
+    const element = event.target.closest('button, a'); if (!element || element.closest('#resident-subsidy-profile-overlay')) return;
+    const label = `${text(element.getAttribute('title'))} ${text(element.getAttribute('aria-label'))} ${text(element.textContent)}`;
+    if (label.includes('查看个人全套档案与详情')) return openFromLegacyEntry(element, 'read');
+    if (label.includes('编辑信息') || label.includes('编辑当前人员')) return openFromLegacyEntry(element, 'edit');
   }
 
   function ensureEntry() { const tab = document.getElementById('tab-personnel'); if (!tab || tab.querySelector('[data-resident-subsidy-profile-entry]')) return; const anchor = tab.querySelector('h2, h3'); if (!anchor) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-outline'; button.dataset.residentSubsidyProfileEntry = 'true'; button.textContent = '居民资料标签'; button.addEventListener('click', openProfileDialog); anchor.parentElement?.appendChild(button); }
 
-  window.openResidentSubsidyProfile = openProfileDialog;
+  window.openResidentSubsidyProfile = () => openProfileDialog();
+  window.openResidentProfileForPerson = (personId, mode = 'read') => openProfileDialog({ personId, mode, entryContext: 'direct' });
+  document.addEventListener('click', handleResidentEntryClick, true);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureEntry, { once: true }); else ensureEntry();
   new MutationObserver(ensureEntry).observe(document.documentElement, { childList: true, subtree: true });
 })();
