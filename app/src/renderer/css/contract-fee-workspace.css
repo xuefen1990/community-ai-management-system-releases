@@ -91,3 +91,21 @@
 @media (max-width: 900px) { .cf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } .cf-header { flex-direction: column; } .cf-actions { justify-content: flex-start; } }
 @media (max-width: 960px) { .cf-preview-workspace { grid-template-columns: 1fr; }.cf-preview-settings, .cf-preview-pages { position: static; }.cf-preview-pages { grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); }.cf-preview-pages h4 { grid-column: 1 / -1; } }
 @media (max-width: 600px) { .cf-stats, .cf-form-grid, .cf-template-choices { grid-template-columns: 1fr; } .cf-field.full { grid-column: auto; } .cf-modal-overlay { padding: 8px; } }
+.resident-profile-section { display: grid; gap: 12px; }
+.resident-profile-section h4 { margin: 0; color: var(--text-primary); font-size: 14px; }
+.cf-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.resident-account-list { display: grid; gap: 8px; }
+.resident-account-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
+.resident-account-row strong { display: block; color: var(--text-primary); font-size: 13px; }
+.resident-account-row span { color: var(--text-secondary); font-size: 11px; }
+.resident-account-form { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; align-items: end; }
+.resident-account-form label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.resident-account-form input, .resident-custom-fields input, .resident-custom-fields select { width: 100%; min-width: 0; border: 1px solid var(--border-color); border-radius: 7px; background: var(--bg-input); color: var(--text-primary); padding: 8px 9px; font: inherit; }
+.resident-custom-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
+.resident-custom-fields label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.resident-custom-fields .full { grid-column: 1 / -1; }
+.resident-operation-list { display: grid; gap: 8px; }
+.resident-operation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
+.resident-operation-row strong { color: var(--text-primary); font-size: 13px; }.resident-operation-row p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }.resident-operation-row time { color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
+.resident-operation-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px; }.resident-operation-pagination select { border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-input); color: var(--text-primary); padding: 6px 8px; }
+@media (max-width: 720px) { .resident-custom-fields { grid-template-columns: 1fr; }.resident-account-form { grid-template-columns: 1fr; }.resident-operation-row { grid-template-columns: 1fr; } }

@@ -38,6 +38,16 @@ test('adds and changes the default bank card without losing earlier cards', () =
   assert.equal(person.bankAccounts.length, 2);
 });
 
+test('adds a backup bank card without replacing the default card', () => {
+  const person = structuredClone(people[1]);
+  model.addBankAccount(person, '6222 0002', { now });
+  assert.equal(model.defaultBankCard(person), '62220001');
+  assert.equal(person.bankAccounts.length, 2);
+  model.addBankAccount(person, '6222 0003', { now, makeDefault: true });
+  assert.equal(model.defaultBankCard(person), '62220003');
+  assert.equal(person.bankAccounts.length, 3);
+});
+
 test('keeps imported ID cards and groups for safe template-disbursement matching', () => {
   const batch = model.createTemplateDisbursementBatch({
     templateKey: 'casual_labor', period: '2026 年 9 月',
@@ -188,6 +198,25 @@ test('requires an explicit bank-card decision before completing an imported disb
   const synced = model.completeTemplateDisbursementBatch(batch, { personnel: residents, resolutions: { [batch.items[0].id]: { personId: 'p-card', bankCardDecision: 'sync' } }, now });
   assert.equal(model.defaultBankCard(synced.personnel[0]), '62220002');
   assert.equal(synced.batch.residentSyncResults[0].status, 'update-default-card');
+});
+
+test('writes completed disbursement history and operation records only after completion', () => {
+  const residents = [{ id: 'p-work', name: '赵六', village_group: '东二组', bankAccounts: [{ cardNumber: '62220001', isDefault: true }] }];
+  const batch = model.createTemplateDisbursementBatch({
+    categoryId: 'category-casual', categoryName: '杂工补贴', templateKey: 'casual_labor', templateId: 'template-casual', period: '2026年9月',
+    items: [{ name: '赵六', groupName: '东二组', bankCard: '62220002', workDate: '9.1', workItem: '道路保洁', workDays: 1, unitPrice: 100 }],
+  }, { personnel: [], now, id: 'work-batch' });
+  const completed = model.completeTemplateDisbursementBatch(batch, {
+    personnel: residents,
+    resolutions: { [batch.items[0].id]: { personId: 'p-work', bankCardDecision: 'add' } },
+    now, operator: '经办人',
+  });
+  assert.equal(completed.personnel[0].bankAccounts.length, 2);
+  assert.equal(model.defaultBankCard(completed.personnel[0]), '62220001');
+  assert.equal(completed.personnel[0].disbursementHistory[0].workItem, '道路保洁');
+  assert.equal(completed.personnel[0].disbursementHistory[0].bankCard, '62220002');
+  assert.equal(completed.operationEntries[0].action, '发放完成并写入个人记录');
+  assert.equal(completed.operationEntries[0].operator, '经办人');
 });
 
 test('requires explicit confirmation for duplicate names and records a manual amount adjustment reason', () => {

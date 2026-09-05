@@ -59,6 +59,35 @@
     return { person, changed: previousCard !== card, previousCard, nextCard: card };
   }
 
+  function addBankAccount(person, value, { source = 'resident-profile', now = new Date(), makeDefault = false } = {}) {
+    const card = normalizeBankCard(typeof value === 'object' ? value.cardNumber : value);
+    if (!card) return { person, changed: false, account: null };
+    const updatedAt = nowIso(now);
+    const accounts = bankAccounts(person).map((item) => ({ ...item }));
+    let account = accounts.find((item) => normalizeBankCard(item.cardNumber) === card);
+    if (!account) {
+      account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, bankName: text(value?.bankName), accountName: text(value?.accountName), isDefault: !accounts.length, source, createdAt: updatedAt, updatedAt };
+      accounts.push(account);
+    } else {
+      if (text(value?.bankName)) account.bankName = text(value.bankName);
+      if (text(value?.accountName)) account.accountName = text(value.accountName);
+      account.source = text(account.source) || source; account.updatedAt = updatedAt;
+    }
+    person.bankAccounts = accounts;
+    if (makeDefault || !defaultBankCard(person)) return { ...setDefaultBankCard(person, card, { source, now }), account };
+    person.updated_at = updatedAt;
+    return { person, changed: true, account };
+  }
+
+  function appendResidentOperation(person, value, { now = new Date() } = {}) {
+    const record = { id: text(value?.id) || identifier('resident-operation', now instanceof Date ? now.getTime() : Date.now()), action: text(value?.action) || '资料更新', description: text(value?.description), sourceType: text(value?.sourceType) || 'resident-profile', batchId: text(value?.batchId), recordId: text(value?.recordId), operator: text(value?.operator), changedFields: Array.isArray(value?.changedFields) ? [...new Set(value.changedFields.map(text).filter(Boolean))] : [], occurredAt: nowIso(now) };
+    const records = Array.isArray(person.residentOperationLog) ? person.residentOperationLog : [];
+    const index = records.findIndex((item) => text(item.id) === record.id);
+    if (index >= 0) records.splice(index, 1, { ...records[index], ...record }); else records.unshift(record);
+    person.residentOperationLog = records;
+    return record;
+  }
+
   function calculateAmount({ calculationType = 'direct', quantity = 0, unitPrice = 0, directAmount = 0 } = {}) {
     if (calculationType === 'direct') return amountToCents(directAmount);
     if (!['population', 'acreage'].includes(calculationType)) throw new TypeError('不支持的计算方式');
@@ -514,18 +543,20 @@
       const candidates = disbursementResidentCandidates(item, personnel); const person = personnel.find((entry) => personId(entry) === candidateId) || (candidates.length === 1 ? candidates[0].person : null);
       if (!person) return { itemId: rowId, status: candidates.length > 1 ? 'manual' : 'missing', reason: candidates.length > 1 ? '存在重名或多个居民候选，必须人工确认' : '未找到居民档案', candidates, item };
       const incomingCard = normalizeBankCard(item.bankCard); const existingCard = defaultBankCard(person);
-      const decision = text(resolution.bankCardDecision || (incomingCard && existingCard && incomingCard !== existingCard ? '' : 'sync'));
-      if (incomingCard && existingCard && incomingCard !== existingCard && !['once', 'sync'].includes(decision)) return { itemId: rowId, status: 'manual', reason: '银行卡与居民默认卡不同，请选择仅本次使用或同步居民档案', personId: personId(person), person, item };
-      return { itemId: rowId, status: incomingCard && existingCard && incomingCard !== existingCard ? (decision === 'sync' ? 'update-default-card' : 'once-only') : 'matched', personId: personId(person), person, item, bankCardDecision: decision || 'sync' };
+      const requested = text(resolution.bankCardDecision);
+      const decision = requested === 'sync' ? 'default' : (requested || (incomingCard && !existingCard ? 'default' : ''));
+      if (incomingCard && existingCard && incomingCard !== existingCard && !['once', 'add', 'default'].includes(decision)) return { itemId: rowId, status: 'manual', reason: '银行卡与居民默认卡不同，请选择仅本次使用、新增为备用卡或设为默认卡', personId: personId(person), person, item };
+      const status = incomingCard && existingCard && incomingCard !== existingCard ? (decision === 'default' ? 'update-default-card' : (decision === 'add' ? 'add-backup-card' : 'once-only')) : 'matched';
+      return { itemId: rowId, status, personId: personId(person), person, item, bankCardDecision: decision || 'default' };
     });
   }
 
   function disbursementResidentHistory(batch, item, now) {
     return {
       id: `disbursement-source-${text(batch?.id)}-${text(item?.id)}`,
-      sourceType: 'disbursement', batchId: text(batch?.id), recordId: text(item?.id), categoryName: text(batch?.categoryName),
+      sourceType: 'disbursement', batchId: text(batch?.id), recordId: text(item?.id), categoryName: text(batch?.categoryName), bankCard: normalizeBankCard(item?.bankCard),
       templateKey: text(batch?.templateKey), period: text(batch?.period), batchDate: text(batch?.batchDate), groupName: text(item?.groupName),
-      amountCents: Number(item?.amountCents || 0), paymentStatus: text(item?.paymentStatus) || 'pending', importedAt: nowIso(now),
+      amountCents: Number(item?.amountCents || 0), paymentStatus: text(item?.paymentStatus) || 'pending', workDate: text(item?.workDate), workItem: text(item?.workItem), role: text(item?.role), responsibilityArea: text(item?.responsibilityArea), remark: text(item?.remark), importedAt: nowIso(now),
     };
   }
 
@@ -603,24 +634,29 @@
     return { batch: nextBatch, personnel: nextPersonnel, plan, results, summary };
   }
 
-  function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date() } = {}) {
+  function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date(), operator = '' } = {}) {
     if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能登记为发放完成');
     const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan(nextBatch, nextPersonnel, resolutions);
     const unresolved = plan.filter((entry) => ['manual', 'missing'].includes(entry.status));
     if (unresolved.length) throw new Error(`仍有 ${unresolved.length} 条居民关联或银行卡待处理：${unresolved.map((entry) => entry.reason).join('；')}`);
-    const syncResults = [];
+    const syncResults = []; const operationEntries = [];
     for (const entry of plan) {
       const item = nextBatch.items.find((row) => text(row.id) === entry.itemId); const person = nextPersonnel.find((row) => personId(row) === entry.personId);
       if (!item || !person) continue;
       const beforeCard = defaultBankCard(person); item.personId = personId(person); item.recipientKind = 'resident'; item.residentSnapshot = { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard: normalizeBankCard(item.bankCard) || beforeCard };
-      const shouldSync = entry.bankCardDecision !== 'once' && normalizeBankCard(item.bankCard);
-      if (shouldSync) setDefaultBankCard(person, item.bankCard, { source: 'disbursement-complete', now });
+      const decision = entry.bankCardDecision === 'sync' ? 'default' : (entry.bankCardDecision || 'default');
+      const incomingCard = normalizeBankCard(item.bankCard);
+      let nextCard = beforeCard; const changedFields = [];
+      if (incomingCard && decision === 'default') { setDefaultBankCard(person, incomingCard, { source: 'disbursement-complete', now }); nextCard = defaultBankCard(person); if (beforeCard !== nextCard) changedFields.push('默认银行卡'); }
+      else if (incomingCard && decision === 'add') { addBankAccount(person, { cardNumber: incomingCard, bankName: item.bankName, accountName: item.name }, { source: 'disbursement-complete', now }); changedFields.push('备用银行卡'); }
       appendDisbursementResidentHistory(person, disbursementResidentHistory(nextBatch, item, now));
-      syncResults.push({ itemId: item.id, personId: personId(person), status: entry.status, bankCardDecision: entry.bankCardDecision || 'sync', previousCard: beforeCard, nextCard: shouldSync ? defaultBankCard(person) : beforeCard, syncedAt: nowIso(now) });
+      const operation = appendResidentOperation(person, { action: '发放完成并写入个人记录', description: `${text(nextBatch.categoryName) || '资金发放'}：${text(item.workItem || item.role || nextBatch.period || '已完成')}`, sourceType: 'disbursement-complete', batchId: nextBatch.id, recordId: item.id, operator, changedFields: ['资金与工作记录', ...changedFields] }, { now });
+      operationEntries.push({ ...operation, personId: personId(person), residentName: personName(person) });
+      syncResults.push({ itemId: item.id, personId: personId(person), status: entry.status, bankCardDecision: decision, previousCard: beforeCard, nextCard, syncedAt: nowIso(now), changedFields });
     }
     nextBatch.status = 'completed'; nextBatch.completedAt = nowIso(now); nextBatch.updatedAt = nowIso(now); nextBatch.residentSyncResults = syncResults;
     nextBatch.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); });
-    return { batch: nextBatch, personnel: nextPersonnel, results: syncResults };
+    return { batch: nextBatch, personnel: nextPersonnel, results: syncResults, operationEntries };
   }
 
   function normalizedSubsidyRecord(value, personnel = [], { now = new Date(), id } = {}) {
@@ -829,7 +865,7 @@
 
   const api = {
     amountToCents, centsToYuan, numberValue, normalizeBankCard, personName, personGroup, personStatus, personId,
-    bankAccounts, defaultBankCard, setDefaultBankCard, calculateAmount, matchImportedRows, createContract, createLedger,
+    bankAccounts, defaultBankCard, setDefaultBankCard, addBankAccount, appendResidentOperation, calculateAmount, matchImportedRows, createContract, createLedger,
     copyLedger, replaceLedgerPerson, createBatch, summarizeBatch, validateBatch, deriveBatchStatus, reviewBatch,
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
     defaultDisbursementCategories, defaultDisbursementTemplates, normalizeDisbursementTemplate, createDisbursementTemplate, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
