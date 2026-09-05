@@ -1,0 +1,5 @@
+<!doctype html><html><head><meta charset="utf-8"><base href="../../src/renderer/"></head><body><nav class="sidebar-menu"><button data-target="tab-contract-fees">资金发放中心</button></nav><main class="app-main"></main><script>
+window.fixtureDb={personnel:[{id:'r1',name:'唯一示例',village_group:'东一组',bankAccounts:[{cardNumber:'6222000000000011',isDefault:true}]}],settings:{villageName:'演示社区'},unrelated:{value:'保留'}};
+window.api={readDb:async()=>structuredClone(fixtureDb),writeDb:async(value)=>{window.fixtureDb=structuredClone(value);return{ok:true}}};
+window.showToast=(message)=>{window.lastToast=message};window.confirm=()=>true;
+</script><script src="../shared/contract-fee-model.js"></script><script src="js/contract-fee-workspace.js"></script><script src="../../tests/renderer/workbench-adapter-scenarios.js"></script></body></html>

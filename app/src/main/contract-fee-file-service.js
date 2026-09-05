@@ -3,6 +3,8 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const XLSX = require('xlsx');
+const WorkbenchModel = require('../shared/disbursement-workbench-model');
+const ContractFeeModel = require('../shared/contract-fee-model');
 
 const { parseContractFeeExcelGrid } = require('../shared/contract-fee-excel-parser');
 const { parseFarmlandSubsidyWorkbook } = require('../shared/farmland-subsidy-excel-parser');
@@ -156,10 +158,11 @@ class ContractFeeFileService {
       [outputDirectory] = selected.filePaths;
     }
     const batch = value.batch || {}; const template = batch.templateSnapshot || {};
+    if (batch.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，请先核对后导出');
     if (!Array.isArray(batch.items) || !batch.items.length) throw new Error('发放批次没有可导出的明细');
     const custom = !template.builtIn && Array.isArray(template.columns);
     const columns = (template.columns || []).filter((column) => column.visible !== false);
-    const headers = custom
+    let headers = custom
       ? ['序号', '姓名', '组别', ...columns.map((column) => column.label), ...(template.showBankCard === false ? [] : ['银行卡号']), '实发金额', '备注']
       : batch.templateKey === 'casual_labor'
         ? ['序号', '用工日期', '姓名', '用工事项', '工日', '单价', '金额', '银行账号', '备注']
@@ -167,18 +170,30 @@ class ContractFeeFileService {
           ? ['序号', '姓名', '负责区域', '账号', '金额', '备注']
           : ['序号', '姓名', '职务', '元/月', '合计月份', '扣除款', '实发金额', '账号', '备注'];
     const yuan = (cents) => Number(cents || 0) / 100;
-    const rows = batch.items.map((item, index) => custom
+    let rows = batch.items.map((item, index) => custom
       ? [index + 1, item.name || '', item.groupName || '', ...columns.map((column) => item.customData?.[column.label] || ''), ...(template.showBankCard === false ? [] : [String(item.bankCard || '')]), yuan(item.amountCents), item.remark || '']
       : batch.templateKey === 'casual_labor'
         ? [index + 1, item.workDate || '', item.name || '', item.workItem || '', item.quantity || '', yuan(item.unitPriceCents), yuan(item.amountCents), String(item.bankCard || ''), item.remark || '']
         : batch.templateKey === 'public_service'
           ? [index + 1, item.name || '', item.responsibilityArea || '', String(item.bankCard || ''), yuan(item.amountCents), item.remark || '']
           : [index + 1, item.name || '', item.role || '', yuan(item.unitPriceCents), item.quantity || '', yuan(item.deductionsCents), yuan(item.amountCents), String(item.bankCard || ''), item.remark || '']);
+    const workbenchColumns = batch.visualLayout ? [{ key: '_sequence', label: '序号' }, ...WorkbenchModel.columns(template, batch.templateKey)] : null;
+    if (workbenchColumns) {
+      headers = workbenchColumns.map((c) => batch.visualLayout.labels?.[c.key] || c.label);
+      rows = batch.items.map((item, index) => {
+        const raw = WorkbenchModel.rawItem(item, ContractFeeModel);
+        return workbenchColumns.map((c) => c.key === '_sequence' ? index + 1 : c.key.startsWith('custom:') ? raw.customData?.[c.key.slice(7)] ?? '' : c.numeric && String(raw[c.key] ?? '').trim() !== '' ? Number(raw[c.key]) : String(raw[c.key] ?? ''));
+      });
+    }
     const totalCents = batch.items.reduce((sum, item) => sum + Number(item.amountCents || 0), 0);
     const title = String(batch.title || template.title || '资金发放表');
     const heading = [[title], [`编制单位：${batch.villageName || ''}`], [`发放期间：${batch.period || ''}　发放日期：${batch.batchDate || ''}`], []];
     const worksheet = XLSX.utils.aoa_to_sheet(heading); XLSX.utils.sheet_add_aoa(worksheet, [headers, ...rows, ['合计', ...Array(Math.max(0, headers.length - 3)).fill(''), yuan(totalCents), '']], { origin: 'A5' });
     worksheet['!cols'] = headers.map((header) => ({ wch: /卡|账号/u.test(header) ? 24 : /事项|区域|备注/u.test(header) ? 22 : 14 }));
+    if (workbenchColumns) {
+      worksheet['!cols'] = workbenchColumns.map((c, index) => batch.visualLayout.widths?.[c.key] ? { wpx: Number(batch.visualLayout.widths[c.key]) * 96 / 25.4 } : worksheet['!cols'][index]);
+      worksheet['!rows'] = [...Array(5).fill(null), ...batch.items.map((item) => ({ hpt: Number(batch.visualLayout.heights?.[item.id] || batch.visualLayout.rowHeight || 8) * 72 / 25.4 }))];
+    }
     const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, '发放表');
     const directory = path.resolve(outputDirectory); await fs.mkdir(directory, { recursive: true });
     const fileName = `${safeFilePart(`${title}-${batch.period || '未填写期间'}`)}.xlsx`; const filePath = await availableFilePath(directory, fileName);

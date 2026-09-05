@@ -341,7 +341,15 @@
       const bankCard = person ? defaultBankCard(person) : normalizeBankCard(item.bankCard);
       return { ...item, id: `${batchId}-item-${index + 1}`, name: person ? personName(person) : item.name, groupName: person ? personGroup(person) : item.groupName, bankCard, paymentStatus: 'pending', paidAt: null, paymentNote: '', residentSnapshot: person ? { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard } : item.residentSnapshot, createdAt: nowIso(now), updatedAt: nowIso(now) };
     });
-    next.residentSyncResults = []; return next;
+    if (next.visualLayout) {
+      const ids = new Map(batch.items.map((item, index) => [item.id, next.items[index].id]));
+      next.visualLayout.heights = Object.fromEntries(Object.entries(next.visualLayout.heights || {}).map(([key, value]) => [ids.get(key) || key, value]));
+      next.visualLayout.cells = Object.fromEntries(Object.entries(next.visualLayout.cells || {}).map(([key, value]) => {
+        const original = [...ids.keys()].find((itemId) => key.startsWith(`${itemId}:`));
+        return [original ? `${ids.get(original)}${key.slice(original.length)}` : key, value];
+      }));
+    }
+    delete next.workbenchDraft; next.residentSyncDecisions = {}; next.residentSyncResults = []; return next;
   }
 
   function disbursementBatchIssues(batch, personnel = []) {
@@ -424,6 +432,9 @@
       columns: normalizeTemplateColumns(value), orientation: text(value?.orientation || 'portrait') === 'landscape' ? 'landscape' : 'portrait',
       showBankCard: value?.showBankCard !== false, showSigners: value?.showSigners !== false,
       previewLayout: value?.previewLayout && typeof value.previewLayout === 'object' ? structuredClone(value.previewLayout) : {},
+      visualLayout: value?.visualLayout && typeof value.visualLayout === 'object' ? structuredClone(value.visualLayout) : {},
+      workbenchKind: text(value?.workbenchKind),
+      workbenchPrintSettings: value?.workbenchPrintSettings ? normalizeTemplatePrintSettings(value.workbenchPrintSettings) : undefined,
       createdAt: text(value?.createdAt) || nowIso(now), updatedAt: nowIso(now),
     };
   }
@@ -514,11 +525,13 @@
   }
 
   function prepareTemplateDisbursementBatch(batch, { now = new Date() } = {}) {
+    if (batch?.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，请先核对编辑表');
     if (!batch?.items?.length) throw new Error('批次没有发放明细');
     return { ...structuredClone(batch), status: 'prepared', preparedAt: nowIso(now), updatedAt: nowIso(now) };
   }
 
   function markTemplateDisbursementPrinted(batch, { now = new Date() } = {}) {
+    if (batch?.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，不能打印');
     if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能打印');
     return { ...structuredClone(batch), status: 'printed', printedAt: nowIso(now), updatedAt: nowIso(now) };
   }
@@ -635,6 +648,7 @@
   }
 
   function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date(), operator = '' } = {}) {
+    if (batch?.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，不能发放完成');
     if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能登记为发放完成');
     const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan(nextBatch, nextPersonnel, resolutions);
     const unresolved = plan.filter((entry) => ['manual', 'missing'].includes(entry.status));

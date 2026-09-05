@@ -70,6 +70,18 @@ test('exports a template disbursement workbook from the immutable batch snapshot
   await fs.rm(directory, { recursive: true, force: true });
 });
 
+test('exports workbench columns, zero values and text bank cards from copied template schema', async () => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'workbench-export-'));
+  try {
+    const service = new ContractFeeFileService({ userDataPath: directory });
+    const result = await service.exportTemplateDisbursementWorkbook({ outputDirectory:directory, batch:{ title:'测试承包费',period:'2026',templateKey:'custom_copy',templateSnapshot:{key:'custom_copy',workbenchKind:'contract_fee',fields:['面积']},visualLayout:{labels:{quantity:'应发面积'},widths:{bankCard:40},heights:{r:12}},items:[{id:'r',name:'测试居民',groupName:'一组',quantity:0,unitPriceCents:12000,amountCents:0,bankCard:'00123456789012345678'}]}});
+    const workbook=XLSX.readFile(result.file.path,{cellStyles:true});const sheet=workbook.Sheets['发放表'];const grid=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+    assert.ok(grid[4].includes('应发面积'));assert.ok(grid[5].includes(0));assert.ok(grid[5].includes('00123456789012345678'));
+    assert.equal(sheet.F6.t,'s'); assert.ok(sheet['!rows'][5].hpt>33);
+    await assert.rejects(()=>service.exportTemplateDisbursementWorkbook({outputDirectory:directory,batch:{workbenchDraft:{ready:false},items:[{}]}}),/草稿尚未填写完整/u);
+  } finally { await fs.rm(directory,{recursive:true,force:true}); }
+});
+
 test('reads a complete farmland subsidy workbook and exports the five connected attachments', async () => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'farmland-subsidy-'));
   const sourcePath = path.join(directory, '补贴.xlsx'); const source = XLSX.utils.book_new();

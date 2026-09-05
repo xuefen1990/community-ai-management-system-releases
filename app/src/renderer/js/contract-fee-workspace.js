@@ -5,6 +5,51 @@
   const api = root.api;
   const featureKeys = ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'disbursementCategories', 'disbursementBatches', 'disbursementRecycleBin', 'disbursementProfiles', 'farmlandSubsidyLedgers'];
   const state = { database: null, view: 'overview', modal: null, importDraft: null, subsidySelections: {}, evidenceContractId: '', disbursementQuery: '' };
+  let workbenchAssets;
+
+  async function openDisbursementWorkbench(template, batch, initialItems, category, preview = false) {
+    if (!workbenchAssets) {
+      workbenchAssets = (async () => {
+        const loadScript = (src) => new Promise((resolve, reject) => { const node = document.createElement('script'); node.src = src; node.onload = resolve; node.onerror = () => { node.remove(); reject(new Error('资金发放编辑器加载失败，请重试')); }; document.head.appendChild(node); });
+        await new Promise((resolve, reject) => { const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'css/disbursement-workbench.css'; css.onload = resolve; css.onerror = () => { css.remove(); reject(new Error('编辑器样式加载失败，请重试')); }; document.head.appendChild(css); });
+        if (!root.DisbursementWorkbenchModel) await loadScript('../shared/disbursement-workbench-model.js');
+        if (!root.DisbursementWorkbench) await loadScript('js/disbursement-workbench.js');
+      })().catch((error) => { workbenchAssets = null; throw error; });
+    }
+    await workbenchAssets;
+    if (document.getElementById('disbursement-workbench')) return;
+    // Compare only the target being edited; do not overwrite new resident/history data with a stale renderer database.
+    let expected = batch ? JSON.stringify(batch) : null;
+    const saveTarget = async (next) => {
+      const latest = ensureCollections(await api.readDb());
+      const index = latest.disbursementBatches.findIndex((item) => item.id === next.id);
+      const current = index >= 0 ? latest.disbursementBatches[index] : null;
+      if ((current ? JSON.stringify(current) : null) !== expected) throw new Error('本批次已被其他操作修改，请关闭后重新打开，避免覆盖新数据');
+      if (index >= 0) latest.disbursementBatches[index] = next; else latest.disbursementBatches.push(next);
+      const result = await api.writeDb(latest); if (!result?.ok) throw new Error(result?.error || '保存失败');
+      expected = JSON.stringify(next); state.database = latest; state.pendingDisbursementImport = null;
+      try { if (typeof dbState !== 'undefined') dbState = latest; } catch (_error) { /* isolated renderer */ }
+      return next;
+    };
+    return root.DisbursementWorkbench.open({
+      model, template: batch?.templateSnapshot || template, batch, initialItems, category: category || {}, preview,
+      people: state.database.personnel, history: state.database.disbursementBatches, villageName: state.database.settings?.villageName || '', saveBatch: saveTarget,
+      closed: () => { state.modal = null; renderShell(); },
+      export: (id) => exportTemplateBatch(id),
+      complete: async (id) => { await loadDatabase(); return completeTemplateBatch(id); },
+      prepare: (value) => saveTarget(model.prepareTemplateDisbursementBatch(value)),
+      markPrinted: (value) => saveTarget(model.markTemplateDisbursementPrinted(value)),
+      saveTemplate: async (value, asCopy) => {
+        const latest = ensureCollections(await api.readDb());
+        const next = model.normalizeDisbursementTemplate({ ...value, id: asCopy ? `template-${root.crypto.randomUUID()}` : value.id, key: asCopy ? `custom_${root.crypto.randomUUID()}` : value.key, builtIn: asCopy ? false : value.builtIn });
+        const index = latest.disbursementTemplates.findIndex((item) => item.id === next.id);
+        if (asCopy) latest.disbursementTemplates.push(next);
+        else { if (index < 0) throw new Error('原模板不存在，请另存为新模板'); latest.disbursementTemplates[index] = next; }
+        const result = await api.writeDb(latest); if (!result?.ok) throw new Error(result?.error || '模板保存失败');
+        state.database = latest; notify(asCopy ? '已另存为新模板' : '已更新模板；已有批次保持原版式');
+      },
+    });
+  }
 
   const text = (value) => String(value ?? '').trim();
   const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/gu, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
@@ -657,11 +702,13 @@
     return `<div class="cf-template-item" data-import-id-card="${escapeHtml(item.idCard || '')}" data-import-group-name="${escapeHtml(item.groupName || '')}" data-import-phone="${escapeHtml(item.phone || '')}" data-import-bank-name="${escapeHtml(item.bankName || '')}"><select name="personId" data-cf-template-person><option value="">${fixed ? '选择居民档案或手工填写' : '临时人员（可手工填写）'}</option>${people}</select><input name="name" data-cf-template-name value="${escapeHtml(item.name || '')}" placeholder="输入姓名后自动关联居民">${fields}<input name="bankCard" value="${escapeHtml(item.bankCard || '')}" placeholder="银行账号"><input name="finalAmount" type="number" min="0" step="0.01" value="${item.amountCents === undefined ? '' : yuanValue(item.amountCents)}" placeholder="实发金额（可改）"><input name="adjustmentReason" value="${escapeHtml(item.adjustmentReason || '')}" placeholder="手工调整原因"><input name="remark" value="${escapeHtml(item.remark || '')}" placeholder="备注"><span class="cf-template-resident-status" data-cf-template-resident-status></span></div>`;
   }
 
-  function templateBatchModal(templateKey, batch = null, templateId = '', editing = false) {
+  async function templateBatchModal(templateKey, batch = null, templateId = '', editing = false) {
     const template = templateFor(templateId || templateKey, batch); const key = template?.key || templateKey || batch?.templateKey; const categoryCode = template?.categoryCode || (key === 'casual_labor' ? 'casual_labor' : key === 'public_service' ? 'public_service_salary' : key === 'contract_fee' ? 'contract_fee' : 'salary'); const category = state.database.disbursementCategories.find((item) => item.code === categoryCode) || {};
     const profiles = state.database.disbursementProfiles.filter((item) => item.active !== false && ((key === 'position_salary' && item.templateKey === 'position_salary') || (key === 'public_service' && item.templateKey === 'public_service')));
     const importedRows = !batch && state.pendingDisbursementImport?.rows;
     const initialItems = batch?.items || (importedRows ? importedRows.map((row) => ({ name: row.name, idCard: row.idCard, groupName: row.groupName, phone: row.phone, bankName: row.bankName, role: row.role, responsibilityArea: row.responsibilityArea, workDate: row.workDate, workItem: row.workItem, quantity: row.quantity || row.months, unitPriceCents: row.unitPrice ? model.amountToCents(row.unitPrice) : undefined, amountCents: row.amount ? model.amountToCents(row.amount) : undefined, bankCard: row.bankCard, remark: row.remark, customData: row.rawData || {} })) : (key === 'casual_labor' ? [{}] : profiles.map((profile) => ({ personId: profile.personId, name: profile.name, groupName: profile.groupName, role: profile.role, responsibilityArea: profile.responsibilityArea, bankCard: profile.bankCard, unitPriceCents: profile.standardCents, quantity: key === 'position_salary' ? 1 : 0 }))));
+    return openDisbursementWorkbench(template, batch, initialItems, category, Boolean(batch && !editing));
+    /* Legacy form retained for old preview-row dialogs and source compatibility. */
     state.modal = { type: 'template-batch', templateKey: key, templateId: template?.id || '', batchId: batch?.id || '' };
     const editableBatch = Boolean(batch && editing && ['draft', 'prepared'].includes(batch.status));
     const title = batch?.title || template?.title || ({ position_salary: '工资结算单', public_service: '农村公共服务运行维护人员报酬发放表', casual_labor: '村级务工补贴发放表' })[key];
@@ -904,7 +951,9 @@
     const nextBatch = { ...structuredClone(batch), previewLayout: layout, updatedAt: new Date().toISOString() }; state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(batch), 1, nextBatch); await saveDatabase(); templatePreviewModal(nextBatch);
   }
 
-  function templatePreviewModal(batch) {
+  async function templatePreviewModal(batch) {
+    return openDisbursementWorkbench(batch.templateSnapshot || templateFor(batch.templateId || batch.templateKey, batch), batch, batch.items, {}, true);
+    /* Legacy printer remains available to older record types. */
     const template = templateFor(batch.templateId || batch.templateKey, batch) || {}; const settings = templatePrintSettings(batch, template); const perPage = settings.rowsPerPage; const pages = Math.max(1, Math.ceil((batch.items || []).length / perPage)); const editable = ['draft', 'prepared'].includes(batch.status); const margins = settings.margins;
     state.modal = { type: 'template-preview', batchId: batch.id };
     openModal('打印预览', `<div class="cf-preview-workspace"><aside class="cf-preview-settings"><h4>打印设置</h4><label>纸张<select data-cf-preview-setting="paper"${editable ? '' : ' disabled'}><option value="A5"${selected(settings.paper, 'A5')}>A5</option><option value="A4"${selected(settings.paper, 'A4')}>A4</option></select></label><label>方向<select data-cf-preview-setting="orientation"${editable ? '' : ' disabled'}><option value="portrait"${selected(settings.orientation, 'portrait')}>纵向</option><option value="landscape"${selected(settings.orientation, 'landscape')}>横向</option></select></label><label>每页人数<input type="number" min="1" max="50" value="${escapeHtml(settings.rowsPerPage)}" data-cf-preview-setting="rowsPerPage"${editable ? '' : ' disabled'}></label><label>页面边距<select data-cf-preview-margin-preset${editable ? '' : ' disabled'}><option value="narrow">窄（8 毫米）</option><option value="standard" selected>标准（12 毫米）</option><option value="wide">宽（18 毫米）</option><option value="custom">自定义</option></select></label><div class="cf-margin-grid"><label>上<input type="number" min="0" max="40" value="${escapeHtml(margins.top)}" data-cf-preview-margin="top"${editable ? '' : ' disabled'}></label><label>下<input type="number" min="0" max="40" value="${escapeHtml(margins.bottom)}" data-cf-preview-margin="bottom"${editable ? '' : ' disabled'}></label><label>左<input type="number" min="0" max="40" value="${escapeHtml(margins.left)}" data-cf-preview-margin="left"${editable ? '' : ' disabled'}></label><label>右<input type="number" min="0" max="40" value="${escapeHtml(margins.right)}" data-cf-preview-margin="right"${editable ? '' : ' disabled'}></label></div><dl><div><dt>合计页数</dt><dd>${pages} 页</dd></div></dl><p>${editable ? '调整后会立即保存到当前批次，并自动分页，同步更新预览、导出和打印。' : '该批次已锁定，只可查看打印设置。'}</p>${editable ? '<button class="btn btn-outline" data-cf-action="edit-preview-layout" data-id="' + escapeHtml(batch.id) + '">编辑列布局</button><button class="btn btn-outline" data-cf-action="edit-template-batch" data-id="' + escapeHtml(batch.id) + '">返回编辑表</button>' : ''}</aside><section class="cf-preview-canvas"><div class="cf-hint">这是打印成品预览，使用本批次保存的模板快照与明细数据。${editable ? '可直接修改或删除明细。' : ''}</div><div id="cf-template-preview">${templatePreviewHtml(batch, { interactive: true })}</div></section><aside class="cf-preview-pages"><h4>页面缩略</h4>${Array.from({ length: pages }, (_value, index) => `<button class="cf-preview-page-button" data-cf-preview-page="${index + 1}"><strong>第 ${index + 1} 页</strong><span>${index === pages - 1 ? `含合计 · ${batch.items.length} 人` : `第 ${(index * perPage) + 1}–${Math.min((index + 1) * perPage, batch.items.length)} 人`}</span></button>`).join('')}</aside></div>`, { footer: `<button class="btn btn-outline" data-cf-action="close-modal">关闭</button>${batch.status === 'draft' ? `<button class="btn btn-outline" data-cf-action="prepare-template" data-id="${batch.id}">准备打印</button>` : ''}<button class="btn btn-outline" data-cf-action="preview-template-sync" data-id="${batch.id}">同步居民资料</button><button class="btn btn-outline" data-cf-action="export-template-batch" data-id="${batch.id}">导出 Excel</button><button class="btn btn-outline" data-cf-action="complete-template" data-id="${batch.id}">发放完成</button><button class="btn btn-primary" data-cf-action="print-template">打印</button>` });
@@ -949,7 +998,7 @@
     const next = { ...structuredClone(batch), items: batch.items.filter((entry) => entry.id !== itemId), status: 'draft', preparedAt: null, printedAt: null, updatedAt: new Date().toISOString() };
     state.database.disbursementBatches.splice(state.database.disbursementBatches.indexOf(batch), 1, next); await saveDatabase('明细已删除，已重新生成打印预览'); templatePreviewModal(next);
   }
-  async function exportTemplateBatch(id) { const batch = findById('disbursementBatches', id); const result = await api.exportTemplateDisbursementWorkbook({ batch }); if (!result?.ok) { if (!result?.canceled) throw new Error(result?.error || '导出 Excel 失败'); return; } notify(`已导出 Excel：${result.file.fileName}`); }
+  async function exportTemplateBatch(id) { const batch = findById('disbursementBatches', id); if (batch?.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，请先进入编辑表核对后导出'); const result = await api.exportTemplateDisbursementWorkbook({ batch }); if (!result?.ok) { if (!result?.canceled) throw new Error(result?.error || '导出 Excel 失败'); return; } notify(`已导出 Excel：${result.file.fileName}`); }
   function templateResidentSyncModal(batch, completeAfter = false) {
     if (!batch) throw new Error('未找到发放批次'); const plan = model.disbursementResidentSyncPlan(batch, state.database.personnel, batch.residentSyncDecisions || {});
     state.modal = { type: 'template-resident-sync', batchId: batch.id, completeAfter };
