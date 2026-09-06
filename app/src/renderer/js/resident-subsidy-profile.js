@@ -6,6 +6,7 @@
   const personName = (person) => text(person?.name || person?.person_name || person?.resident_name);
   const personGroup = (person) => text(person?.village_group || person?.villageGroup || person?.group || person?.group_name);
   const personIdCard = (person) => text(person?.id_card || person?.idCard || person?.identity_card || person?.id_number);
+  const personKey = (person) => text(person?.id) || personIdCard(person);
   const personPhone = (person) => text(person?.phone || person?.mobile || person?.mobile_phone);
   const money = (cents) => `¥${(Number(cents || 0) / 100).toFixed(2)}`;
   const model = () => window.ContractFeeModel || {};
@@ -81,7 +82,7 @@
 
   function showProfile(person, activeTab = state.activeTab) {
     const overlay = document.getElementById('resident-subsidy-profile-overlay'); if (!overlay || !person) return;
-    state.personId = text(person.id); state.activeTab = activeTab;
+    state.personId = personKey(person); state.activeTab = activeTab;
     const tabs = [['basic', '基本信息'], ['accounts', '收款账户与扩展资料'], ['subsidy', '地力补贴记录'], ['funds', '资金与工作记录'], ['operations', '操作记录'], ['sources', '来源与更正记录']];
     overlay.querySelector('.resident-profile-tabs').innerHTML = tabs.map(([key, label]) => `<button data-resident-profile-tab="${key}" class="${key === activeTab ? 'active' : ''}">${label}</button>`).join('');
     overlay.querySelector('.resident-profile-body').innerHTML = profileContent(person, activeTab);
@@ -89,14 +90,20 @@
     bindProfileActions(overlay, person, activeTab);
   }
 
+  function refreshProfile(person, activeTab = state.activeTab) {
+    const embedded = document.getElementById('resident-profile-embedded');
+    if (state.entryContext === 'legacy' && embedded) return showEmbeddedProfile(person, activeTab, embedded);
+    return showProfile(person, activeTab);
+  }
+
   async function savePersonChange(person, action, description, changedFields) {
     model().appendResidentOperation?.(person, { action, description, changedFields });
-    person.updated_at = new Date().toISOString(); await persist(description); showProfile(person, state.activeTab);
+    person.updated_at = new Date().toISOString(); await persist(description); refreshProfile(person, state.activeTab);
   }
 
   function fieldManager(overlay, person) {
     overlay.querySelector('.resident-profile-body').innerHTML = `<section class="resident-profile-section"><div class="cf-section-head"><div><h4>扩展字段管理</h4><p>字段会对全部居民显示，停用后历史值仍会保留。</p></div><button class="btn btn-outline" data-resident-back-to-accounts>返回资料页</button></div><div class="resident-account-form"><input data-resident-field-name placeholder="字段名称，例如紧急联系人"><select data-resident-field-type><option value="text">文字</option><option value="number">数字</option><option value="date">日期</option><option value="select">单选</option><option value="multi_select">多选</option><option value="boolean">是 / 否</option></select><input data-resident-field-options placeholder="选项用顿号或逗号分隔（选择项时填写）"><button class="btn btn-primary" data-resident-create-field>新建字段</button></div><div class="cf-table-wrap"><table class="cf-table"><thead><tr><th>字段</th><th>类型</th><th>选项</th><th>状态</th><th>操作</th></tr></thead><tbody>${fieldDefinitions().map((field) => `<tr><td>${escapeHtml(field.name)}</td><td>${escapeHtml(({ text: '文字', number: '数字', date: '日期', select: '单选', multi_select: '多选', boolean: '是/否' })[field.type] || field.type)}</td><td>${escapeHtml((field.options || []).join('、') || '—')}</td><td>${field.active === false ? '已停用' : '启用'}</td><td><button class="btn btn-outline" data-resident-toggle-field="${escapeHtml(field.id)}">${field.active === false ? '启用' : '停用'}</button></td></tr>`).join('') || '<tr><td colspan="5">尚未创建字段</td></tr>'}</tbody></table></div></section>`;
-    overlay.querySelector('[data-resident-back-to-accounts]').addEventListener('click', () => showProfile(person, 'accounts'));
+    overlay.querySelector('[data-resident-back-to-accounts]').addEventListener('click', () => refreshProfile(person, 'accounts'));
     overlay.querySelector('[data-resident-create-field]').addEventListener('click', async () => {
       const name = text(overlay.querySelector('[data-resident-field-name]')?.value); if (!name) return window.alert('请填写字段名称');
       const type = text(overlay.querySelector('[data-resident-field-type]')?.value) || 'text'; const options = text(overlay.querySelector('[data-resident-field-options]')?.value).split(/[、,，]/u).map(text).filter(Boolean);
@@ -113,8 +120,8 @@
     overlay.querySelector('[data-resident-add-card]')?.addEventListener('click', async () => { const card = text(overlay.querySelector('[data-resident-new-card]')?.value); if (!card) return window.alert('请填写银行卡号'); const bankName = text(overlay.querySelector('[data-resident-new-bank]')?.value); const accountName = text(overlay.querySelector('[data-resident-new-account-name]')?.value); const makeDefault = Boolean(overlay.querySelector('[data-resident-new-default]')?.checked); model().addBankAccount?.(person, { cardNumber: card, bankName, accountName }, { source: 'resident-profile', makeDefault }); await savePersonChange(person, '新增收款账户', `新增${makeDefault ? '默认' : '备用'}银行卡，卡尾号 ${card.slice(-4)}`, [makeDefault ? '默认银行卡' : '备用银行卡']); });
     overlay.querySelector('[data-resident-manage-fields]')?.addEventListener('click', () => fieldManager(overlay, person));
     overlay.querySelector('[data-resident-save-custom-fields]')?.addEventListener('click', async () => { const values = { ...(person.customFields || {}) }; overlay.querySelectorAll('[data-resident-custom-field]').forEach((input) => { values[input.dataset.residentCustomField] = text(input.value); }); person.customFields = values; await savePersonChange(person, '更新扩展资料', '已保存居民扩展资料', ['扩展资料']); });
-    overlay.querySelector('[data-resident-operation-page-size]')?.addEventListener('change', (event) => { state.operationPageSize = Number(event.target.value) || 10; state.operationPage = 1; showProfile(person, 'operations'); });
-    overlay.querySelectorAll('[data-resident-operation-page]').forEach((button) => button.addEventListener('click', () => { state.operationPage = Number(button.dataset.residentOperationPage) || 1; showProfile(person, 'operations'); }));
+    overlay.querySelector('[data-resident-operation-page-size]')?.addEventListener('change', (event) => { state.operationPageSize = Number(event.target.value) || 10; state.operationPage = 1; refreshProfile(person, 'operations'); });
+    overlay.querySelectorAll('[data-resident-operation-page]').forEach((button) => button.addEventListener('click', () => { state.operationPage = Number(button.dataset.residentOperationPage) || 1; refreshProfile(person, 'operations'); }));
   }
 
   function residentById(value) {
@@ -124,7 +131,7 @@
 
   function personFromEntry(element) {
     if (!element) return null;
-    const scope = element.closest('tr') || element.closest('.modal-card') || element.closest('[role="dialog"]') || element.parentElement;
+    const scope = element.closest('tr') || element.closest('[data-person-id]') || element.closest('.personnel-card') || element.parentElement;
     const source = `${text(element.getAttribute?.('onclick'))} ${text(scope?.textContent)}`;
     const byKey = personnel().filter((person) => [text(person.id), personIdCard(person)].filter(Boolean).some((key) => source.includes(key)));
     if (byKey.length === 1) return byKey[0];
@@ -134,36 +141,128 @@
     return byName.length === 1 ? byName[0] : null;
   }
 
+  function entryPersonnelIndex(element, person) {
+    const onclick = text(element?.getAttribute?.('onclick'));
+    const match = onclick.match(/openEditModal\s*\(\s*['"]personnel['"]\s*,\s*(\d+)\s*\)/u);
+    if (match) return Number(match[1]);
+    return personnel().indexOf(person);
+  }
+
+  function showEmbeddedProfile(person, activeTab, embedded = document.getElementById('resident-profile-embedded')) {
+    if (!embedded || !person) return;
+    state.personId = personKey(person); state.activeTab = activeTab;
+    const originalContent = embedded.__originalContent;
+    if (originalContent) originalContent.style.display = 'none';
+    embedded.style.display = '';
+    embedded.querySelector('.resident-profile-body').innerHTML = profileContent(person, activeTab);
+    embedded.closest('form')?.querySelectorAll('[data-resident-embedded-tab]').forEach((item) => item.classList.toggle('resident-profile-nav-active', item.dataset.residentEmbeddedTab === activeTab));
+    bindProfileActions(embedded, person, activeTab);
+  }
+
+  function restoreOriginalProfileSection(embedded) {
+    if (!embedded) return;
+    embedded.style.display = 'none';
+    if (embedded.__originalContent) embedded.__originalContent.style.display = embedded.__originalContentDisplay || '';
+    embedded.closest('form')?.querySelectorAll('[data-resident-embedded-tab]').forEach((item) => item.classList.remove('resident-profile-nav-active'));
+  }
+
+  function originalProfileParts() {
+    const form = document.getElementById('modalForm');
+    if (!form) return {};
+    const links = [...form.querySelectorAll('a')];
+    const basicLink = links.find((link) => text(link.textContent).includes('基础信息'));
+    const specialLink = links.find((link) => text(link.textContent).includes('专项身份'));
+    const navigation = basicLink && specialLink && basicLink.parentElement === specialLink.parentElement ? basicLink.parentElement : null;
+    const content = navigation?.nextElementSibling || null;
+    return { form, basicLink, specialLink, navigation, content };
+  }
+
+  function enhanceOriginalResidentProfile(person, mode) {
+    const { form, basicLink, specialLink, navigation, content } = originalProfileParts();
+    const modal = document.getElementById('dataModal');
+    if (!form || !basicLink || !specialLink || !navigation || !content || !modal) return false;
+
+    state.mode = mode === 'read' ? 'read' : 'edit'; state.entryContext = 'legacy'; state.activeTab = 'basic'; state.operationPage = 1;
+    close();
+    form.querySelector('#resident-profile-embedded')?.remove();
+    form.querySelectorAll('[data-resident-embedded-tab]').forEach((item) => item.remove());
+
+    const embedded = document.createElement('section');
+    embedded.id = 'resident-profile-embedded'; embedded.className = 'resident-profile-embedded'; embedded.style.display = 'none';
+    embedded.__originalContent = content; embedded.__originalContentDisplay = content.style.display;
+    embedded.innerHTML = '<div class="resident-profile-body"></div>';
+    content.insertAdjacentElement('afterend', embedded);
+
+    const tabs = [
+      ['accounts', '💳 收款账户与扩展资料'],
+      ['subsidy', '🌾 地力补贴记录'],
+      ['funds', '💰 资金与工作记录'],
+      ['operations', '🧾 操作记录'],
+      ['sources', '🗂️ 来源与更正记录']
+    ];
+    tabs.forEach(([key, label]) => {
+      const link = basicLink.cloneNode(false);
+      link.removeAttribute('onclick'); link.href = 'javascript:void(0)'; link.dataset.residentEmbeddedTab = key; link.textContent = label;
+      link.addEventListener('click', (event) => { event.preventDefault(); showEmbeddedProfile(person, key, embedded); });
+      navigation.appendChild(link);
+    });
+    [basicLink, specialLink].forEach((link) => link.addEventListener('click', () => window.setTimeout(() => restoreOriginalProfileSection(embedded), 0)));
+
+    const title = document.getElementById('modalTitle');
+    if (title) title.textContent = state.mode === 'read' ? `查看居民档案 · ${personName(person)}` : `编辑登记信息 · ${personName(person)}`;
+    const saveButton = document.getElementById('saveModalBtn');
+    if (saveButton) saveButton.style.display = state.mode === 'read' ? 'none' : '';
+    const cancelButton = modal.querySelector('.modal-footer .btn-outline');
+    if (cancelButton) cancelButton.textContent = state.mode === 'read' ? '关闭' : '取消';
+    form.querySelectorAll('input, select, textarea, button').forEach((control) => { control.disabled = state.mode === 'read'; });
+    modal.classList.toggle('resident-profile-readonly', state.mode === 'read');
+    return true;
+  }
+
   function openProfileDialog(options = {}) {
     const directPerson = residentById(options.personId);
     state.mode = options.mode === 'read' ? 'read' : 'edit'; state.entryContext = options.entryContext || 'standalone'; state.activeTab = 'basic'; state.operationPage = 1;
     close(); const overlay = document.createElement('div'); overlay.id = 'resident-subsidy-profile-overlay'; overlay.className = 'cf-modal-overlay';
     const modeLabel = state.mode === 'read' ? '只读查看' : '可编辑';
     const searchArea = directPerson ? '' : '<div class="cf-subsidy-search"><input id="resident-profile-query" placeholder="输入姓名、身份证号或村民组"><button class="btn btn-primary" data-resident-profile-action="search">查询居民</button></div><div id="resident-profile-results" class="cf-row-actions"></div>';
-    const returnLabel = state.entryContext === 'legacy' && state.mode === 'edit' ? '返回基础信息编辑' : '关闭';
-    overlay.innerHTML = `<div class="cf-modal"><div class="cf-modal-head"><h3>${directPerson ? escapeHtml(personName(directPerson)) + ' · ' : ''}居民档案资料 <span class="cf-badge ${state.mode === 'read' ? '' : 'ok'}">${modeLabel}</span></h3><button class="cf-close" data-resident-profile-action="close">×</button></div><div class="cf-modal-body">${searchArea}<div class="resident-profile-tabs"></div><div class="resident-profile-body"><div class="cf-empty">${directPerson ? '正在载入居民档案…' : '请先查询并选择一名居民。'}</div></div></div><div class="cf-modal-foot"><button class="btn btn-outline" data-resident-profile-action="close">${returnLabel}</button></div></div>`;
+    overlay.innerHTML = `<div class="cf-modal"><div class="cf-modal-head"><h3>${directPerson ? escapeHtml(personName(directPerson)) + ' · ' : ''}居民档案资料 <span class="cf-badge ${state.mode === 'read' ? '' : 'ok'}">${modeLabel}</span></h3><button class="cf-close" data-resident-profile-action="close">×</button></div><div class="cf-modal-body">${searchArea}<div class="resident-profile-tabs"></div><div class="resident-profile-body"><div class="cf-empty">${directPerson ? '正在载入居民档案…' : '请先查询并选择一名居民。'}</div></div></div><div class="cf-modal-foot"><button class="btn btn-outline" data-resident-profile-action="close">关闭</button></div></div>`;
     document.body.appendChild(overlay);
-    const search = () => { const needle = text(document.getElementById('resident-profile-query')?.value).toLowerCase(); const matches = personnel().filter((person) => !needle || [personName(person), personIdCard(person), personGroup(person)].some((value) => text(value).toLowerCase().includes(needle))).slice(0, 20); const result = overlay.querySelector('#resident-profile-results'); if (!result) return; result.innerHTML = matches.length ? matches.map((person) => `<button class="btn btn-outline" data-resident-profile-person="${escapeHtml(person.id)}">${escapeHtml(personName(person))} · ${escapeHtml(personGroup(person) || '未分组')}</button>`).join('') : '<span class="text-secondary">未找到居民档案。</span>'; result.querySelectorAll('[data-resident-profile-person]').forEach((button) => button.addEventListener('click', () => { state.operationPage = 1; showProfile(residentById(button.dataset.residentProfilePerson)); })); };
+    const search = () => { const needle = text(document.getElementById('resident-profile-query')?.value).toLowerCase(); const matches = personnel().filter((person) => !needle || [personName(person), personIdCard(person), personGroup(person)].some((value) => text(value).toLowerCase().includes(needle))).slice(0, 20); const result = overlay.querySelector('#resident-profile-results'); if (!result) return; result.innerHTML = matches.length ? matches.map((person) => `<button class="btn btn-outline" data-resident-profile-person="${escapeHtml(personKey(person))}">${escapeHtml(personName(person))} · ${escapeHtml(personGroup(person) || '未分组')}</button>`).join('') : '<span class="text-secondary">未找到居民档案。</span>'; result.querySelectorAll('[data-resident-profile-person]').forEach((button) => button.addEventListener('click', () => { state.operationPage = 1; showProfile(residentById(button.dataset.residentProfilePerson)); })); };
     overlay.querySelectorAll('[data-resident-profile-action="close"]').forEach((button) => button.addEventListener('click', close)); overlay.querySelector('[data-resident-profile-action="search"]')?.addEventListener('click', search); overlay.querySelector('#resident-profile-query')?.addEventListener('keydown', (event) => { if (event.key === 'Enter') search(); }); overlay.addEventListener('click', (event) => { if (event.target === overlay) close(); });
     if (directPerson) showProfile(directPerson, 'basic');
   }
 
+  function openPersonInOriginalForm(person, mode, index = personnel().indexOf(person)) {
+    if (!person) return false;
+    if (index < 0 || typeof window.openEditModal !== 'function') {
+      openProfileDialog({ personId: personKey(person), mode, entryContext: 'direct' });
+      return true;
+    }
+    close(); window.openEditModal('personnel', index);
+    window.setTimeout(() => enhanceOriginalResidentProfile(person, mode), 0);
+    return true;
+  }
+
   function openFromLegacyEntry(element, mode) {
-    const person = personFromEntry(element); if (!person) return;
-    window.setTimeout(() => openProfileDialog({ personId: person.id, mode, entryContext: 'legacy' }), 80);
+    const person = personFromEntry(element); if (!person) return false;
+    return openPersonInOriginalForm(person, mode, entryPersonnelIndex(element, person));
   }
 
   function handleResidentEntryClick(event) {
     const element = event.target.closest('button, a'); if (!element || element.closest('#resident-subsidy-profile-overlay')) return;
     const label = `${text(element.getAttribute('title'))} ${text(element.getAttribute('aria-label'))} ${text(element.textContent)}`;
-    if (label.includes('查看个人全套档案与详情')) return openFromLegacyEntry(element, 'read');
-    if (label.includes('编辑信息') || label.includes('编辑当前人员')) return openFromLegacyEntry(element, 'edit');
+    let mode = '';
+    if (label.includes('查看个人全套档案与详情')) mode = 'read';
+    if (label.includes('编辑信息') || label.includes('编辑当前人员')) mode = 'edit';
+    if (!mode) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    if (!openFromLegacyEntry(element, mode)) (window.showToast || window.alert)('未能准确识别该居民，请刷新列表后重试', 'warning');
   }
 
   function ensureEntry() { const tab = document.getElementById('tab-personnel'); if (!tab || tab.querySelector('[data-resident-subsidy-profile-entry]')) return; const anchor = tab.querySelector('h2, h3'); if (!anchor) return; const button = document.createElement('button'); button.type = 'button'; button.className = 'btn btn-outline'; button.dataset.residentSubsidyProfileEntry = 'true'; button.textContent = '居民资料标签'; button.addEventListener('click', openProfileDialog); anchor.parentElement?.appendChild(button); }
 
   window.openResidentSubsidyProfile = () => openProfileDialog();
-  window.openResidentProfileForPerson = (personId, mode = 'read') => openProfileDialog({ personId, mode, entryContext: 'direct' });
+  window.openResidentProfileForPerson = (personId, mode = 'read') => openPersonInOriginalForm(residentById(personId), mode);
   document.addEventListener('click', handleResidentEntryClick, true);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ensureEntry, { once: true }); else ensureEntry();
   new MutationObserver(ensureEntry).observe(document.documentElement, { childList: true, subtree: true });

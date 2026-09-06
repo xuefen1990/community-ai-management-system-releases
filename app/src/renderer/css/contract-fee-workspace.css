@@ -104,6 +104,12 @@
 .resident-custom-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; }
 .resident-custom-fields label { display: grid; gap: 5px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
 .resident-custom-fields .full { grid-column: 1 / -1; }
+.resident-profile-embedded { flex: 1; min-width: 0; max-height: 68vh; overflow: auto; padding: 0 2px; }
+#modalForm [data-resident-embedded-tab] { white-space: normal; line-height: 1.35; }
+#modalForm [data-resident-embedded-tab].resident-profile-nav-active { color: var(--primary); background: color-mix(in srgb, var(--primary) 11%, transparent); border-color: color-mix(in srgb, var(--primary) 24%, transparent); font-weight: 700; }
+#dataModal.resident-profile-readonly #modalForm input:disabled,
+#dataModal.resident-profile-readonly #modalForm select:disabled,
+#dataModal.resident-profile-readonly #modalForm textarea:disabled { opacity: 1; color: var(--text-primary); -webkit-text-fill-color: var(--text-primary); background: var(--bg-body); cursor: default; }
 .resident-operation-list { display: grid; gap: 8px; }
 .resident-operation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-card); }
 .resident-operation-row strong { color: var(--text-primary); font-size: 13px; }.resident-operation-row p { margin: 3px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }.resident-operation-row time { color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
