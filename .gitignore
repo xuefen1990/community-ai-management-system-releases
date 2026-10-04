@@ -1,0 +1,43 @@
+# Local brainstorming previews
+.superpowers/
+.worktrees/
+
+# Original installers and extracted binary baseline
+*.dmg
+source-original/app-asar/
+source-original/app-asar-unpacked/
+source-original/app-bundle/
+
+# Dependencies and build outputs
+node_modules/
+app/.runtime/
+app/.dev/
+app/.dev-*/
+app/build/icon.iconset/
+app/assets/brand/*-chroma-source.png
+app/assets/brand/icon-master-generated.png
+app/assets/brand/icon-transparent-master.png
+dist/
+release/
+out/
+*.app/
+
+# Runtime data and large AI models
+data/
+models/
+*.gguf
+*.ggml
+*.part
+
+# Secrets and local credentials
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+!app/src/main/license-public-key.pem
+license-generator/private/
+
+# Logs and local OS files
+*.log
+.DS_Store

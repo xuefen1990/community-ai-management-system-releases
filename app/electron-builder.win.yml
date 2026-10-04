@@ -1,0 +1,47 @@
+appId: com.community.ai.management
+productName: 社区AI管理系统
+copyright: Copyright © 2026 社区AI管理系统
+directories:
+  buildResources: build
+  output: release/win-x64
+artifactName: community-ai-management-system-${version}-win-x64.${ext}
+publish:
+  provider: generic
+  url: https://xuefeng0901.cn/api/update/electron/
+files:
+  - "**/*"
+  - "!tests/**/*"
+  - "!release/**/*"
+  - "!.runtime/**/*"
+  - "!.dev/**/*"
+  - "!data/**/*"
+asarUnpack:
+  - node_modules/node-llama-cpp/**
+  - node_modules/@node-llama-cpp/win-x64/**
+extraResources:
+  - from: ../backend
+    to: backend
+    filter:
+      - package.json
+      - src/**/*
+      - node_modules/**/*
+      - '!data/**/*'
+      - '!.env*'
+      - '!**/*.log'
+      - '!tests/**/*'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  allowElevation: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: 社区AI管理系统
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico

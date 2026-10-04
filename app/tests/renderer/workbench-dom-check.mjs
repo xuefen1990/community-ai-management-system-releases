@@ -1,0 +1,21 @@
+// Isolated Chromium UI test: synthetic residents only; does not connect to the app database.
+import { spawn } from 'node:child_process';
+import { mkdtemp, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+const profile = await mkdtemp(path.join(tmpdir(), 'community-workbench-ui-'));
+const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), process.argv[2] === 'adapter' ? 'workbench-adapter-fixture.html' : 'workbench-fixture.html');
+const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const child = spawn(chrome, ['--headless', '--disable-gpu', '--use-mock-keychain', '--password-store=basic', '--disable-background-networking', `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-size=1600,1000', '--virtual-time-budget=12000', '--screenshot=/private/tmp/disbursement-workbench-ui-check.png', '--dump-dom', pathToFileURL(fixture).href]);
+const timeout = setTimeout(() => child.kill('SIGTERM'), 45000);
+let stdout = '', stderr = '';
+child.stdout.on('data',chunk => stdout += chunk); child.stderr.on('data',chunk => stderr += chunk);
+const code = await new Promise((resolve,reject) => { child.on('error',reject); child.on('close',resolve); });
+clearTimeout(timeout);
+await writeFile(path.join(profile,'test-output.html'),stdout);
+const match = stdout.match(/data-test-result="([^"]+)"/u);
+if (code || !match) throw new Error(`UI test failed (${code}): ${stderr.slice(-2000)}; output: ${profile}`);
+const result = JSON.parse(match[1].replace(/&quot;/gu,'"').replace(/&amp;/gu,'&').replace(/&lt;/gu,'<').replace(/&gt;/gu,'>'));
+console.log(JSON.stringify(result));
+if (!result.ok) process.exitCode = 1;

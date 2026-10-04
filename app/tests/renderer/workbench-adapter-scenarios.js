@@ -1,0 +1,25 @@
+(async () => {
+  const pause = (ms=50) => new Promise(r=>setTimeout(r,ms));
+  const assert = (v,m) => { if(!v) throw new Error(m); };
+  const $ = (s) => document.querySelector(s);
+  const set = (s,v) => {const n=$(s);n.value=v;n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));};
+  await pause(); $('[data-target="tab-contract-fees"]').click(); await pause();
+  $('[data-cf-action="new-disbursement-batch"]').click();await pause();
+  $('[data-cf-action="new-template-batch"][data-template="casual_labor"]').click();
+  for(let i=0;i<30&&!$('[data-cell="name"]');i++) await pause(100);
+  assert($('[data-cell="name"]'),'real entry lazy loads workbench');
+  set('[data-cell="name"]','唯一示例');set('[data-cell="quantity"]','2');set('[data-cell="unitPrice"]','100');
+  fixtureDb.unrelated.value='其他窗口的新数据';
+  $('[data-action="preview"]').click();await pause(200);
+  assert($('.wb-sheet'),'save opens actual preview');
+  assert(fixtureDb.disbursementBatches.length===1,'batch saved once');
+  assert(fixtureDb.unrelated.value==='其他窗口的新数据','other database changes preserved');
+  assert(fixtureDb.disbursementBatches[0].items[0].bankCard==='6222000000000011','real adapter resident card saved');
+  $('[data-action="edit"]').click();await pause();
+  fixtureDb.disbursementBatches[0].items[0].remark='其他操作的备注';
+  set('[data-cell="remark"]','不应覆盖');await pause(1200);
+  assert($('[data-save-status]').textContent.includes('本批次已被其他操作修改'),'concurrent batch conflict visible');
+  assert(fixtureDb.disbursementBatches[0].items[0].remark==='其他操作的备注','conflict did not overwrite newer batch');
+  $('[data-action="discard"]').click();await pause();assert(!$('#disbursement-workbench'),'can leave conflict without overwriting');
+  document.body.dataset.testResult=JSON.stringify({ok:true,assertions:8,adapter:true});
+})().catch(error=>{document.body.dataset.testResult=JSON.stringify({ok:false,error:error.stack});});

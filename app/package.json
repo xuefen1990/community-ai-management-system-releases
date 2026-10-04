@@ -1,0 +1,56 @@
+{
+  "name": "community-ai-management-system",
+  "version": "1.2.2",
+  "description": "社区AI管理系统桌面版",
+  "main": "src/main/index.js",
+  "author": "社区AI管理系统",
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/**/*.test.js",
+    "build:arm64": "node ../scripts/build-arm64-dmg.mjs",
+    "build:ci:arm64": "node ../scripts/build-ci-arm64-dmg.mjs",
+    "build:win:x64": "node ../scripts/build-win-x64.mjs",
+    "release:sync": "node ../scripts/release-sync.mjs",
+    "release:sync-local": "node ../scripts/sync-local-update.mjs",
+    "github:verify": "node ../scripts/verify-github-credential.mjs",
+    "dev": "node ../scripts/dev-electron.mjs",
+    "dev:tools": "node ../scripts/dev-electron.mjs --devtools"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.16",
+    "echarts": "6.1.0",
+    "electron-updater": "^6.6.2",
+    "node-llama-cpp": "3.19.1",
+    "pizzip": "3.2.0",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "electron": "31.7.7",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.community.ai.management",
+    "productName": "社区AI管理系统",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "extraResources": [
+      {
+        "from": "../backend",
+        "to": "backend",
+        "filter": [
+          "package.json",
+          "src/**/*",
+          "node_modules/**/*",
+          "!data/**/*",
+          "!.env*",
+          "!**/*.log",
+          "!tests/**/*"
+        ]
+      }
+    ]
+  }
+}

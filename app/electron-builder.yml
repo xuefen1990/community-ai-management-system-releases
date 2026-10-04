@@ -1,0 +1,25 @@
+appId: com.community.ai.management
+productName: 社区AI管理系统
+asar: true
+directories:
+  output: release
+  buildResources: build
+files:
+  - src/**/*
+  - package.json
+mac:
+  category: public.app-category.utilities
+  icon: build/icon.icns
+  target:
+    - target: pkg
+      arch:
+        - arm64
+    - target: zip
+      arch:
+        - arm64
+pkg:
+  installLocation: /Applications
+  artifactName: community-ai-management-system-${version}-${arch}.${ext}
+publish:
+  provider: generic
+  url: https://xuefeng0901.cn/api/update/electron/
