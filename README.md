@@ -17,8 +17,10 @@ npm run dev
 
 ```sh
 npm test
-npm --prefix backend test
+ADMIN_PASSWORD=local-test-only-password JWT_SECRET=local-test-only-signing-key npm --prefix backend test
 ```
+
+后端测试命令中的值仅用于临时测试；正式服务器需独立配置强密码和签名密钥，不使用这些测试值。
 
 ## 构建与更新
 
