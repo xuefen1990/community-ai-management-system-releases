@@ -7,7 +7,10 @@
     "dev:setup": "npm ci && npm --prefix app ci && npm --prefix backend ci",
     "test": "npm --prefix app test",
     "build": "npm --prefix app run build:arm64",
-    "build:arm64": "npm --prefix app run build:arm64"
+    "build:arm64": "npm --prefix app run build:arm64",
+    "deploy:website": "bash scripts/deploy-website.sh",
+    "deploy:website:watch": "node scripts/watch-website.mjs",
+    "deploy:website:watch:enable": "node scripts/enable-website-watch.mjs"
   },
   "engines": {
     "node": ">=20.13.0"

@@ -41,7 +41,11 @@
   async function load() {
     const sequence = ++loadSequence;
     const previousPeriod = `${state.report?.startDate}/${state.report?.endDate}`;
-    state.busy = true; state.loadError = ''; render();
+    state.loadError = '';
+    if (state.periodMode === 'manual' && (!defaultPeriod.validDate(state.startDate) || !defaultPeriod.validDate(state.endDate) || state.startDate > state.endDate)) {
+      state.busy = false; state.loadError = '请选择有效的起止日期，结束日期不能早于开始日期'; render(); return;
+    }
+    state.busy = true; render();
     try {
       const [ledger, catalog, balanceReview] = await Promise.all([
         request('GET', '/finance-records?limit=100000'), request('GET', '/finance-categories'), request('GET', '/finance-balance-review'),
@@ -72,7 +76,12 @@
   const visible = () => (state.report?.records || []).filter(row => {
     const type = row.recordType || row.type;
     const word = `${row.summary || ''} ${row.category || ''} ${row.voucherNo || ''}`.toLowerCase();
-    return (!state.chartMonth || String(row.recordDate || row.date).startsWith(state.chartMonth)) && (!state.chartCategory || (state.chartSelection?.grouped ? chartGroups.groupFor(type, row.category, row.summary) === state.chartCategory : state.chartSelection?.categories?.includes(row.category) || row.category === state.chartCategory)) && (!state.type || state.type === type) && (!state.search || word.includes(state.search.toLowerCase()));
+    const query = state.search.normalize('NFKC').trim().toLowerCase();
+    const amountQuery = query.replace(/[,，\s￥¥]/gu, '').replace(/元$/u, '');
+    const cents = row.amountCents ?? Math.round(Number(row.amount || 0) * 100);
+    const amountMatches = /^\d+(?:\.\d{1,2})?$/u.test(amountQuery) && Number.isSafeInteger(cents)
+      && [String(cents / 100), (cents / 100).toFixed(2)].some(value => value.includes(amountQuery));
+    return (!state.chartMonth || String(row.recordDate || row.date).startsWith(state.chartMonth)) && (!state.chartCategory || (state.chartSelection?.grouped ? chartGroups.groupFor(type, row.category, row.summary) === state.chartCategory : state.chartSelection?.categories?.includes(row.category) || row.category === state.chartCategory)) && (!state.type || state.type === type) && (!query || word.includes(query) || amountMatches);
   });
   const options = (type, selected) => (categories[type] || []).map(value => `<option value="${esc(value)}" ${selected === value ? 'selected' : ''}>${esc(value)}</option>`).join('');
   const toolbar = () => `<div class="fin-head"><div><h1>财务收支</h1><p>按日期查看收支、核对台账和导入 Excel 表格</p></div><div class="fin-head-actions"><button data-action="reload">刷新</button><button data-action="export">导出 Excel</button><button class="primary" data-action="import">导入 Excel</button><button class="primary" data-action="add">新增收支</button></div></div>`;
@@ -166,7 +175,7 @@
     const deep = depth === 'deep';
     const text = String((deep ? state.deepNarrative : state.narrative) || '').trim();
     if (!text) return deep ? '' : '<p class="fin-hint">生成简报快速查看要点；按需点击深度分析，进一步了解收支结构、大额记录和需关注的事项。</p>';
-    const stale = (deep ? state.deepRevision : state.narrativeRevision) !== reportRevision() ? '<p class="fin-report-stale" role="status">日期范围或台账已变化，以下为此前报告，请重新生成。</p>' : '';
+    const stale = (deep ? state.deepRevision : state.narrativeRevision) !== reportRevision() ? '<p class="fin-report-stale" role="status">日期范围或台账已变化，以下为此前报告，请重新生成。</p>' : ''; 
     let parsed;
     try { parsed = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch {}
     if (parsed && typeof parsed.summary === 'string') {
@@ -180,14 +189,14 @@
     const totals = state.report?.totals || {};
     const datebar = `<section class="fin-datebar"><strong>日期范围</strong><button data-action="recent-data" ${state.busy ? 'disabled' : ''} class="${state.periodMode==='recent'?'active':''}">最近数据</button><button data-preset="month" ${state.busy ? 'disabled' : ''}>本月</button><button data-preset="last" ${state.busy ? 'disabled' : ''}>上月</button><button data-preset="year" ${state.busy ? 'disabled' : ''}>今年</button><label>从 <input type="date" data-field="startDate" value="${state.startDate}"></label><label>至 <input type="date" data-field="endDate" value="${state.endDate}"></label><button class="primary" data-action="apply-dates" ${state.busy ? 'disabled' : ''}>${state.busy ? '加载中…' : '查看分析'}</button></section>${state.periodMode === 'recent' && state.latestDate ? `<p class="fin-recent-hint">最新记录为 ${esc(state.latestDate)}，当前展示 ${Number(state.startDate.slice(0,4))} 年 ${Number(state.startDate.slice(5,7))} 月数据。</p>` : ''}`;
     if (state.busy && !state.report) return `${toolbar()}<section class="fin-panel" role="status">正在读取收支台账并定位最近数据…</section>`;
-    if (state.loadError) return `${toolbar()}<section class="fin-panel fin-error" role="alert">读取财务数据失败：${esc(state.loadError)} <button data-action="reload">重试</button></section>`;
+    if (state.loadError) return `${toolbar()}${datebar}<section class="fin-panel fin-error" role="alert"><p>读取财务数据失败：${esc(state.loadError)}</p><div class="fin-inline"><button data-action="reload">重试</button><button data-action="recent-data">恢复最近数据</button><button data-action="return-overview">← 返回工作台</button></div></section>`;
     if (!state.busy && (state.periodMode === 'recent' && !state.latestDate || !state.report?.recordCount)) return `${toolbar()}${datebar}${balanceCard()}<section class="fin-panel fin-no-records"><h2>${state.periodMode === 'recent' ? '暂无收支数据' : '所选日期范围暂无收支记录'}</h2><p class="fin-hint">${state.periodMode === 'recent' ? '可新增收支或导入 Excel 表格；仅有未来或无效记录时，不计入最近数据。' : '可以调整日期，或查看最近有记录的月份。'}</p><div class="fin-inline">${state.periodMode !== 'recent' ? '<button data-action="recent-data">查看最近数据</button>' : ''}<button data-action="add">新增收支</button><button class="primary" data-action="import">导入 Excel</button></div></section>`;
     return `${toolbar()}${datebar}
       <div class="fin-stats"><article><span>总收入</span><strong>¥ ${money(totals.incomeCents)}</strong><small>${totals.incomeCount || 0} 笔收入</small></article><article><span>总支出</span><strong>¥ ${money(totals.expenseCents)}</strong><small>${totals.expenseCount || 0} 笔支出</small></article><article class="${totals.balanceCents < 0 ? 'fin-negative' : ''}"><span>期间收支结余</span><strong>¥ ${money(totals.balanceCents)}</strong><small>${totals.balanceCents < 0 ? '支出高于收入' : '收入减去支出'}</small></article><article><span>收支记录</span><strong>${state.report?.recordCount || 0} 笔</strong><small>${esc(state.report?.startDate || state.startDate)} 至 ${esc(state.report?.endDate || state.endDate)}</small></article></div>
       ${balanceCard()}<div class="fin-chart-grid"><section class="fin-panel"><div class="fin-panel-title"><h2>月度收支趋势</h2><span>单位：元</span></div><div class="fin-chart" data-fin-chart="monthly" role="img" aria-label="月度收入和支出柱状图"></div></section>
       <section class="fin-panel"><div class="fin-panel-title"><h2>科目占比</h2>${state.canRefine ? `<button data-action="refine-categories" ${state.busy || !state.report?.recordCount ? 'disabled' : ''}>智能整理收支科目</button>` : ''}<div class="fin-chart-switch"><button data-chart-type="expense" class="${state.chartType === 'expense' ? 'active' : ''}">支出</button><button data-chart-type="income" class="${state.chartType === 'income' ? 'active' : ''}">收入</button></div></div><div class="fin-chart-grouping"><label>展示方式 <select data-field="chartMode" aria-label="科目展示方式">${[['auto','自动'],['summary','汇总大类'],['detail','具体科目']].map(([value,label])=>`<option value="${value}" ${state.chartMode===value?'selected':''}>${label}</option>`).join('')}</select></label><small>${chartGroups.chartCategories(state.report || {}, {type:state.chartType,mode:state.chartMode}).mode==='summary'?'已按用途汇总，点击大类查看包含的台账':'展示具体科目，点击科目筛选台账'}</small></div><div class="fin-chart" data-fin-chart="category" role="img" aria-label="科目金额占比环形图"></div></section></div>
       ${narrativePanel()}
-      <section class="fin-panel" data-ledger-panel><div class="fin-panel-title"><h2>收支台账</h2><span data-ledger-count>${visible().length} 笔</span></div><div class="fin-list-tools"><div class="fin-search-box"><input data-field="search" aria-label="搜索收支台账" placeholder="搜索摘要、科目或凭证号" value="${esc(state.search)}"><button data-action="clear-search" aria-label="清空搜索" title="清空搜索" ${state.search ? '' : 'hidden'}>×</button></div><select data-field="type"><option value="">全部类型</option><option value="income" ${state.type === 'income' ? 'selected' : ''}>收入</option><option value="expense" ${state.type === 'expense' ? 'selected' : ''}>支出</option></select><button data-action="batch-delete" ${state.selectedIds.size ? '' : 'disabled'}>删除所选 (${state.selectedIds.size})</button></div><div class="fin-chart-filters" data-chart-filters>${filterChips()}</div>${balanceReviewBanner()}<div data-ledger-results>${ledgerResults()}</div></section>`;
+      <section class="fin-panel" data-ledger-panel><div class="fin-panel-title"><h2>收支台账</h2><span data-ledger-count>${visible().length} 笔</span></div><div class="fin-list-tools"><div class="fin-search-box"><input data-field="search" aria-label="搜索收支台账" placeholder="搜索摘要、科目、金额或凭证号" value="${esc(state.search)}"><button data-action="clear-search" aria-label="清空搜索" title="清空搜索" ${state.search ? '' : 'hidden'}>×</button></div><select data-field="type"><option value="">全部类型</option><option value="income" ${state.type === 'income' ? 'selected' : ''}>收入</option><option value="expense" ${state.type === 'expense' ? 'selected' : ''}>支出</option></select><button data-action="batch-delete" ${state.selectedIds.size ? '' : 'disabled'}>删除所选 (${state.selectedIds.size})</button></div><div class="fin-chart-filters" data-chart-filters>${filterChips()}</div>${balanceReviewBanner()}<div data-ledger-results>${ledgerResults()}</div></section>`;
   }
   function balanceCard() {
     const balance = state.accountBalance;
@@ -258,18 +267,28 @@
       <div class="fin-map-grid">${Object.entries(names).map(([field, label]) => `<label>${label}<select data-map-field="${field}" data-map-sheet="${esc(sheet.sheetName)}"><option value="">未指定</option>${sheet.headers.map((head, index) => `<option value="${index}" ${sheet.mapping?.[field] === index ? 'selected' : ''}>${esc(head)}</option>`).join('')}</select></label>`).join('')}</div>
       <button data-remap-sheet="${esc(sheet.sheetName)}" ${state.importBusy ? 'disabled' : ''}>应用调整并自动校验</button></details>`;
   }
+  function importDateContextView(sheet) {
+    return (sheet.regions || []).filter(region=>region.context?.needsConfirmation && sheet.rows.some(row=>row.regionStart===region.regionStart && !row.recordDate && /^\d{1,2}日?$/u.test(String(row.sourceDate || '').normalize('NFKC')))).map(region=>{
+      const context=region.context,key=`${encodeURIComponent(sheet.sheetName)}:${region.headerRowNumber}`;
+      const evidence=(context.evidence || []).filter(item=>item.year || item.month || item.monthRange).map(item=>`${item.label}：${item.text}`).join('；');
+      return `<div class="fin-panel fin-mapping" data-date-context="${esc(key)}"><h3>确认“${esc(sheet.sheetName)}”的年月${sheet.regions.length>1?`（第 ${region.headerRowNumber} 行表头）`:''}</h3><p class="fin-warn">${esc(context.conflicts?.join('、') || '缺少明确年月')}。确认一次即可补全本区域的日号日期。</p><p class="fin-hint">${esc(evidence || '原表没有可用的年月依据，请核对原文件。')}</p><div class="fin-map-heading"><label>年份<input type="number" min="1900" max="2199" data-period-year="${esc(key)}" value="${context.year || ''}"></label><label>月份<select data-period-month="${esc(key)}"><option value="">请选择月份</option>${Array.from({length:12},(_,index)=>`<option value="${index+1}" ${context.month===index+1?'selected':''}>${index+1} 月</option>`).join('')}</select></label><button data-confirm-period="${esc(sheet.sheetName)}" data-period-header="${region.headerRowNumber}" ${state.importBusy?'disabled':''}>确认年月并自动校验</button></div></div>`;
+    }).join('');
+  }
   function importRowView(row) {
     const included = state.selectedRows.has(row.key);
-    const problem = row.reviewStatus==='existing' ? '已入账，不重复导入' : row.reviewStatus==='non-business' ? `人工排除：${row.excludeReason}` : row.issues?.join('、') || (row.reviewStatus==='pending' && row.duplicateKind==='suspect' ? '其他来源相似，待确认' : '自动校验通过');
+    const sourceCheck=row.sourceBalanceCheck;
+    const problem = row.reviewStatus==='existing' ? '已入账，不重复导入' : row.reviewStatus==='non-business' ? `人工排除：${row.excludeReason}` : row.issues?.join('、') || (row.reviewStatus==='pending' && row.duplicateKind==='suspect' ? '其他来源相似，待确认' : row.balanceConfirmation ? '已人工确认，保留待审核' : '自动校验通过');
     return `<tr data-import-row="${esc(row.key)}" class="${included ? '' : 'suspect'}"><td>${esc(row.sheetName)} / ${row.sourceRowNumber}</td><td>${esc(row.recordDate || row.sourceDate || '未识别')}</td>
       <td>${row.recordType === 'income' ? '收入' : row.recordType === 'expense' ? '支出' : '未识别'}</td><td>${esc(row.category || '未识别')}${row.categorySource === 'ai' ? '<small class="fin-source">AI</small>' : ''}</td>
-      <td>${esc(row.summary || '未识别')}</td><td>${Number.isSafeInteger(row.amountCents) ? `¥ ${money(row.amountCents)}` : '金额待识别'}${Number.isSafeInteger(row.sourceBalanceCents) ? `<small>原表余额 ${money(row.sourceBalanceCents)}</small><small>${esc(balanceLabels[row.balanceStatus] || '待核对')}${Number.isSafeInteger(row.calculatedBalanceCents) ? ` · 计算 ${money(row.calculatedBalanceCents)}` : ''}${Number.isSafeInteger(row.balanceDifferenceCents) && row.balanceDifferenceCents !== 0 ? ` · 差额 ${money(row.balanceDifferenceCents)}` : ''}</small>` : ''}</td><td><span class="${included ? 'fin-ready' : 'fin-warn'}">${esc(problem)}</span></td>
+      <td>${esc(row.summary || '未识别')}</td><td>${Number.isSafeInteger(row.amountCents) ? `¥ ${money(row.amountCents)}` : '金额待识别'}${Number.isSafeInteger(row.sourceBalanceCents) ? `<small>原表余额 ${money(row.sourceBalanceCents)}</small><small>${esc(balanceLabels[row.balanceStatus] || '待核对')}${Number.isSafeInteger(row.calculatedBalanceCents) ? ` · 计算 ${money(row.calculatedBalanceCents)}` : ''}${Number.isSafeInteger(row.balanceDifferenceCents) && row.balanceDifferenceCents !== 0 ? ` · 差额 ${money(row.balanceDifferenceCents)}` : ''}</small>` : ''}${sourceCheck ? `<small>前笔余额 ${Number.isSafeInteger(sourceCheck.previousCents)?money(sourceCheck.previousCents):'无可靠起点'} · 预计余额 ${Number.isSafeInteger(sourceCheck.expectedCents)?money(sourceCheck.expectedCents):'无法计算'}</small><small>${esc(sourceCheck.reason)}${Number.isSafeInteger(sourceCheck.differenceCents)?` · 差额 ${money(sourceCheck.differenceCents)} 元`:''}${row.balanceConfirmation?' · 已人工确认，保留审核记录':''}</small>${sourceCheck.firstProblemRow&&sourceCheck.status!=='matched'?`<small>本区域最早问题在原表第 ${sourceCheck.firstProblemRow} 行，后续可能受前笔影响</small>`:''}` : ''}</td><td><span class="${included ? 'fin-ready' : 'fin-warn'}">${esc(problem)}</span></td>
       <td><button data-edit-import="${esc(row.key)}">${state.editingKey === row.key ? '收起' : '调整'}</button></td></tr>
       ${state.editingKey === row.key ? `<tr class="fin-import-edit"><td colspan="8"><div class="fin-edit-grid">
       <label>日期<input type="date" data-row-key="${esc(row.key)}" data-row-field="recordDate" value="${esc(row.recordDate)}"></label>
       <label>收支<select data-row-key="${esc(row.key)}" data-row-field="recordType"><option value="">请选择</option><option value="income" ${row.recordType === 'income' ? 'selected' : ''}>收入</option><option value="expense" ${row.recordType === 'expense' ? 'selected' : ''}>支出</option></select></label>
       <label>科目<select data-row-key="${esc(row.key)}" data-row-field="category"><option value="">请选择</option>${options(row.recordType, row.category)}</select></label>
       <label>金额（元）<input type="number" min="0.01" step="0.01" data-row-key="${esc(row.key)}" data-row-field="amount" value="${Number.isSafeInteger(row.amountCents) ? row.amountCents / 100 : ''}"></label>
+      <label>原表余额识别值（元）<input type="text" inputmode="decimal" data-row-key="${esc(row.key)}" data-row-field="sourceBalanceCents" value="${Number.isSafeInteger(row.sourceBalanceCents)?row.sourceBalanceCents/100:''}" placeholder="允许零和负余额"></label><label>本区域交易顺序<input type="number" step="1" data-row-key="${esc(row.key)}" data-row-field="sourceOrder" value="${row.manualFields?.includes('sourceOrder')?row.sourceOrder:row.sourceRowNumber}"></label>
+      ${sourceCheck&&sourceCheck.status!=='matched'?`<label class="span2">人工确认依据<input data-balance-reason="${esc(row.key)}" value="${esc(row.balanceConfirmation?.reason||row.balanceReviewReason||'')}" placeholder="先核对原单元格，再填写确认真实交易的依据"></label><button data-confirm-balance="${esc(row.key)}">确认真实交易，保留待审核</button>`:''}
       <label class="span2">摘要<input data-row-key="${esc(row.key)}" data-row-field="summary" value="${esc(row.summary)}"></label>
       <label><input type="checkbox" data-import-key="${esc(row.key)}" ${row.excludedByUser ? '' : 'checked'}> 包含此记录</label><label>非业务行排除原因<input data-exclude-reason="${esc(row.key)}" value="${esc(row.excludeReason)}" placeholder="排除此行时必须填写"></label><details class="span2"><summary>原始单元格内容</summary><p>${esc((row.raw || []).map((value,index)=>`${index+1}列：${value}`).join('；'))}</p></details>
       ${row.duplicateKind === 'suspect' ? `<label>相似记录确认<select data-duplicate-decision="${esc(row.key)}"><option value="">待确认</option><option value="independent" ${row.duplicateDecision==='independent'?'selected':''}>独立交易，正常导入</option><option value="existing" ${row.duplicateDecision==='existing'?'selected':''}>已入账，不重复导入</option></select></label>` : ''}</div></td></tr>` : ''}`;
@@ -290,18 +309,19 @@
       ${workbook ? `<p><strong>${esc(workbook.fileName)}</strong> · ${state.sheets.length} 个工作表</p><div class="fin-sheet-list"><label><input type="checkbox" data-action="all-sheets" ${state.importBusy ? 'disabled' : ''} ${state.selectedSheets.size === state.sheets.length ? 'checked' : ''}> 全选月份</label>${state.sheets.map(sheet => `<label><input type="checkbox" data-sheet="${esc(sheet.sheetName)}" ${state.importBusy ? 'disabled' : ''} ${state.selectedSheets.has(sheet.sheetName) ? 'checked' : ''}> ${esc(sheet.sheetName)} <small>${sheet.rows.length} 条${sheet.error ? ' · 待识别' : ''}</small></label>`).join('')}</div>` : '<p class="fin-hint">支持多个工作表。上传后默认识别全部月份，也可以只选需要的月份。</p>'}</section>
       ${workbook ? `<section class="fin-panel fin-auto-review" aria-busy="${state.importBusy}"><div class="fin-panel-title"><h2>${state.importBusy ? '正在识别与校验…' : '自动识别结果'}</h2><button data-action="ai-classify" ${state.importBusy || !state.selectedSheets.size ? 'disabled' : ''}>${state.importBusy ? '处理中…' : '识别不准？AI 重新识别'}</button></div>
       <p class="fin-hint">${esc(state.importStatus || '每个原表行均已登记处理结果；无法确定的收支行会暂停整批导入。')}</p>
-      <div class="fin-stats"><article><span>原表收支候选</span><strong>${totals.candidates} 笔</strong><small>待导入 ${totals.ready} · 已入账 ${totals.existing} · 待处理 ${totals.pending}</small></article><article><span>待导入收入</span><strong>¥ ${money(totals.incomeCents)}</strong><small>原表已识别 ${money(totals.sourceIncomeCents)} 元</small></article><article><span>待导入支出</span><strong>¥ ${money(totals.expenseCents)}</strong><small>原表已识别 ${money(totals.sourceExpenseCents)} 元</small></article><article><span>非业务行</span><strong>${skipped + totals.excluded} 行</strong><small>包含表头、说明及合计，保留原行与原因</small></article></div>
-      ${totals.pending || state.importIntegrity.blocked ? '<p class="fin-error">原表还有未解决的行或合计，暂停整批导入，避免漏账。</p><button data-action="locate-import-problem">定位首个待处理行</button>' : ''}
+      <div class="fin-stats" data-import-stats><article><span>原表收支候选</span><strong>${totals.candidates} 笔</strong><small>待导入 ${totals.ready} · 已入账 ${totals.existing} · 待处理 ${totals.pending}</small></article><article><span>待导入收入</span><strong>¥ ${money(totals.incomeCents)}</strong><small>原表已识别 ${money(totals.sourceIncomeCents)} 元</small></article><article><span>待导入支出</span><strong>¥ ${money(totals.expenseCents)}</strong><small>原表已识别 ${money(totals.sourceExpenseCents)} 元</small></article><article><span>非业务行</span><strong>${skipped + totals.excluded} 行</strong><small>包含表头、说明及合计，保留原行与原因</small></article></div>
+      ${selectedSheets.map(importDateContextView).join('')}
+      <div data-import-blockers ${totals.pending || state.importIntegrity.blocked ? '' : 'hidden'}><p class="fin-error">原表还有未解决的行或合计，暂停整批导入，避免漏账。</p><button data-action="locate-import-problem">定位首个待处理行</button></div>
       ${totals.duplicates ? `<div class="fin-inline"><span>${totals.duplicates} 笔与其他来源相似，请确认：</span><button data-action="duplicates-independent">全部为独立交易</button><button data-action="duplicates-existing">全部已入账</button></div>` : ''}
       ${state.importIntegrity.checks.map(check=>`<div class="${check.matches ? 'fin-hint' : 'fin-error'}"><strong>${esc(check.sheetName)} 第 ${check.sourceRowNumber} 行原表合计：${check.matches ? '核对一致' : '存在差异'}</strong><p>原表收入 ${Number.isSafeInteger(check.expectedIncomeCents)?money(check.expectedIncomeCents):'原值无法解析'} / 识别 ${money(check.incomeCents)}；原表支出 ${Number.isSafeInteger(check.expectedExpenseCents)?money(check.expectedExpenseCents):'原值无法解析'} / 识别 ${money(check.expenseCents)}</p>${check.matches ? '' : `<label>若确认原表合计错误，请注明依据<input data-total-reason="${esc(check.key)}" value="${esc(check.reason)}" placeholder="请先核对原表，不自动忽略差异"></label>`}</div>`).join('')}
       ${(state.importPending || state.importError) ? `<p class="fin-hint">${state.importPending ? `${state.importPending} 笔 AI 分类待重试。` : '科目识别未完成。'}<button data-action="retry-classification" ${state.importBusy ? 'disabled' : ''}>重试科目识别</button></p>` : ''}${totals.defaults ? `<p class="fin-hint">${totals.defaults} 条已按收支方向归入“其他收入 / 其他支出”，用途依据不足或 AI 未完成的记录保留原科目，不强行分类。</p>` : ''}
       ${totals.unresolved || unresolvedSheets.length ? `<p class="fin-error">${totals.unresolved} 笔字段待核对；${unresolvedSheets.length} 个工作表表头待识别。可用 AI 重试或在明细中修改。</p>` : ''}
-      ${state.importBalanceWarning ? `<p class="fin-error">${esc(state.importBalanceWarning)}</p>` : ''}<p class="fin-hint">原表余额已独立保存；${state.rows.filter(row=>state.selectedRows.has(row.key) && ['mismatch','order-review','invalid-source'].includes(row.balanceStatus)).length} 笔余额待审核。确认后可以导入，稍后在台账点击“查看余额核对”处理。</p><details class="fin-import-details" data-import-details ${state.importBusy ? 'inert' : ''} ${state.detailsOpen ? 'open' : ''}><summary>查看识别明细与可选调整 <small>${shown.length} 条记录</small></summary>
+      ${state.importBalanceWarning ? `<p class="fin-error">${esc(state.importBalanceWarning)}</p>` : ''}<p class="fin-hint">原表余额已独立保存；原表连续余额异常须先人工确认。另按系统账户期初余额核对：${state.rows.filter(row=>state.selectedRows.has(row.key) && ['mismatch','order-review','invalid-source'].includes(row.balanceStatus)).length} 笔余额待审核。确认后可以导入，稍后在台账点击“查看余额核对”处理。</p><details class="fin-import-details" data-import-details ${state.importBusy ? 'inert' : ''} ${state.detailsOpen ? 'open' : ''}><summary>查看识别明细与可选调整 <small>${shown.length} 条记录</small></summary>
       <div class="fin-table-wrap fin-import-table"><table><thead><tr><th>月份 / 原行号</th><th>日期</th><th>收支</th><th>科目</th><th>摘要</th><th>金额</th><th>校验结果</th><th>操作</th></tr></thead><tbody>${shown.slice(state.importPage * 100, (state.importPage + 1) * 100).map(importRowView).join('') || '<tr><td colspan="8" class="fin-empty">暂无可读取的收支记录，可使用 AI 重新识别</td></tr>'}</tbody></table></div>
       <div class="fin-pages"><button data-action="previous-import-page" ${state.importPage === 0 ? 'disabled' : ''}>上一页</button><span>${state.importPage + 1} / ${pages} 页</span><button data-action="next-import-page" ${state.importPage >= pages - 1 ? 'disabled' : ''}>下一页</button></div>
-      <details><summary>非业务行及排除原因（${skipped} 行）</summary>${selectedSheets.map(sheet=>sheet.skipped.map(row=>`<p>${esc(sheet.sheetName)} / ${row.sourceRowNumber} · ${esc(row.reason)} · ${esc((row.raw || []).join(' | '))}</p>`).join('')).join('')}</details><div class="fin-import-batch-tools"><label>批量排除字段待处理行的原因<input data-batch-exclude-reason placeholder="仅用于明确不是交易的行"></label><button data-action="batch-exclude-import">认定为非业务行</button></div><div class="fin-import-batch-tools"><label>批量补全缺失日期<input type="date" data-batch-import-date></label><button data-action="batch-import-date">应用到缺失日期行</button></div>${selectedSheets.map(importMappingView).join('')}</details></section>` : ''}
+      <details><summary>非业务行及排除原因（${skipped} 行）</summary>${selectedSheets.map(sheet=>sheet.skipped.map(row=>`<p>${esc(sheet.sheetName)} / ${row.sourceRowNumber} · ${esc(row.reason)} · ${esc((row.raw || []).join(' | '))}</p>`).join('')).join('')}</details><div class="fin-import-batch-tools"><label>批量确认缺失余额的依据<input data-batch-balance-reason placeholder="仅确认交易字段完整且原表余额为空的记录"></label><button data-action="confirm-missing-balances">确认同类缺失余额，保留待审核</button></div><div class="fin-import-batch-tools"><label>批量排除字段待处理行的原因<input data-batch-exclude-reason placeholder="仅用于明确不是交易的行"></label><button data-action="batch-exclude-import">认定为非业务行</button></div><div class="fin-import-batch-tools"><label>批量补全缺失日期<input type="date" data-batch-import-date></label><button data-action="batch-import-date">应用到缺失日期行</button></div>${selectedSheets.map(importMappingView).join('')}</details></section>` : ''}
       ${state.importError ? `<p class="fin-error" role="alert">${esc(state.importError)}</p>` : ''}
-      <div class="fin-sticky fin-import-footer"><div><strong>${totals.ready ? `确认后导入 ${totals.ready} 条记录` : totals.existing && !totals.pending ? '所选记录均已入账，无需重复导入' : '上传并完整核对表格后即可确认'}</strong>${omitted ? `<small>${totals.existing} 笔已入账 · ${totals.pending} 笔待处理 · ${totals.excluded} 行人工排除</small>` : ''}</div><div class="fin-inline"><button data-action="cancel-import" ${state.importBusy ? 'disabled' : ''}>取消</button><button class="primary" data-action="commit-import" ${!totals.ready || totals.pending || state.importIntegrity?.blocked || state.importBusy ? 'disabled' : ''}>${state.importBusy ? '处理中…' : `确认导入 ${totals.ready ? totals.ready + ' 条' : ''}`}</button></div></div>`;
+      <div class="fin-sticky fin-import-footer"><div><strong>${totals.ready ? `确认后导入 ${totals.ready} 条记录` : totals.existing && !totals.pending ? '所选记录均已入账，无需重复导入' : '上传并完整核对表格后即可确认'}</strong>${omitted ? `<small>${totals.existing} 笔已入账 · ${totals.pending} 笔待处理（字段 ${totals.unresolved}、余额 ${totals.balancePending}、重复 ${totals.duplicates}） · 合计差异 ${state.importIntegrity.checks.filter(c=>!c.accepted).length} 项 · ${totals.excluded} 行人工排除</small>` : ''}</div><div class="fin-inline"><button data-action="cancel-import" ${state.importBusy ? 'disabled' : ''}>取消</button><button class="primary" data-action="commit-import" ${!totals.ready || totals.pending || state.importIntegrity?.blocked || state.importBusy ? 'disabled' : ''}>${state.importBusy ? '处理中…' : `确认导入 ${totals.ready ? totals.ready + ' 条' : ''}`}</button></div></div>`;
   }
   function render() {
     if (!state.host) return;
@@ -312,7 +332,7 @@
   }
   function rowValid(row) { return row.reviewStatus === 'import'; }
   function reconcileReview() {
-    const result = reviewModel.review(state.rows, state.records, state.selectedSheets, categories);
+    const result = reviewModel.review(state.rows, state.records, state.selectedSheets, categories, state.sheets);
     state.selectedRows = result.selected;
     state.importIntegrity = reviewModel.integrityOf(state.sheets.filter(sheet => state.selectedSheets.has(sheet.sheetName)), state.rows, state.totalAcknowledgements);
     if (result.totals.pending || state.importIntegrity.blocked) state.detailsOpen = true;
@@ -322,11 +342,22 @@
     const previous = new Map(state.rows.map(row => [row.key, row]));
     state.rows = state.sheets.flatMap(sheet => sheet.rows.map(item => {
       const key = `${encodeURIComponent(sheet.sheetName)}:${item.sourceRowNumber}`;
-      return !resetSheets.has(sheet.sheetName) && previous.get(key) || { ...item, key, sourceFileHash: state.workbook?.fileHash, manualFields: [], duplicate: '', allowDuplicate: false, excludedByUser: false };
+      const saved=previous.get(key);
+      if (!resetSheets.has(sheet.sheetName) && saved) return saved;
+      const row={ ...item, key, sourceFileHash: state.workbook?.fileHash, manualFields: [], duplicate: '', allowDuplicate: false, excludedByUser: false };
+      if (saved) {
+        for (const field of saved.manualFields || []) row[field]=saved[field];
+        row.manualFields=[...(saved.manualFields || [])];
+        for (const field of ['excludedByUser','excludeReason','duplicateDecision','allowDuplicate','balanceConfirmation','balanceReviewReason']) row[field]=saved[field];
+        if (saved.categorySource==='manual') {row.category=saved.category;row.categorySource='manual';}
+        else if (saved.summary===row.summary && saved.recordType===row.recordType && saved.categoryClassificationStatus) for (const field of ['category','categorySource','categoryClassificationKey','categoryClassificationStatus','categoryClassificationReason']) row[field]=saved[field];
+      }
+      return row;
     }));
     reconcileReview();
   }
   let importBalanceSequence = 0;
+  let importRecognitionSequence = 0;
   async function updateImportBalances() {
     const sequence = ++importBalanceSequence; reconcileReview(); const rows = state.rows.filter(row=>state.selectedRows.has(row.key));
     if (!rows.length) return;
@@ -334,10 +365,22 @@
       const result = await request('POST', '/finance-balance-preview', { rows });
       if (sequence !== importBalanceSequence || !state.workbook) return;
       for (const item of result.items || []) { const row = state.rows.find(row=>row.sheetName === item.sheetName && row.sourceRowNumber === item.sourceRowNumber); if (row) for (const field of ['calculatedBalanceCents','balanceStatus','balanceDifferenceCents','balanceReason']) row[field] = item[field]; }
-      state.importBalanceWarning = ''; render();
+      state.importBalanceWarning = ''; if(editingImport())refreshImportReviewUi();else render();
     } catch (error) { if (sequence === importBalanceSequence) { state.importBalanceWarning = `余额预核对未完成：${error.message}。导入后可重试核对。`; render(); } }
   }
-  async function flagDuplicates() { reconcileReview(); render(); await updateImportBalances(); }
+  function refreshImportReviewUi(){
+    const totals=reconcileReview(),button=state.host?.querySelector('[data-action="commit-import"]'),footer=button?.closest('.fin-import-footer');
+    if(button){button.disabled=!totals.ready||!!totals.pending||state.importIntegrity.blocked||state.importBusy;button.textContent=`确认导入 ${totals.ready} 条`;}
+    if(footer){footer.querySelector('strong').textContent=`确认后导入 ${totals.ready} 条记录`;let small=footer.querySelector('small');if(!small){small=document.createElement('small');footer.firstElementChild.append(small);}small.textContent=`字段 ${totals.unresolved} · 余额 ${totals.balancePending} · 重复 ${totals.duplicates} · 合计差异 ${state.importIntegrity.checks.filter(c=>!c.accepted).length} · 人工排除 ${totals.excluded}`;}
+    const stats=state.host.querySelector('[data-import-stats]');
+    if(stats){const skipped=state.sheets.filter(s=>state.selectedSheets.has(s.sheetName)).reduce((n,s)=>n+s.skipped.length,0);stats.innerHTML=`<article><span>原表收支候选</span><strong>${totals.candidates} 笔</strong><small>待导入 ${totals.ready} · 已入账 ${totals.existing} · 待处理 ${totals.pending}</small></article><article><span>待导入收入</span><strong>¥ ${money(totals.incomeCents)}</strong><small>原表已识别 ${money(totals.sourceIncomeCents)} 元</small></article><article><span>待导入支出</span><strong>¥ ${money(totals.expenseCents)}</strong><small>原表已识别 ${money(totals.sourceExpenseCents)} 元</small></article><article><span>非业务行</span><strong>${skipped+totals.excluded} 行</strong><small>包含表头、说明及合计，保留原行与原因</small></article>`;}
+    const blockers=state.host.querySelector('[data-import-blockers]');if(blockers)blockers.hidden=!totals.pending&&!state.importIntegrity.blocked;
+    const visible=new Map([...state.host.querySelectorAll('[data-import-row]')].map(el=>[el.dataset.importRow,el]));
+    for(const row of state.rows){const tr=visible.get(row.key),span=tr?.querySelector('td:nth-last-child(2) span');const c=row.sourceBalanceCheck;const cell=tr?.querySelector('td:nth-child(6)');if(cell&&c)cell.innerHTML=`${Number.isSafeInteger(row.amountCents)?`¥ ${money(row.amountCents)}`:'金额待识别'}<small>原表余额 ${Number.isSafeInteger(c.actualCents)?money(c.actualCents):'空白或未识别'}</small><small>前笔 ${Number.isSafeInteger(c.previousCents)?money(c.previousCents):'无可靠起点'} · 预计 ${Number.isSafeInteger(c.expectedCents)?money(c.expectedCents):'无法计算'}${Number.isSafeInteger(c.differenceCents)?` · 差额 ${money(c.differenceCents)}`:''}</small><small>${esc(c.reason)}${row.balanceConfirmation?' · 已人工确认':''}</small>`;if(span){span.textContent=row.reviewStatus==='non-business'?`人工排除：${row.excludeReason}`:row.reviewStatus==='existing'?'已入账':row.issues.join('、')||(row.balanceConfirmation?'已人工确认，保留待审核':'自动校验通过');span.className=row.reviewStatus==='import'?'fin-ready':'fin-warn';}}
+  }
+  const editingImport=()=>state.mode==='import'&&state.editingKey&&state.host?.querySelector('.fin-import-edit');
+  async function flagDuplicates() { ++importBalanceSequence;reconcileReview();if(editingImport())refreshImportReviewUi();else render();await updateImportBalances(); }
+
   async function selectWorkbook() {
     if (state.importBusy) return;
     state.importBusy = true; state.importError = ''; state.importStatus = '正在读取工作表并自动识别…'; state.message = ''; render();
@@ -348,7 +391,7 @@
       state.workbook = result; state.sheets = result.sheets; state.selectedSheets = new Set(result.sheets.map(sheet => sheet.sheetName));
       state.totalAcknowledgements = {}; state.rows = []; state.importBalanceWarning = ''; state.importPending = 0; state.importUncertain = 0; state.importPage = 0; state.detailsOpen = false; state.editingKey = ''; state.importBatchId = '';
       rebuildRows();
-      if (reconcileReview().unresolved || state.importIntegrity.blocked && state.sheets.some(sheet=>sheet.error)) await classify(true);
+      if (state.sheets.some(sheet=>sheet.error || sheet.rows.some(row=>row.issues?.some(issue=>issue!=='请填写完整交易日期')))) await classify(true);
       await autoClassifySelected(); await updateImportBalances();
     } catch (error) { state.importError = error.message; }
     finally { state.importBusy = false; render(); }
@@ -367,14 +410,15 @@
     const selected=state.rows.filter(row=>state.selectedSheets.has(row.sheetName));
     state.importPending=selected.filter(row=>row.categoryClassificationStatus==='failed').length;
     state.importUncertain=selected.filter(row=>row.categoryClassificationStatus==='uncertain').length;
-    state.importStatus=`科目识别与自动校验已完成，可以确认导入。${state.importUncertain ? ` ${state.importUncertain} 笔用途依据不足，保留原科目。` : ''}`;
+    state.importStatus=`科目识别已完成。${reconcileReview().pending || state.importIntegrity.blocked ? '请先处理下方年月、交易字段或核对问题。' : '自动校验通过，可以确认导入。'}${state.importUncertain ? ` ${state.importUncertain} 笔用途依据不足，保留原科目。` : ''}`;
     if (result.warnings?.length) state.importError=`${result.warnings.join('；')}。${state.importPending} 笔 AI 分类未完成；已保留本机识别结果，可重试或确认有效记录。`;
   }
   async function autoClassifySelected(force=false) {
     if (!state.workbook || !state.selectedSheets.size) {state.importPending=0;state.importUncertain=0;return;}
     state.importStatus='正在根据摘要识别具体科目，AI 正在补充未明确的用途…';state.importError='';render();
-    try { acceptImportClassification(await api.classifyFinanceWorkbook({previewId:state.workbook.previewId,sheetNames:[...state.selectedSheets],force})); }
-    catch (error) { state.importError=`科目自动识别未完成：${error.message}。已保留原始识别结果，可重试或确认有效记录。`; }
+    const sequence=++importRecognitionSequence,previewId=state.workbook.previewId;
+    try { const result=await api.classifyFinanceWorkbook({previewId,sheetNames:[...state.selectedSheets],force});if(sequence!==importRecognitionSequence || state.workbook?.previewId!==previewId)return;acceptImportClassification(result); }
+    catch (error) { if(sequence===importRecognitionSequence && state.workbook?.previewId===previewId)state.importError=`科目自动识别未完成：${error.message}。已保留原始识别结果，可重试或确认有效记录。`; }
   }
   async function classifySelectedSheets() {
     state.importBusy=true;render();
@@ -421,23 +465,29 @@
   async function classify(automatic = false) {
     if (state.importBusy && !automatic || !state.workbook || !state.selectedSheets.size) return;
     const previousBusy = state.importBusy;
+    const sequence=++importRecognitionSequence,previewId=state.workbook.previewId;
     state.importBusy = true; state.importError = ''; state.importStatus = 'AI 正在识别所选工作表的表头、收支方向与科目…'; state.message = ''; render();
     try {
-      const result = await api.recognizeFinanceWorkbook({ previewId: state.workbook.previewId, sheetNames: [...state.selectedSheets] });
+      const result = await api.recognizeFinanceWorkbook({ previewId, sheetNames: [...state.selectedSheets] });
+      if(sequence!==importRecognitionSequence || state.workbook?.previewId!==previewId)return;
       state.importPending=result.pendingCount || 0;state.importUncertain=result.uncertainCount || 0;
       if (result.categories) { categories.income = result.categories.income; categories.expense = result.categories.expense; }
       const recognized = new Map(result.sheets.map(sheet => [sheet.sheetName, sheet]));
       state.sheets = state.sheets.map(sheet => recognized.get(sheet.sheetName) || sheet);
-      const manual = state.rows.filter(row=>row.manualFields?.length || row.excludedByUser || row.duplicateDecision);
       rebuildRows(new Set(recognized.keys()));
-      for (const saved of manual) { const row=state.rows.find(item=>item.key===saved.key); if(row) {for(const field of saved.manualFields || []) row[field]=saved[field]; row.manualFields=saved.manualFields; row.excludedByUser=saved.excludedByUser;row.excludeReason=saved.excludeReason;row.duplicateDecision=saved.duplicateDecision;} }
       reconcileReview(); await updateImportBalances();
       state.importStatus = 'AI 识别与自动校验已完成，可以确认导入。';
       if (result.warnings?.length) state.importError = `部分 AI 识别未完成：${result.warnings.join('；')}。已保留完整原行清单，待处理行解决后方可确认。`;
-    } catch (error) { state.importError = `AI 识别未完成：${error.message}。本机已保留完整原行清单，待处理行解决后方可确认。`; state.importStatus = '已保留本机识别结果。'; }
-    finally { state.importBusy = previousBusy; render(); }
+    } catch (error) { if(sequence===importRecognitionSequence && state.workbook?.previewId===previewId){state.importError = `AI 识别未完成：${error.message}。本机已保留完整原行清单，待处理行解决后方可确认。`; state.importStatus = '已保留本机识别结果。';} }
+    finally { if(sequence===importRecognitionSequence){state.importBusy = previousBusy; render();} }
   }
   async function onAction(action, target) {
+    if(action==='confirm-missing-balances'){
+      const reason=state.host.querySelector('[data-batch-balance-reason]')?.value.trim();if(!reason||reason.length<2)return notify('请填写确认依据','error');
+      reconcileReview();for(const row of state.rows)if(state.selectedSheets.has(row.sheetName)&&row.sourceBalanceCheck?.status==='missing'&&!reviewModel.issuesOf(row,categories).length)row.balanceConfirmation={reason,fingerprint:row.sourceBalanceCheck.fingerprint};
+      return flagDuplicates();
+    }
+
     if (action === 'locate-import-problem') {
       const shown=state.rows.filter(row=>state.selectedSheets.has(row.sheetName)), index=shown.findIndex(row=>row.reviewStatus==='pending');
       if(index>=0) {state.importPage=Math.floor(index/100);state.editingKey=shown[index].key;state.detailsOpen=true;render();const node=state.host.querySelector?.(`[data-import-row="${CSS.escape(shown[index].key)}"]`);node?.classList.add('fin-row-highlight');node?.scrollIntoView({block:'center'});} return;
@@ -494,6 +544,7 @@
     if (action === 'dismiss-message') { state.message = ''; return render(); }
     if (action === 'previous-import-page') { state.importPage = Math.max(0, state.importPage - 1); return render(); }
     if (action === 'next-import-page') { state.importPage++; return render(); }
+    if (action === 'return-overview') { ++loadSequence; clearNarratives(); state.busy = false; window.location.hash = '/overview'; return; }
     if (action === 'reload') return load();
     if (action === 'recent-data') { if (state.busy) return; clearNarratives(); state.periodMode = 'recent'; resetDateFilters(); return load(); }
     if (action === 'apply-dates') { if (state.busy) return; clearNarratives(); state.periodMode = 'manual'; state.balanceCutoff = state.endDate; resetDateFilters(); return load(); }
@@ -519,7 +570,7 @@
         if (generation !== narrativeGeneration || state.report !== activeReport || state.host !== activeHost) return;
         if (result.requiresConfirmation) {
           const estimate = result.estimate || {};
-          const message = `本次${depth === 'deep' ? '深度分析' : '简报'}预计使用 ${estimate.estimatedTokens || '较多'} Token${Number.isFinite(estimate.remainingTokens) ? `，剩余 ${estimate.remainingTokens} Token` : ''}，是否继续？`;
+          const message = `本次${depth === 'deep' ? '深度分析' : '简报'}预计使用 ${estimate.billingUnit === 'credits' ? `${estimate.estimatedCredits} 积分` : `${estimate.estimatedTokens || '较多'} Token`}${estimate.billingUnit === 'credits' ? `，剩余 ${estimate.remainingCredits ?? '—'} 积分` : Number.isFinite(estimate.remainingTokens) ? `，剩余 ${estimate.remainingTokens} Token` : ''}，是否继续？`;
           const confirmed = window.communityConfirm ? await window.communityConfirm(message, 'AI 用量提示') : window.confirm(message);
           if (!confirmed || generation !== narrativeGeneration || state.report !== activeReport || state.host !== activeHost) return;
           result = await api.generateFinanceNarrative({ ...period, usageConfirmed: true });
@@ -539,10 +590,11 @@
       catch (error) { await load(); notify(error.message, 'error'); } return; }
   }
   async function click(event) {
-    const el = event.target.closest('[data-locate-id], [data-review-edit], [data-order-date], [data-order-move], [data-action], [data-ledger-page], [data-chart-type], [data-preset], [data-edit-id], [data-delete-id], [data-remap-sheet], [data-edit-import]');
+    const el = event.target.closest('[data-locate-id], [data-review-edit], [data-order-date], [data-order-move], [data-action], [data-ledger-page], [data-chart-type], [data-preset], [data-edit-id], [data-delete-id], [data-remap-sheet], [data-confirm-period], [data-edit-import], [data-confirm-balance]');
     if (!el) return;
     if (el.dataset.ledgerPage) { state.ledgerPage = Number(el.dataset.ledgerPage) - 1; return refreshLedger(); }
     if (el.dataset.chartType) { state.chartType = el.dataset.chartType; return render(); }
+    if(el.dataset.confirmBalance){const row=state.rows.find(r=>r.key===el.dataset.confirmBalance);reconcileReview();const reason=(row?.balanceReviewReason||row?.balanceConfirmation?.reason||'').trim();if(reason.length<2)return notify('请填写人工确认依据','error');if(reviewModel.issuesOf(row,categories).length)return notify('请先修正日期、摘要、发生额和收支方向','error');row.balanceConfirmation={reason,fingerprint:row.sourceBalanceCheck.fingerprint};return flagDuplicates();}
     if (el.dataset.editImport) { state.editingKey = state.editingKey === el.dataset.editImport ? '' : el.dataset.editImport; return render(); }
     if (el.dataset.reviewEdit) { if (!state.canRefine) return; state.reviewReturn = true; state.form = formFromRecord(state.records.find(row => String(row.id) === el.dataset.reviewEdit)); state.mode = 'form'; return render(); }
     if (el.dataset.locateId) {
@@ -559,13 +611,25 @@
     if (el.dataset.editId) { state.reviewReturn = false; state.form = formFromRecord(state.records.find(row => String(row.id) === el.dataset.editId)); state.mode = 'form'; return render(); }
     if (el.dataset.deleteId) { const row = state.records.find(item => String(item.id) === el.dataset.deleteId); if (!window.confirm('确定删除这条收支记录吗？')) return;
       try { await request('DELETE', `/finance-records/${encodeURIComponent(row.id)}`, { baseVersion: row.version }); await load(); notify('记录已删除'); } catch (error) { notify(error.message, 'error'); } return; }
-    if (el.dataset.remapSheet) {
-      const sheetName = el.dataset.remapSheet;
-      const headerRowNumber = Number(state.host.querySelector(`[data-header-row="${CSS.escape(sheetName)}"]`)?.value);
-      const mapping = Object.fromEntries([...state.host.querySelectorAll('[data-map-sheet]')].filter(node => node.dataset.mapSheet === sheetName).map(node => [node.dataset.mapField, node.value === '' ? null : Number(node.value)]));
-      try { const sheet = await api.remapFinanceSheet({ previewId: state.workbook.previewId, sheetName, headerRowNumber, mapping, year: state.host.querySelector(`[data-map-year=\"${CSS.escape(sheetName)}\"]`)?.value });
-        state.sheets = state.sheets.map(item => item.sheetName === sheetName ? sheet : item); rebuildRows(new Set([sheetName])); flagDuplicates(); }
-      catch (error) { state.importError = error.message; render(); }
+    if (el.dataset.remapSheet || el.dataset.confirmPeriod) {
+      if (state.importBusy || !state.workbook) return;
+      const sheetName = el.dataset.remapSheet || el.dataset.confirmPeriod;
+      const previous=state.sheets.find(sheet=>sheet.sheetName===sheetName);
+      const periodKey=`${encodeURIComponent(sheetName)}:${el.dataset.periodHeader}`;
+      const dateConfirmation=el.dataset.confirmPeriod ? {headerRowNumber:Number(el.dataset.periodHeader),year:Number(state.host.querySelector(`[data-period-year="${CSS.escape(periodKey)}"]`)?.value),month:Number(state.host.querySelector(`[data-period-month="${CSS.escape(periodKey)}"]`)?.value)} : undefined;
+      if(dateConfirmation && (!Number.isInteger(dateConfirmation.year)||dateConfirmation.year<1900||dateConfirmation.year>2199||!Number.isInteger(dateConfirmation.month)||dateConfirmation.month<1||dateConfirmation.month>12)){state.importError='请选择有效的工作表年份和月份';return render();}
+      const headerRowNumber = dateConfirmation ? previous.headerRowNumber : Number(state.host.querySelector(`[data-header-row="${CSS.escape(sheetName)}"]`)?.value);
+      const mapping = dateConfirmation ? previous.mapping : Object.fromEntries([...state.host.querySelectorAll('[data-map-sheet]')].filter(node => node.dataset.mapSheet === sheetName).map(node => [node.dataset.mapField, node.value === '' ? null : Number(node.value)]));
+      const year=dateConfirmation?undefined:state.host.querySelector(`[data-map-year="${CSS.escape(sheetName)}"]`)?.value;
+      const previewId=state.workbook.previewId,sequence=++importRecognitionSequence;
+      ++importBalanceSequence;state.importBusy=true;state.importError='';render();
+      try { const sheet = await api.remapFinanceSheet({ previewId, sheetName, headerRowNumber, mapping, year, dateConfirmation });
+        if(sequence!==importRecognitionSequence || state.workbook?.previewId!==previewId)return;
+        state.sheets = state.sheets.map(item => item.sheetName === sheetName ? sheet : item); rebuildRows(new Set([sheetName]));
+        state.importStatus=dateConfirmation?'年月已确认，日号日期已补全并重新校验。':'识别方式已更新，人工调整已保留。';
+        await updateImportBalances();
+      } catch (error) { if(sequence===importRecognitionSequence)state.importError = error.message; }
+      finally { if(sequence===importRecognitionSequence){state.importBusy=false;render();} }
       return;
     }
     if (el.dataset.action) return onAction(el.dataset.action, el);
@@ -579,12 +643,15 @@
     if (el.dataset.recordId) { el.checked ? state.selectedIds.add(el.dataset.recordId) : state.selectedIds.delete(el.dataset.recordId); return refreshLedger(); }
     if (el.dataset.duplicateDecision) {const row=state.rows.find(item=>item.key===el.dataset.duplicateDecision);if(row) row.duplicateDecision=el.value;return flagDuplicates();}
     if (el.dataset.totalReason) { state.totalAcknowledgements[el.dataset.totalReason] = el.value; return render(); }
+    if (el.dataset.balanceReason) {const row=state.rows.find(r=>r.key===el.dataset.balanceReason);if(row)row.balanceReviewReason=el.value;return;}
     if (el.dataset.excludeReason) { const row=state.rows.find(item=>item.key===el.dataset.excludeReason); if(row) row.excludeReason=el.value; return flagDuplicates(); }
     if (el.dataset.importKey) { const row = state.rows.find(item => item.key === el.dataset.importKey); if (row) row.excludedByUser = !el.checked; return flagDuplicates(); }
     if (el.dataset.allowDuplicate) { const row = state.rows.find(item => item.key === el.dataset.allowDuplicate); row.allowDuplicate = el.checked; if (!el.checked) state.selectedRows.delete(row.key); return render(); }
     if (el.dataset.rowKey) { const row = state.rows.find(item => item.key === el.dataset.rowKey); if (!row) return;
       row.manualFields = [...new Set([...(row.manualFields || []), el.dataset.rowField === 'amount' ? 'amountCents' : el.dataset.rowField])];
-      if (el.dataset.rowField === 'amount') row.amountCents = reviewModel.parseMoney(el.value);
+      if(el.dataset.rowField==='sourceBalanceCents')row.sourceBalanceCents=reviewModel.parseMoney(el.value);
+      else if(el.dataset.rowField==='sourceOrder')row.sourceOrder=Number.isSafeInteger(Number(el.value))?Number(el.value):null;
+      else if (el.dataset.rowField === 'amount') row.amountCents = reviewModel.parseMoney(el.value);
       else row[el.dataset.rowField] = el.value;
       if (el.dataset.rowField === 'category') row.categorySource = 'manual';
       if (el.dataset.rowField === 'recordType') { row.category = categories[row.recordType]?.includes(row.category) ? row.category : (row.recordType === 'income' ? '其他收入' : '其他支出'); row.categorySource = 'manual'; }
@@ -615,7 +682,7 @@
       else if (['startDate','endDate'].includes(event.target.dataset.field)) { state[event.target.dataset.field] = event.target.value; state.datesDirty = true; clearNarrativeDisplay(); refreshNarrativePanel(); }
       else if (event.target.dataset.opening) state.openingForm[event.target.dataset.opening] = event.target.value;
       else if (event.target.dataset.form) state.form[event.target.dataset.form] = event.target.value;
-      else if (event.target.dataset.rowKey) { const row = state.rows.find(item => item.key === event.target.dataset.rowKey); if (row) row[event.target.dataset.rowField] = event.target.value; } });
+      else if(!event.isComposing&&(event.target.dataset.rowKey||event.target.dataset.excludeReason||event.target.dataset.balanceReason))change(event); });
     host.addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.hasAttribute?.('data-page-jump')) { event.preventDefault(); onAction('jump-ledger-page'); } });
     await load(); } };
 }());

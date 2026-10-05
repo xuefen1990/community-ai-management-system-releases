@@ -62,7 +62,7 @@ async function startBackend() {
   const secret = (await fsp.readFile(path.join(profile, 'backend/service-secret'), 'utf8')).trim();
   backend = spawn(process.execPath, [path.join(project, 'backend/src/index.js')], {
     cwd: profile,
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', NODE_ENV: 'development', HOST: '127.0.0.1', PORT: String(port), DB_PATH: path.join(profile, 'backend/backend.db'), UPDATE_FILES_DIR: path.join(profile, 'backend/updates'), JWT_SECRET: secret, ADMIN_PASSWORD: secret },
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '', NODE_ENV: 'development', AI_CREDITS_ENABLED: '1', HOST: '127.0.0.1', PORT: String(port), DB_PATH: path.join(profile, 'backend/backend.db'), UPDATE_FILES_DIR: path.join(profile, 'backend/updates'), JWT_SECRET: secret, ADMIN_PASSWORD: secret },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   state.backendPid = backend.pid;saveState();pipe(backend, 'backend');

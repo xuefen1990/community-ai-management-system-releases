@@ -46,6 +46,7 @@ function importFinanceBatch(database, input = {}, { now, uuid }) {
     }
     if (row.sourceBalanceCents != null && !Number.isSafeInteger(row.sourceBalanceCents)) fail('INVALID_INPUT', '原表余额必须为整数分');
     const candidate = { sourceFileHash:fileHash,sourceSheetName:sheetName,sourceRowNumber,sourceRaw:Array.isArray(row.sourceRaw)?row.sourceRaw.map(clean):[],sourceBalanceCents: row.sourceBalanceCents ?? null, sourceBalanceText: clean(row.sourceBalanceText), sourceOrder: Number.isSafeInteger(row.sourceOrder) ? row.sourceOrder : sourceRowNumber, recordDate, recordType, amountCents, summary, category, categorySource: ['ai','rules','source','manual','default'].includes(row.categorySource) ? row.categorySource : 'manual',
+      originalSourceBalanceCents:row.originalSourceBalanceCents??row.sourceBalanceCents??null,originalSourceBalanceText:clean(row.originalSourceBalanceText||row.sourceBalanceText),importBalanceReview:row.sourceBalanceCheck?{...row.sourceBalanceCheck,confirmation:row.balanceConfirmation||null}:null,importCorrections:row.importCorrections||[],
       handler: clean(row.handler), counterparty: clean(row.counterparty), voucherNo: clean(row.voucherNo),
       attachmentNote: clean(row.attachmentNote), remarks: clean(row.remarks) };
     const match=duplicateMatch(candidate,existing);

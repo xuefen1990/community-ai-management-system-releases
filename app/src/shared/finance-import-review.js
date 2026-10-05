@@ -61,8 +61,34 @@ function parseMoney(value) {
     else if (!categoryCatalog[row.recordType]?.includes(row.category)) issues.push('科目未识别');
     return issues;
   }
-  function review(rows, existing, selectedSheets, categoryCatalog = categories) {
-    const selected=new Set(), result={ready:0,unresolved:0,duplicates:0,existing:0,excluded:0,defaults:0,candidates:0,incomeCents:0,expenseCents:0,sourceIncomeCents:0,sourceExpenseCents:0};
+  const fingerprint=value=>{let a=2166136261,b=5381;for(const c of value){a=Math.imul(a^c.charCodeAt(0),16777619);b=Math.imul(b,33)^c.charCodeAt(0);}return (a>>>0).toString(16)+':'+(b>>>0).toString(16);};
+  function sourceBalances(rows,sheets) {
+    const labels={missing:'原表余额为空',invalid:'原表余额无法解析',unanchored:'缺少可靠的原表起始余额',mismatch:'原表余额与连续收支不一致',fields:'交易字段不完整',matched:'原表余额连续核对一致'};
+    for(const sheet of sheets){
+      const ordered=rows.filter(r=>r.sheetName===sheet.sheetName).sort((a,b)=>a.regionStart-b.regionStart || (a.manualFields?.includes('sourceOrder')?a.sourceOrder:a.sourceRowNumber)-(b.manualFields?.includes('sourceOrder')?b.sourceOrder:b.sourceRowNumber) || a.sourceRowNumber-b.sourceRowNumber);
+      let running=null,region=null,chain='',earliest=null;
+      for(const row of ordered){
+        if(region!==(row.regionStart||1)){region=row.regionStart||1;running=null;earliest=null;const anchors=(sheet.skipped||[]).filter(a=>a.reason==='余额结转行'&&a.sourceRowNumber>=region&&a.sourceRowNumber<row.sourceRowNumber&&Number.isSafeInteger(a.sourceBalanceCents));const anchor=anchors.at(-1);if(anchor)running=anchor.sourceBalanceCents;chain=JSON.stringify([sheet.sheetName,region,anchor?.sourceRowNumber,running]);}
+        chain=fingerprint(chain+JSON.stringify([row.sourceRowNumber,row.sourceOrder,row.recordDate,row.recordType,row.amountCents,row.summary,row.sourceBalanceCents,row.sourceBalanceText,!!row.excludedByUser,row.excludeReason]));
+        if(row.excludedByUser){row.sourceBalanceCheck=null;continue;}
+        const before=running,valid=validDate(row.recordDate)&&clean(row.summary)&&Number.isSafeInteger(row.amountCents)&&row.amountCents>0&&['income','expense'].includes(row.recordType);
+        const expected=valid&&before!==null?before+(row.recordType==='income'?row.amountCents:-row.amountCents):null;
+        const actual=Number.isSafeInteger(row.sourceBalanceCents)?row.sourceBalanceCents:null;
+        let status=!valid?'fields':actual===null?(clean(row.sourceBalanceText)?'invalid':'missing'):expected===null?'unanchored':expected===actual?'matched':'mismatch';
+        const difference=expected!==null&&actual!==null?actual-expected:null;
+        if(status!=='matched'&&!earliest)earliest=row.sourceRowNumber;
+        const mark=fingerprint(chain+JSON.stringify([before,expected,actual,status]));
+        const confirmation=row.balanceConfirmation;
+        const accepted=status==='matched'||(valid&&confirmation?.fingerprint===mark&&clean(confirmation.reason).length>=2);
+        row.sourceBalanceCheck={status,reason:labels[status],previousCents:before,expectedCents:expected,actualCents:actual,differenceCents:difference,fingerprint:mark,accepted,firstProblemRow:earliest};
+        if(confirmation&&confirmation.fingerprint!==mark)delete row.balanceConfirmation;
+        running=valid?(expected!==null&&Number.isSafeInteger(expected)?expected:actual):null;
+      }
+    }
+  }
+  function review(rows, existing, selectedSheets, categoryCatalog = categories, sheets = null) {
+    if(sheets)sourceBalances(rows,sheets.filter(s=>selectedSheets.has(s.sheetName)));
+    const selected=new Set(), result={balancePending:0,ready:0,unresolved:0,duplicates:0,existing:0,excluded:0,defaults:0,candidates:0,incomeCents:0,expenseCents:0,sourceIncomeCents:0,sourceExpenseCents:0};
     for(const row of rows) {
       if(!selectedSheets.has(row.sheetName)) continue;
       result.candidates++;
@@ -78,10 +104,11 @@ function parseMoney(value) {
       else if(row.issues.length) {row.reviewStatus='pending';result.unresolved++;continue;}
       else if(match.kind==='suspect' && row.duplicateDecision==='existing') {row.reviewStatus='existing';result.existing++;}
       else if(match.kind==='suspect' && row.duplicateDecision!=='independent' && !row.allowDuplicate) {row.reviewStatus='pending';result.duplicates++;continue;}
+      else if(sheets && !row.sourceBalanceCheck?.accepted){row.reviewStatus='pending';row.issues=[row.sourceBalanceCheck?.reason || '余额待核对'];result.balancePending++;continue;}
       else {row.reviewStatus='import';selected.add(row.key);result.ready++;result[`${row.recordType}Cents`]+=row.amountCents;if(row.categorySource==='default')result.defaults++;}
 
     }
-    result.pending=result.unresolved+result.duplicates;
+    result.pending=result.unresolved+result.duplicates+result.balancePending;
     return {selected,totals:result};
   }
   function integrityOf(sheets, rows, acknowledgements = {}) {
@@ -104,5 +131,5 @@ function parseMoney(value) {
     return {coverageMissing,checks,blocked:coverageMissing>0 || checks.some(check=>!check.accepted) || sheets.some(sheet=>sheet.error)};
   }
 
-  return { categories, parseMoney, validDate, duplicateReason, duplicateMatch, issuesOf, review, integrityOf };
+  return { categories, parseMoney, validDate, duplicateReason, duplicateMatch, issuesOf, sourceBalances, review, integrityOf };
 }));

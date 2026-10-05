@@ -1419,6 +1419,7 @@ if (typeof module !== 'undefined' && module.exports) {
       const assistantTask = response.task || {};
       const assistantRouting = response.routing || assistantTask.routing || {};
       window.communityAiTokenStatus?.record({
+        ...(assistantRouting || {}),
         actualTokens: assistantTask.actualTokens ?? assistantRouting.actualTokens ?? response.usage?.total_tokens
           ?? (['local', 'system'].includes(response.provider || assistantRouting.provider) ? 0 : undefined),
         remainingTokens: assistantTask.quotaSnapshot?.remainingTokens ?? assistantRouting.remainingTokens,

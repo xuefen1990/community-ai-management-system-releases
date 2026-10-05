@@ -186,7 +186,7 @@ function listUnitMembers(actor) {
     usage.set(row.user_id, (usage.get(row.user_id) || 0) + Number(row.charged_tokens ?? row.total_tokens ?? 0));
   }
   return db.findAll('users', user => accountScope.mainAccountIdOf(user) === actor.id && user.role === 'member' && !user.deleted_at)
-    .map(user => ({ ...sanitizeUser(user), aiTokens30d: usage.get(user.id) || 0 }));
+    .map(user => ({ ...sanitizeUser(user), aiTokens30d: usage.get(user.id) || 0, aiCredits30d:db.findAll('ai_usage',row=>row.user_id===user.id&&row.created_at>=since).reduce((n,row)=>n+Number(row.charged_credits ?? ((row.charged_tokens||0)/2000)),0) }));
 }
 function updateMemberPermissions(actor, memberId, requestedPermissions, aiAccessEnabled) { if (!isUnitAdmin(actor)) throw failure(403, '只有主账号可以分配成员权限'); const member = db.findById('users', memberId); if (!member || member.deleted_at || accountScope.mainAccountIdOf(member) !== actor.id || member.role !== 'member') throw failure(404, '未找到本账号成员'); const granted = requestedMemberPermissions(requestedPermissions); const patch = { permissions: granted, session_version: Number(member.session_version || 0) + 1, updated_at: db.now() }; if (aiAccessEnabled !== undefined) { if (typeof aiAccessEnabled !== 'boolean') throw failure(400, 'AI 权限参数无效'); patch.ai_access_enabled = Number(aiAccessEnabled); } db.updateById('users', member.id, patch); writeAuditLog(actor.id, 'update_member_permissions', member.id, JSON.stringify({ permissions: granted, aiAccessEnabled: patch.ai_access_enabled ?? (member.ai_access_enabled !== 0) })); return getUserById(member.id); }
 function updateMemberStatus(actor, memberId, isActive) {

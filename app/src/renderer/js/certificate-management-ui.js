@@ -107,7 +107,7 @@
         title: item.title, content: item.content, fields: item.fields }));
       const result = await root.api.draftCertificateWithAi({ messages: state.aiDraft.messages, templates });
       const actualTokens = Number(result.routing?.actualTokens || result.usage?.total_tokens || 0);
-      root.communityAiTokenStatus?.record({ actualTokens: actualTokens || (result.routing?.provider === 'local' ? 0 : actualTokens), remainingTokens: result.routing?.remainingTokens ?? result.quotaSnapshot?.remainingTokens });
+      root.communityAiTokenStatus?.record({ ...result.routing, actualTokens: actualTokens || (result.routing?.provider === 'local' ? 0 : actualTokens), remainingTokens: result.routing?.remainingTokens ?? result.quotaSnapshot?.remainingTokens });
       state.aiDraft.messages.push({ role: 'assistant', content: result.reply, actualTokens });
       Object.assign(state.aiDraft, { title: result.title || state.aiDraft.title, content: result.content || state.aiDraft.content,
         residentNames: result.residentNames || [], recommendedTemplateId: result.recommendedTemplateId || '', draftMode: result.draftMode || 'temporary',

@@ -40,7 +40,7 @@ const { createWindowOptions } = require('./window-config');
 const { SEND_CHANNELS } = require('../shared/ipc-contract');
 const { registerFoundationFileProtocol } = require('./foundation-file-protocol');
 const { AiVisionService } = require('./ai-vision-service');
-const { getDevelopmentConfig, developmentAuthStore, attachDevelopmentWindow } = require('./development-mode');
+const { getDevelopmentConfig, developmentAuthStore, initializeDevelopmentPreview, attachDevelopmentWindow } = require('./development-mode');
 const { createStatusTray } = require('./status-tray');
 const { configureApplicationMenu } = require('./application-menu');
 
@@ -84,7 +84,7 @@ function showMainWindow() {
   mainWindow.focus();
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   hideOnInitialLoad = !development && process.platform === 'darwin'
     && Boolean(app.getLoginItemSettings?.().wasOpenedAsHidden);
   configureApplicationMenu({ app, Menu, shell });
@@ -101,6 +101,7 @@ app.whenReady().then(() => {
   lanWorkspaceService = new AccountWorkspaceManager({ userDataPath: app.getPath('userData'), fetchImpl: (...args) => net.fetch(...args),
     port: development ? 3302 : undefined, discovery: !development });
   authService.localWorkspaceService = lanWorkspaceService;
+  if (development) await initializeDevelopmentPreview(authService, development);
   lanWorkspaceService.startIfConfigured().catch(error => console.error('[LAN sharing]', error.message));
   const projectRoot = path.resolve(__dirname, '..', '..', '..');
   const backendEntry = app.isPackaged
@@ -123,7 +124,7 @@ app.whenReady().then(() => {
   const aiSettingsStore = new AiSettingsStore({ userDataPath: app.getPath('userData'), safeStorage });
   const onlineClient = new OpenAiCompatibleClient();
   const localAiRuntime = new LocalAiRuntime();
-  const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient, authService });
+  const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient, authService, confirmCredits: async estimate => { const result = await dialog.showMessageBox(mainWindow, {type:'question',title:'确认 AI 积分消耗',message:`本次操作预计消耗 ${estimate.estimatedCredits} 积分`,detail:`本次最多扣除 ${estimate.approvedMaxCredits} 积分，完成后按实际用量结算。超出上限会停止后续步骤。`,buttons:['取消','确认继续'],defaultId:0,cancelId:0}); return result.response===1; } });
   const aiVisionService = new AiVisionService({ aiRouter });
   const localDatabaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore, localWorkspaceService: lanWorkspaceService,

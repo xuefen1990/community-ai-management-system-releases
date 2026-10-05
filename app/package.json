@@ -1,6 +1,6 @@
 {
   "name": "community-ai-management-system",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "社区AI管理系统桌面版",
   "main": "src/main/index.js",
   "author": "社区AI管理系统",

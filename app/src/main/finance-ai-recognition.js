@@ -15,6 +15,7 @@ function parseJson(content, kind) {
 async function recognizeFinanceWorkbook({ workbookService, aiRouter, previewId, sheetNames, categoryCatalog = CATEGORIES }) {
   categoryCatalog = { income: [...categoryCatalog.income], expense: [...categoryCatalog.expense] };
   const preview = workbookService.getPreview(previewId);
+  const revision = preview.revision || 0;
   const names = [...new Set(Array.isArray(sheetNames) ? sheetNames : [])];
   if (!names.length || names.some(name => !preview.grids.has(name))) throw new Error('请选择需要识别的工作表');
   const recognized = [], warnings = [], headerResults = new Map();
@@ -45,7 +46,8 @@ async function recognizeFinanceWorkbook({ workbookService, aiRouter, previewId, 
           else if (Number.isInteger(column) && column >= 0 && column < width) safeMapping[key] = column;
         }
         const candidate = parseFinanceGrid(grid, { sheetName, fileName: preview.fileName, headerRowIndex: headerIndex, mapping: safeMapping,
-          year: sheet.context?.year, categoryCatalog });
+          year:sheet.yearOverride, dateConfirmations: sheet.dateConfirmations, categoryCatalog });
+        if(sheet.yearOverride!==undefined)candidate.yearOverride=sheet.yearOverride;
         const byRow=new Map(candidate.rows.map(row=>[row.sourceRowNumber,row]));
         if (sheet.rows.some(row => !byRow.has(row.sourceRowNumber) && !resolvesNonBusinessRow(row,candidate,grid))
           || (sheet.coverage || []).some(index => !(candidate.coverage || []).includes(index))) {
@@ -61,6 +63,7 @@ async function recognizeFinanceWorkbook({ workbookService, aiRouter, previewId, 
     recognized.push(sheet);
   }
 
+  if ((preview.revision || 0) !== revision) throw new Error('年月或识别结果已更新，已忽略过期 AI 结果');
   for (const sheet of recognized) preview.sheets.set(sheet.sheetName, structuredClone(sheet));
   const classified = await classifyFinanceWorkbook({workbookService,aiRouter,previewId,sheetNames:names,categoryCatalog,force:true});
   return {...classified,warnings:[...new Set([...warnings,...classified.warnings])]};
@@ -68,6 +71,7 @@ async function recognizeFinanceWorkbook({ workbookService, aiRouter, previewId, 
 
 async function classifyFinanceWorkbook({workbookService,aiRouter,previewId,sheetNames,categoryCatalog=CATEGORIES,force=false}) {
   const preview = workbookService.getPreview(previewId);
+  const revision = preview.revision || 0;
   const names = [...new Set(Array.isArray(sheetNames) ? sheetNames : [])];
   if (!names.length || names.some(name=>!preview.sheets.has(name))) throw new Error('请选择需要识别的工作表');
   const catalog = {income:[...new Set([...categoryCatalog.income,...(preview.categoryCatalog?.income || [])])],expense:[...new Set([...categoryCatalog.expense,...(preview.categoryCatalog?.expense || [])])]};
@@ -86,6 +90,7 @@ async function classifyFinanceWorkbook({workbookService,aiRouter,previewId,sheet
     row.categoryClassificationStatus=classification.category?'recognized':classification.status;
     row.categoryClassificationReason=classification.reason;
   }
+  if ((preview.revision || 0) !== revision) throw new Error('年月或识别结果已更新，已忽略过期 AI 结果');
   for (const sheet of sheets) preview.sheets.set(sheet.sheetName,structuredClone(sheet));
   for (const sheet of sheets) for (const row of sheet.rows) if (result.categories[row.recordType] && row.category && !result.categories[row.recordType].includes(row.category)) result.categories[row.recordType].push(row.category);
   preview.categoryCatalog=result.categories;

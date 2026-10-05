@@ -25,6 +25,7 @@ const DEFAULT_DATA = {
   versions: [],
   ai_providers: [],
   ai_usage: [],
+  ai_credit_tasks: [],
   ai_quotas: [],
   ai_quota_ledger: [],
   ai_quota_settings: [],

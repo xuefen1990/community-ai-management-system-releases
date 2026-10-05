@@ -68,5 +68,7 @@
     $('#loginForm').onsubmit=async e=>{e.preventDefault();$('#loginError').textContent='';try{const d=await api('/auth/login',{method:'POST',body:JSON.stringify({phone:$('#phone').value,password:$('#password').value})});if(d.user.role!=='admin')throw new Error('该账号没有管理员权限');state.token=d.token;localStorage.setItem('community-ai-admin-token',state.token);$('#login').classList.add('hidden');$('#app').classList.remove('hidden');if(d.user.mustChangePassword)showInitialPasswordChange();else render()}catch(err){$('#loginError').textContent=err.message}};$('#nav').onclick=e=>{const btn=e.target.closest('[data-page]');if(!btn)return;state.page=btn.dataset.page;document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===btn));render()};$('#logout').onclick=logout;if(state.token){$('#login').classList.add('hidden');$('#app').classList.remove('hidden');api('/auth/profile').then(({user})=>user.mustChangePassword?showInitialPasswordChange():render()).catch(()=>logout())}
   </script>
 <script src="ai-quota-management.js"></script>
+<script src="ai-model-management.js"></script>
+<script src="ai-credit-policy-ui.js"></script>
 </body>
 </html>

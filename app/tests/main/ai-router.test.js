@@ -56,7 +56,7 @@ test('routes online AI through the authenticated backend and clears legacy crede
     settingsStore: { readRaw: async () => ({ mode: 'online' }), clearLegacyOnlineSettings: async () => { calls.push('clear-legacy'); } },
     localRuntime: { getStatus: () => ({ running: false }) },
     onlineClient: { chat: async () => { throw new Error('不应再直连 Provider'); } },
-    authService: { request: async (path, options) => { calls.push({ path, options }); return { model: 'demo', choices: [{ message: { content: '后端已回复' } }], usage: { total_tokens: 12 } }; } },
+    authService: { request: async (path, options) => { if(path!=='/ai/credit-tasks/estimate')calls.push({ path, options }); return { model: 'demo', choices: [{ message: { content: '后端已回复' } }], usage: { total_tokens: 12 } }; } },
   });
   const result = await router.chat({ messages: [{ role: 'user', content: '你好' }] });
   assert.equal(result.content, '后端已回复');
@@ -77,7 +77,7 @@ test('routes long-form drafting to deep AI and exposes token settlement metadata
     localRuntime: { getStatus: () => ({ running: false }) },
     onlineClient: { chat: async () => ({ content: 'unused' }) },
     authService: { request: async (path, options) => {
-      calls.push({ path, options });
+      if(path!=='/ai/credit-tasks/estimate')calls.push({ path, options });
       return { model: 'deepseek-reasoner', choices: [{ message: { content: '拟写完成' } }], usage: { total_tokens: 321 }, communityAi: { taskTier: 'deep', actualTokens: 321, remainingTokens: 9000 } };
     } },
   });
@@ -128,4 +128,14 @@ test('AI text integrity rejects replacement characters in local and online outpu
   }
   const router=new AiRouter({settingsStore:{readRaw:async()=>({mode:'online'})},authService:{request:async()=>({choices:[{message:{content:'泵\uFFFD房改造工程费'}}]})}});
   await assert.rejects(router.chat({messages:[{role:'user',content:'脱敏科目测试'}]}),/损坏字符/u);
+});
+
+test('credits group multiple requests, confirm the upper bound, and settle once',async()=>{
+ const calls=[];const router=new AiRouter({settingsStore:{readRaw:async()=>({mode:'online'})},localRuntime:{getStatus:()=>({running:false})},confirmCredits:async e=>{assert.equal(e.approvedMaxCredits,5);return true;},authService:{request:async(path,{body}={})=>{calls.push({path,body});if(path.endsWith('/estimate'))return {billingUnit:'credits',estimatedCredits:5};if(path==='/ai/credit-tasks')return {id:'credit-task'};if(path.endsWith('/finish'))return {chargedCredits:2,remainingCredits:498};return {choices:[{message:{content:'结果'}}],communityAi:{billingPending:true}};}}});
+ const result=await router.withBillingTask({messages:[{content:'长报告'}],maxTokens:5000},async()=>{await router.onlineChat([{content:'第一步'}]);return router.onlineChat([{content:'第二步'}]);});
+ assert.equal(result.routing.chargedCredits,2);assert.equal(calls.filter(c=>c.path.endsWith('/finish')).length,1);assert.equal(calls.filter(c=>c.path==='/ai/chat').every(c=>c.body.billingTaskId==='credit-task'),true);
+});
+test('declining a costly credit operation does not reserve or call the model',async()=>{
+ let calls=0;const router=new AiRouter({settingsStore:{readRaw:async()=>({mode:'online'})},confirmCredits:async()=>false,authService:{request:async()=>{calls++;return {billingUnit:'credits',estimatedCredits:6};}}});
+ await assert.rejects(()=>router.onlineChat([{content:'分析'}]),/取消/);assert.equal(calls,1);
 });

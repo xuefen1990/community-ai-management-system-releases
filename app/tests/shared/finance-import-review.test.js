@@ -70,7 +70,7 @@ test('AI recognizes all candidate descriptions across batches and partial failur
     const sample = JSON.parse(messages[1].content); return { content: JSON.stringify(sample.map(row => ({ index: row.index, recordType: 'expense', category: '档案整理费', confident:true }))) }; } };
   const input = { workbookService: { getPreview: () => preview }, aiRouter, previewId: 'preview', sheetNames: ['1月'] };
   const result = await recognizeFinanceWorkbook(input);
-  assert.equal(calls, 4);
+  assert.equal(calls, 7);
   assert.ok(result.sheets[0].rows.every(row => row.category === '档案整理费'));
   input.aiRouter = { chat: async () => { throw new Error('网络暂不可用'); } };
   const failed = await recognizeFinanceWorkbook(input);

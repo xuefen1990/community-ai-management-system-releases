@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'), assert=require('node:assert/strict');
 const {parseFinanceGrid,parseAmount}=require('../../src/main/finance-excel-parser');
-const {review,integrityOf,duplicateMatch,categories}=require('../../src/shared/finance-import-review');
+const {review,sourceBalances,integrityOf,duplicateMatch,categories}=require('../../src/shared/finance-import-review');
 const {prepareFinanceImport,keyOf}=require('../../src/main/finance-import-integrity');
 const {importFinanceBatch}=require('../../src/main/finance-imports');
 const {recognizeFinanceWorkbook}=require('../../src/main/finance-ai-recognition');
@@ -14,6 +14,7 @@ function fixture(grid) {
  const preview={fileName:'财务2024.xlsx',fileHash:hash,grids:new Map([['1月',grid]]),sheets:new Map([['1月',sheet]]),categoryCatalog:categories};
  const workbook={getPreview(id){if(id!=='p')throw Error('预览已失效');return preview;}};
  const rows=sheet.rows.map(row=>({...structuredClone(row),key:keyOf(row),sourceFileHash:hash}));
+ sourceBalances(rows,[sheet]);for(const row of rows)if(row.sourceBalanceCheck.status!=='matched')row.balanceConfirmation={reason:'测试明确人工确认原始交易',fingerprint:row.sourceBalanceCheck.fingerprint};
  const input={previewId:'p',batchId:'batch',fileHash:hash,fileName:preview.fileName,sheets:['1月'],rows:structuredClone(rows),reviewRows:structuredClone(rows)};
  return {sheet,preview,workbook,rows,input,prepare(value=input,existing=[]){return prepareFinanceImport(workbook,value,existing,categories);}};
 }
@@ -31,11 +32,11 @@ test('all 15 physical transactions including equal 1200 rewards survive preview 
 test('main process rejects missing source rows, stale preview, duplicate coordinates and unconfirmed changed amounts',()=>{
  const f=fixture(fifteen());
  for(const changed of [{rows:f.input.rows.slice(0,4)},{reviewRows:f.input.reviewRows.slice(0,4)},{previewId:'expired'},{reviewRows:[...f.input.reviewRows.slice(0,-1),f.input.reviewRows[0]]}]) assert.throws(()=>f.prepare({...f.input,...changed}));
- const modified=structuredClone(f.input);modified.reviewRows[0].amountCents++;assert.throws(()=>f.prepare(modified),/人工确认/u);modified.reviewRows[0].manualFields=['amountCents'];assert.equal(f.prepare(modified).rows[0].amountCents,f.rows[0].amountCents+1);
+ const modified=structuredClone(f.input);modified.reviewRows[0].amountCents++;assert.throws(()=>f.prepare(modified),/人工确认/u);modified.reviewRows[0].manualFields=['amountCents'];assert.throws(()=>f.prepare(modified),/暂停/u);sourceBalances(modified.reviewRows,[f.sheet]);for(const row of modified.reviewRows)if(row.sourceBalanceCheck.status!=='matched')row.balanceConfirmation={reason:'核对调整后的真实交易',fingerprint:row.sourceBalanceCheck.fingerprint};assert.equal(f.prepare(modified).rows[0].amountCents,f.rows[0].amountCents+1);
 });
-test('money states never silently drop malformed, blank or zero transactional rows; extra zero decimals and fullwidth are exact',()=>{
+test('malformed and zero amounts stay pending, empty amounts are audited non-business, extra zero decimals and fullwidth are exact',()=>{
  const f=fixture([header,['2024-01-12','付：报酬','','1,200.000',1],['2024-01-12','付：报酬','','￥１，２００．００００',2],['2024-01-12','付：报酬','','1200.001',3],['2024-01-12','付：报酬','',0,4],['2024-01-12','付：报酬','','',5]]);
- assert.equal(f.rows.length,5);assert.deepEqual(f.rows.map(row=>row.amountCents),[120000,120000,null,0,null]);assert.equal(review(f.rows,[],new Set(['1月'])).totals.pending,3);assert.throws(()=>f.prepare(),/暂停/u);
+ assert.equal(f.rows.length,4);assert.deepEqual(f.rows.map(row=>row.amountCents),[120000,120000,null,0]);assert.equal(f.sheet.skipped.at(-1).reason,'无发生额行');assert.equal(review(f.rows,[],new Set(['1月'])).totals.pending,2);assert.throws(()=>f.prepare(),/暂停/u);
  assert.equal(parseAmount('（￥１，２００．００）'),-120000);assert.equal(parseAmount('100.0001'),null);
 });
 test('exact file/sheet/row is already posted; cross-file similarities require explicit grouped decisions',()=>{
@@ -47,7 +48,7 @@ test('exact file/sheet/row is already posted; cross-file similarities require ex
  input.reviewRows=f.rows.map(row=>({...row,duplicateDecision:'existing'}));input.rows=[];assert.equal(f.prepare(input,existing).rows.length,0);
  assert.equal(duplicateMatch(f.rows[0],[{...existing[1],sourceFileHash:hash,sourceRowNumber:999}]).kind,'none');
 });
-test('explicit totals reconcile full original range; mismatch blocks until explained, balance mismatch does not block',()=>{
+test('explicit totals reconcile full original range; mismatch blocks until explained, balance exceptions need explicit confirmation',()=>{
  const f=fixture([header,['2024-01-12','收：捐款',100,'',888],['2024-01-12','付：水费','',30,858],['','本月合计',100,20,'']]);
  const totals=integrityOf([f.sheet],f.rows);assert.equal(totals.blocked,true);assert.throws(()=>f.prepare(),/合计/u);
  const explained=f.prepare({...f.input,totalAcknowledgements:{'1%E6%9C%88:4':'原表遗漏水费10元，已核对凭证'}});assert.equal(explained.rows.length,2);assert.equal(explained.sourceManifest.totals[0].reason,'原表遗漏水费10元，已核对凭证');

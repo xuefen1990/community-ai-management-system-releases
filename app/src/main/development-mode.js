@@ -17,6 +17,45 @@ function getDevelopmentConfig({ isPackaged, env = process.env, productionData })
 function developmentAuthStore(store, remoteServerUrl) {
   return { read: async () => ({ ...await store.read(), remoteServerUrl }), write: value => store.write({ ...value, remoteServerUrl }) };
 }
+async function initializeDevelopmentPreview(authService, config) {
+  if (!config) return;
+  // The caller only supplies config after the unpackaged, isolated-profile checks.
+  const saved = await authService.store.read();
+  const remembered = await authService.rememberedLoginStore?.load().catch(() => null);
+  if (remembered?.phone && remembered.password) {
+    try { await authService.login({ ...remembered, remember: true }); } catch {}
+  }
+  const originalStatus = authService.getStatus.bind(authService);
+  const originalRequest = authService.request.bind(authService);
+  const account = saved.remoteAccount && ['main_account','unit_admin','admin','platform_admin'].includes(saved.remoteAccount.role)
+    ? { ...saved.remoteAccount, mustChangePassword:false, isActive:true }
+    : {id:'development-preview',mainAccountId:'development-preview',name:'开发预览',phone:'开发预览',role:'main_account',permissions:{},isActive:true,mustChangePassword:false};
+  account.mainAccountId ||= account.id;
+  const token = `development-preview-${require('node:crypto').randomUUID()}`;
+  const entitlement = {type:'licensed',plan:'permanent',expiresAt:null};
+  async function ensurePreview() {
+    authService.session = {user:account,token,developmentPreview:true};
+    await authService.localWorkspaceService.prepareLocal({ownerId:account.mainAccountId,cloudBaseUrl:config.remoteServerUrl});
+    await authService.localWorkspaceService.cacheAccountGrant(token,account,entitlement);
+  }
+  if (!authService.session) await ensurePreview();
+  authService.getStatus = async options => {
+    if (!authService.session) await ensurePreview();
+    if (!authService.session.developmentPreview) return originalStatus(options);
+    return {ok:true,authenticated:true,account:{...account},machineId:authService.machineId,entitlement:{...entitlement}};
+  };
+  authService.request = async (route, ...args) => {
+    if (authService.session?.developmentPreview && route === '/auth/preferences') {
+      const file = path.join(config.userData,'development-preferences.json');
+      if (args[0]?.method === 'PUT') fs.writeFileSync(file,JSON.stringify({menu:args[0]?.body?.menu || {},updatedAt:new Date().toISOString()}));
+      try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return {menu:{},updatedAt:null}; }
+    }
+    if (authService.session?.developmentPreview && route === '/ai/quota') return {balanceTokens:0,balanceCredits:0,creditsEnabled:false,developmentPreview:true};
+    if (authService.session?.developmentPreview && !route.startsWith('/unit/workspace/') && !['/auth/login','/auth/register'].includes(route))
+      throw new Error('开发预览可直接使用本机业务；在线 AI 和账号管理需要有效的真实账号，请在账号设置中登录');
+    return originalRequest(route,...args);
+  };
+}
 function attachDevelopmentWindow(window, config) {
   const stateFile = path.join(config.userData, 'development-window.json');
   const notify = payload => { if (process.connected) process.send({ type: 'community-dev', ...payload }); };
@@ -55,6 +94,6 @@ function attachDevelopmentWindow(window, config) {
   };
   process.on('message', onMessage);
   window.once('closed', () => process.off('message', onMessage));
-  try { const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));return /^#\/[a-zA-Z0-9/_?=&%-]*$/.test(state.hash) ? state.hash : ''; } catch { return ''; }
+  return '#/overview';
 }
-module.exports = { getDevelopmentConfig, developmentAuthStore, attachDevelopmentWindow };
+module.exports = { getDevelopmentConfig, developmentAuthStore, initializeDevelopmentPreview, attachDevelopmentWindow };

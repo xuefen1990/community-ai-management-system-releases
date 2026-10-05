@@ -434,6 +434,7 @@
         layout: currentLayout(),
       });
       window.communityAiTokenStatus?.record({
+        ...(result.routing || {}),
         actualTokens: result.routing?.actualTokens ?? result.usage?.total_tokens
           ?? (result.routing?.provider === 'local' ? 0 : undefined),
         remainingTokens: result.routing?.remainingTokens ?? result.quotaSnapshot?.remainingTokens,

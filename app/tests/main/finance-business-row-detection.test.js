@@ -28,9 +28,9 @@ test('changing sequence values cannot affect dates, transaction count or money; 
  const sheet=parse(grid);assert.equal(sheet.rows.length,15);assert.equal(sheet.rows.at(-1).recordDate,'2024-04-16');assert.equal(sheet.skipped.filter(row=>row.reason==='业务列空白行').length,10);
 });
 
-test('partial business fields remain pending even when sequence, balance or summary looks unimportant; zero and invalid amounts never silently disappear',()=>{
+test('empty amounts are non-business; actual, zero and invalid amounts with incomplete fields remain pending',()=>{
  const sheet=parse([['序号','日期','收、支内容摘要','收入','支出','余额'],[1,16,'','','',100],[2,'','付：报酬','','',100],[3,'','','','不明',100],[4,'','','',1200,100],[5,16,'付：报酬','',0,100],[6,'','日常杂项','','',100]]);
- assert.equal(sheet.rows.length,6);assert.ok(sheet.rows.every(row=>row.issues.length));assert.equal(review(sheet.rows.map(row=>({...row,key:keyOf(row)})),[],new Set(['4月'])).totals.pending,6);
+ assert.equal(sheet.rows.length,3);assert.equal(sheet.skipped.filter(row=>row.reason==='无发生额行').length,3);assert.ok(sheet.rows.every(row=>row.issues.length));assert.equal(review(sheet.rows.map(row=>({...row,key:keyOf(row)})),[],new Set(['4月'])).totals.pending,3);
 });
 
 test('manual/AI mapping cannot treat the sequence column as a date, summary or transaction amount',()=>{

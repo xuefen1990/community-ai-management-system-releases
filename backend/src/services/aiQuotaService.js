@@ -2,6 +2,7 @@
 
 const db = require('../database');
 const config = require('../config');
+const creditPolicy = require('./aiCreditPolicy');
 
 const EVENT_LABELS = Object.freeze({
   initial: '初始额度',
@@ -71,6 +72,11 @@ function summaryFrom(row) {
     usedTokens,
     reservedTokens,
     remainingTokens: Math.max(0, grantedTokens - usedTokens - reservedTokens),
+    billingUnit: creditPolicy.enabled() ? 'credits' : 'tokens',
+    totalCredits: grantedTokens / creditPolicy.SCALE,
+    usedCredits: usedTokens / creditPolicy.SCALE,
+    reservedCredits: reservedTokens / creditPolicy.SCALE,
+    remainingCredits: Math.max(0, grantedTokens - usedTokens - reservedTokens) / creditPolicy.SCALE,
     permanent: true,
     createdAt: row?.created_at || null,
     updatedAt: row?.updated_at || null,
@@ -161,8 +167,9 @@ function reserve(organizationId, tokens, { userId = '', requestId = '', reason =
   const row = quotaRecord(organizationId) || (ensureOrganizationQuota(organizationId, { userId }), quotaRecord(organizationId));
   const available = Number(row.granted_tokens || 0) - Number(row.used_tokens || 0) - Number(row.reserved_tokens || 0);
   if (available < amount) {
-    const error = failure(402, `主账号 AI Token 额度不足，当前可用 ${Math.max(0, available)} Token，请联系平台管理员购买额度`, 'AI_QUOTA_EXHAUSTED');
-    error.details = { requiredTokens: amount, remainingTokens: Math.max(0, available), permanent: true };
+    const isCredits=metadata.billingMode==='credits';
+    const error = failure(402, isCredits ? `主账号 AI 积分不足，当前可用 ${(Math.max(0, available)/creditPolicy.SCALE).toLocaleString('zh-CN',{maximumFractionDigits:4})} 积分，请联系平台管理员增加额度` : `主账号 AI Token 额度不足，当前可用 ${Math.max(0, available)} Token，请联系平台管理员购买额度`, 'AI_QUOTA_EXHAUSTED');
+    error.details = { requiredTokens: amount, remainingTokens: Math.max(0, available), permanent: true, ...(isCredits?{billingUnit:'credits',requiredCredits:amount/creditPolicy.SCALE,remainingCredits:Math.max(0,available)/creditPolicy.SCALE}:{}) };
     throw error;
   }
   const updated = db.updateById('ai_quotas', row.id, { reserved_tokens: Number(row.reserved_tokens || 0) + amount, updated_at: db.now() });
@@ -187,13 +194,13 @@ function settle(organizationId, reservedTokens, actualTokens, { userId = '', req
   return summaryFrom(updated);
 }
 
-function release(organizationId, reservedTokens, { userId = '', requestId = '', reason = 'AI 请求失败，退回预留额度' } = {}) {
+function release(organizationId, reservedTokens, { userId = '', requestId = '', reason = 'AI 请求失败，退回预留额度', metadata = {} } = {}) {
   const reserved = positiveInteger(reservedTokens, '预留 Token 数量');
   const row = quotaRecord(organizationId);
   if (!row) return null;
   const nextReserved = Math.max(0, Number(row.reserved_tokens || 0) - reserved);
   const updated = db.updateById('ai_quotas', row.id, { reserved_tokens: nextReserved, updated_at: db.now() });
-  appendLedger({ organizationId, event: 'release', tokens: reserved, balanceAfter: Number(updated.granted_tokens || 0) - Number(updated.used_tokens || 0) - nextReserved, userId, requestId, reason });
+  appendLedger({ organizationId, event: 'release', tokens: reserved, balanceAfter: Number(updated.granted_tokens || 0) - Number(updated.used_tokens || 0) - nextReserved, userId, requestId, reason, metadata });
   return summaryFrom(updated);
 }
 
@@ -213,6 +220,9 @@ function mapLedger(row) {
     requestId: row.request_id || null,
     reason: row.reason || '',
     metadata,
+    billingUnit: metadata.billingMode === 'credits' ? 'credits' : 'tokens',
+    credits: metadata.billingMode === 'credits' ? Number(row.tokens || 0) / creditPolicy.SCALE : null,
+    deltaCredits: metadata.billingMode === 'credits' ? Number(row.delta_tokens || 0) / creditPolicy.SCALE : null,
     createdAt: row.created_at,
   };
 }

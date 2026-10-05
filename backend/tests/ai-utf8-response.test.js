@@ -8,13 +8,14 @@ const { setTimeout: delay } = require('node:timers/promises');
 
 function service(baseUrl) {
   const provider = { id:'fixture',is_active:1,base_url:baseUrl,api_key_encrypted:'test-only',default_model:'fixture',available_models:'["fixture"]' };
-  const db = { findOne:()=>provider,findById:()=>null,insert:()=>{},genId:()=> 'request-test',now:()=>new Date().toISOString() };
+  const db = { findAll:()=>[provider],findOne:()=>provider,findById:(collection)=>collection==='ai_providers'?provider:null,insert:()=>{},genId:()=> 'request-test',now:()=>new Date().toISOString() };
   const module = {exports:{}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../src/services/aiService'),'utf8'),{module,exports:module.exports,Buffer,setTimeout,clearTimeout,require:name=>{
     if(name==='../database')return db;
     if(name==='../utils/crypto')return {encrypt:v=>v,decrypt:v=>v};
     if(name==='../utils/logger')return {error:()=>{}};
     if(name==='./aiQuotaService')return {};
+    if(name==='./aiCreditPolicy')return require('../src/services/aiCreditPolicy');
     if(name==='./mainAccountScope')return {requireMainAccountId:()=>null};
     if(name==='./aiModelRouting')return require('../src/services/aiModelRouting');
     return require(name);

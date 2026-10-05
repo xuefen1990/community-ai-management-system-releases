@@ -26,3 +26,11 @@ test('所有 AI 输入框共享同一 Token 余额和最近一次消耗', async 
     assert.equal(element.fields['[data-ai-token-remaining]'].textContent, '余量 998,531 Token');
   }
 });
+
+test('积分模式显示一次任务结算值并保留余额尾数', async () => {
+ const {createAiTokenStatus}=await import('../../src/renderer/foundation/ai-token-status.mjs');
+ const used={},remaining={},element={querySelector:s=>s==='[data-ai-token-used]'?used:remaining};
+ const status=createAiTokenStatus({documentRef:{querySelectorAll:()=>[element]},api:{getAiQuota:async()=>({quota:{billingUnit:'credits',remainingCredits:499.1235}})}});
+ await status.refresh();assert.equal(remaining.textContent,'余量 499.1235 积分');
+ await status.record({billingUnit:'credits',chargedCredits:2,actualTokens:100,remainingCredits:499.1235});assert.equal(used.textContent,'本次消耗 2 积分');assert.equal(remaining.textContent,'余量 499.1235 积分');
+});

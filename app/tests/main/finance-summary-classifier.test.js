@@ -47,3 +47,14 @@ test('corrupted AI category names are rejected instead of entering the workspace
  const result=await classifySummaries([{recordType:'income',summary:'设施服务款',category:'其他收入'}],{aiRouter:{chat:async()=>({content:'[{"index":0,"recordType":"income","category":"拆除\\uFFFD\\uFFFD务收入","confident":true}]'})}});
  assert.equal(result.classified[0].result.status,'uncertain');assert.ok(result.categories.income.every(name=>!name.includes('\uFFFD')));
 });
+
+test('invalid model batches split and recover while preserving local rules and transaction fields',async()=>{
+ const rows=Array.from({length:13},(_,i)=>({recordType:'income',summary:`专项服务项目${i}款`,amountCents:100+i,recordDate:'2026-01-01',category:'其他收入'}));const calls=[];
+ const result=await classifySummaries(rows,{aiRouter:{chat:async({messages})=>{const chunk=JSON.parse(messages[1].content);calls.push(chunk.length);if(chunk.length>3)throw new Error('模型返回内容无效');return {content:JSON.stringify({results:chunk.map(r=>({index:r.index,recordType:r.recordType,category:'专项服务收入',confident:true}))})};}}});
+ assert.equal(result.warnings.length,0);assert.ok(result.classified.every(r=>r.result.category==='专项服务收入'));assert.equal(Math.max(...calls),12);assert.deepEqual(rows.map(r=>r.amountCents),Array.from({length:13},(_,i)=>100+i));
+});
+test('incomplete JSON responses retry smaller batches; one bad item does not stop later classifications',async()=>{
+ const rows=Array.from({length:14},(_,i)=>({recordType:'income',summary:`服务项目${i}款`,category:'其他收入'}));
+ const result=await classifySummaries(rows,{aiRouter:{chat:async({messages})=>{const chunk=JSON.parse(messages[1].content);if(chunk.some(r=>r.summary==='服务项目0款'))return {content:'[{"index":0'};return {content:JSON.stringify(chunk.map(r=>({index:r.index,recordType:r.recordType,category:'项目服务收入',confident:true})))};}}});
+ assert.equal(result.classified.filter(r=>r.result.status==='failed').length,1);assert.equal(result.classified.filter(r=>r.result.category==='项目服务收入').length,13);
+});

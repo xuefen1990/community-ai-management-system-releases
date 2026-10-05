@@ -351,7 +351,7 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.testOnlineAi, async () => aiRouter.onlineChat([{ role: 'user', content: '请只回复：连接成功' }]));
   }
   if (aiAssistantService) {
-    handle(INVOKE_CHANNELS.converseWithAiAssistant, async (_event, value) => { await requireAiAccess(); return aiAssistantService.converse(value); });
+    handle(INVOKE_CHANNELS.converseWithAiAssistant, async (_event, value) => { await requireAiAccess(); return aiRouter?.withBillingTask ? aiRouter.withBillingTask({messages:value?.messages||[],maxTokens:1200,taskTier:require('./ai-model-routing').classifyAiTask({messages:value?.messages||[]}),taskKind:'assistant-operation'},()=>aiAssistantService.converse(value)) : aiAssistantService.converse(value); });
     handle(INVOKE_CHANNELS.listAiAssistantOperations, async (_event, value) => aiAssistantService.listOperations(value));
     handle(INVOKE_CHANNELS.undoAiAssistantOperation, async (_event, value) => aiAssistantService.undoOperation(value));
     handle(INVOKE_CHANNELS.getAiAssistantConversation, async (_event, value) => aiAssistantService.getConversation(value || {}));

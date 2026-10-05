@@ -32,7 +32,7 @@ router.use('/assistant', authRequired, (req, _res, next) => {
 // ===== 对话（非流式）=====
 router.post('/chat', authRequired, aiLimiter, async (req, res, next) => {
   try {
-    const { messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId } = req.body;
+    const { messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, billingTaskId, approvedMaxCredits, usageConfirmed } = req.body;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       throw new ApiError(400, 'messages 参数不能为空');
     }
@@ -44,7 +44,7 @@ router.post('/chat', authRequired, aiLimiter, async (req, res, next) => {
     }
 
     const result = await aiService.chat(req.user.id, {
-      messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, stream: false,
+      messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, billingTaskId, approvedMaxCredits, usageConfirmed, stream: false,
     });
 
     res.json(result.data);
@@ -54,7 +54,7 @@ router.post('/chat', authRequired, aiLimiter, async (req, res, next) => {
 // ===== 对话（流式 SSE）=====
 router.post('/chat/stream', authRequired, aiLimiter, async (req, res, next) => {
   try {
-    const { messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId } = req.body;
+    const { messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, billingTaskId, approvedMaxCredits, usageConfirmed } = req.body;
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       throw new ApiError(400, 'messages 参数不能为空');
     }
@@ -66,7 +66,7 @@ router.post('/chat/stream', authRequired, aiLimiter, async (req, res, next) => {
     }
 
     const result = await aiService.chat(req.user.id, {
-      messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, stream: true,
+      messages, model, temperature, maxTokens, requestId, taskTier, taskKind, taskId, billingTaskId, approvedMaxCredits, usageConfirmed, stream: true,
     });
 
     if (!result.stream) {
@@ -93,12 +93,20 @@ router.post('/chat/stream', authRequired, aiLimiter, async (req, res, next) => {
       res.end();
     });
 
-    req.on('close', () => {
-      responseStream.destroy();
+    res.on('close', () => {
+      if (!res.writableEnded) responseStream.destroy();
     });
   } catch (err) { next(err); }
 });
 
+router.use('/credit-tasks',(req,_res,next)=>{const entitlement=authService.checkEntitlement(authService.getUserById(req.user.id));if(!entitlement.valid)return next(new ApiError(403,'当前授权不可用'));next();});
+router.post('/credit-tasks/estimate',(req,res,next)=>{try{const enabled=require('../services/aiCreditPolicy').enabled();const q=require('../services/aiQuotaService').getQuotaSummary(organizationIdOf(req));res.json({...(enabled?require('../services/aiCreditTasks').estimate(req.body):{}),billingUnit:enabled?'credits':'tokens',remainingCredits:q.remainingCredits});}catch(e){next(e);}});
+router.post('/credit-tasks', aiLimiter, (req,res,next)=>{try{res.json(require('../services/aiCreditTasks').start(req.user.id,organizationIdOf(req),req.body));}catch(e){next(e);}});
+router.post('/credit-tasks/:id/extend',(req,res,next)=>{try{res.json(require('../services/aiCreditTasks').extend(req.user.id,req.params.id,Number(req.body.approvedMaxCredits),req.body.usageConfirmed));}catch(e){next(e);}});
+router.post('/credit-tasks/:id/finish', (req,res,next)=>{try{res.json(require('../services/aiCreditTasks').finish(req.user.id,req.params.id));}catch(e){next(e);}});
+router.get('/credit-policy', (req,res)=>res.json({enabled:require('../services/aiCreditPolicy').enabled(),policy:require('../services/aiCreditTasks').rates()}));
+router.put('/credit-policy',adminRequired,(req,res,next)=>{try{const saved=require('../services/aiCreditTasks').updateRates(req.body);authService.writeAuditLog(req.user.id,'update_ai_credit_policy','ai_quota_settings',JSON.stringify(saved),req.ip);res.json(saved);}catch(e){next(e);}});
+router.post('/providers/batch',adminRequired,(req,res,next)=>{try{const providers=req.body.providers;if(!Array.isArray(providers)||!providers.length||providers.length>30)throw new ApiError(400,'每次请填写 1 至 30 个模型');if(providers.filter(p=>p.defaultText===true).length>1)throw new ApiError(400,'请选择一个默认文字模型');const saved=require('../database').atomic(()=>{if(providers.some(p=>p.defaultText===true))for(const row of require('../database').findAll('ai_providers'))require('../database').updateById('ai_providers',row.id,{default_text:false});return providers.map(p=>p.id?aiService.updateProvider(p.id,p):aiService.createProvider(p));});authService.writeAuditLog(req.user.id,'save_ai_models', 'ai_providers',JSON.stringify({ids:saved.map(p=>p.id)}),req.ip);res.json({providers:saved});}catch(e){next(e);}});
 // ===== 可用模型列表 =====
 router.get('/models', authRequired, (req, res) => {
   res.json(aiService.listModels());

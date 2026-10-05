@@ -4,7 +4,23 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
-const { getDevelopmentConfig, developmentAuthStore } = require('../../src/main/development-mode');
+const { getDevelopmentConfig, developmentAuthStore, initializeDevelopmentPreview, attachDevelopmentWindow } = require('../../src/main/development-mode');
+
+test('preview automatically restores an isolated local owner, but never bypasses cloud account verification',async()=>{
+ const calls=[],auth={store:{read:async()=>({remoteAccount:{id:'owner',role:'main_account'}})},getStatus:async()=>({authenticated:false}),request:async path=>({path}),machineId:'dev-machine',
+ localWorkspaceService:{prepareLocal:async args=>calls.push(args),cacheAccountGrant:async(...args)=>calls.push(args)}};
+ await initializeDevelopmentPreview(auth,{remoteServerUrl:'http://127.0.0.1:3301'});
+ assert.equal((await auth.getStatus()).authenticated,true);assert.equal((await auth.getStatus()).account.mainAccountId,'owner');
+ assert.equal(calls[0].ownerId,'owner');assert.match(auth.session.token,/^development-preview-/u);
+ await assert.rejects(auth.request('/ai/chat'),/真实账号/u);assert.equal((await auth.request('/unit/workspace/data')).path,'/unit/workspace/data');
+ const untouched={};await initializeDevelopmentPreview(untouched,null);assert.deepEqual(untouched,{});
+});
+test('a remembered real account is used automatically and remains subject to real entitlement checks',async()=>{
+ const auth={store:{read:async()=>({})},rememberedLoginStore:{load:async()=>({phone:'test',password:'test'})},
+ login:async()=>{auth.session={token:'real',user:{id:'real'}};},getStatus:async()=>({authenticated:true,entitlement:{type:'expired'}}),request:async()=>({ok:true})};
+ await initializeDevelopmentPreview(auth,{remoteServerUrl:'http://127.0.0.1:3301'});
+ assert.equal(auth.session.token,'real');assert.equal((await auth.getStatus()).entitlement.type,'expired');
+});
 
 test('packaged builds ignore all development switches', () => {
   assert.equal(getDevelopmentConfig({ isPackaged:true,env:{COMMUNITY_DEV_MODE:'1'},productionData:'/production' }),null);

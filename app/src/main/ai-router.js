@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { classifyAiTask } = require('./ai-model-routing');
 
 function checkTextIntegrity(response) {
@@ -14,13 +15,15 @@ function applyTokenReminderPolicy(estimate = {}, mode = 'high_cost_only') {
   const normalizedMode = ['high_cost_only', 'always', 'insufficient_only'].includes(mode) ? mode : 'high_cost_only';
   const insufficient = estimate.sufficient === false;
   const highCost = estimate.highCost === true || Number(estimate.estimatedTokens || 0) >= 4000;
-  const requiresConfirmation = insufficient || normalizedMode === 'always' || (normalizedMode === 'high_cost_only' && highCost);
+  const requiresConfirmation = estimate.billingUnit === 'credits' ? (insufficient || estimate.estimatedCredits > 3) : insufficient || normalizedMode === 'always' || (normalizedMode === 'high_cost_only' && highCost);
   return { ...estimate, highCost, reminderMode: normalizedMode, requiresConfirmation,
     reminderReason: insufficient ? '额度不足' : normalizedMode === 'always' ? '已设置为每次提醒' : highCost ? (estimate.reminderReason || '预计用量较高') : '' };
 }
 
 class AiRouter {
-  constructor({ settingsStore, localRuntime, onlineClient, authService = null }) {
+  constructor({ settingsStore, localRuntime, onlineClient, authService = null, confirmCredits = null }) {
+    this.billingContext = new AsyncLocalStorage();
+    this.confirmCredits = confirmCredits;
     this.settingsStore = settingsStore;
     this.localRuntime = localRuntime;
     this.onlineClient = onlineClient;
@@ -79,6 +82,30 @@ class AiRouter {
     return applyTokenReminderPolicy(await this.estimateOnline(messages, { ...options, taskTier }), settings.tokenReminderMode);
   }
 
+  async withBillingTask(input, work) {
+    if (this.billingContext.getStore() || !this.authService) return work();
+    const settings = await this.settingsStore.readRaw();
+    if (settings.mode === 'local' || settings.mode === 'auto' && this.localRuntime.getStatus().running) return work();
+    const estimate = await this.authService.request('/ai/credit-tasks/estimate', {method:'POST',body:input}).catch(error => {
+      if(error?.statusCode===404 || /路由不存在/.test(error.message)) return {billingUnit:'tokens'};
+      throw error;
+    });
+    if (estimate.billingUnit !== 'credits') return this.billingContext.run({legacy:true},work);
+    const approvedMaxCredits = estimate.estimatedCredits>3 ? estimate.estimatedCredits : Math.max(estimate.minimumCredits||1,Math.min(3,Math.floor(estimate.remainingCredits ?? 3)));
+    if(approvedMaxCredits>3 && !(await this.confirmCredits?.({...estimate,approvedMaxCredits}))) throw new Error('已取消 AI 操作，未扣除积分');
+    const task = await this.authService.request('/ai/credit-tasks',{method:'POST',body:{...input,approvedMaxCredits,usageConfirmed:true}});
+    let result,error;
+    try { result = await this.billingContext.run({taskId:task.id},work); } catch(e) {error=e;}
+    let billing;
+    try {billing = await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(task.id)}/finish`,{method:'POST',body:{}});} catch(e) {
+      // A repeated finish is safe when its response was lost.
+      billing = await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(task.id)}/finish`,{method:'POST',body:{}}).catch(()=>null);
+      if(!billing && !error) error = new Error('AI 已完成，积分结算结果暂不可用，请刷新余额；后台将自动结算');
+    }
+    if(error) throw error;
+    return result && typeof result==='object' ? {...result,routing:{...(result.routing||{}),...billing,billingUnit:'credits'}} : result;
+  }
+
   async getOnlineCapabilities() {
     if (this.authService) {
       const response = await this.authService.request('/ai/models', { method: 'GET' });
@@ -94,10 +121,20 @@ class AiRouter {
     const resolvedMaxTokens = Math.min(8192, Math.max(16, Number(maxTokens) || (resolvedTier === 'deep' ? 4096 : 1200)));
     const resolvedRequestId = requestId || `ai-request-${crypto.randomUUID()}`;
     if (this.authService) {
-      const response = await this.authService.request('/ai/chat', {
+      const active = this.billingContext.getStore();
+      if(!active && !this.legacyBillingCall) return this.withBillingTask({messages,maxTokens:resolvedMaxTokens,taskTier:resolvedTier,taskKind},()=>this.onlineChat(messages,{maxTokens,temperature,taskTier,taskKind,taskId,requestId:resolvedRequestId}));
+      let response;
+      const send = () => this.authService.request('/ai/chat', {
         method: 'POST',
-        body: { messages, maxTokens: resolvedMaxTokens, temperature, taskTier: resolvedTier, taskKind, taskId, requestId: resolvedRequestId },
+        body: { messages, maxTokens: resolvedMaxTokens, temperature, taskTier: resolvedTier, taskKind, taskId, requestId: resolvedRequestId, billingTaskId:active?.taskId },
       });
+      try { response = await send(); } catch(error) {
+        if(error.code!=='AI_CREDIT_CAP_REACHED' || !active?.taskId) throw error;
+        const cap=error.details?.estimatedCredits;
+        if(!Number.isSafeInteger(cap) || !(await this.confirmCredits?.({...error.details,approvedMaxCredits:cap}))) throw new Error('已停止后续 AI 调用，仅结算此前成功步骤');
+        await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(active.taskId)}/extend`,{method:'POST',body:{approvedMaxCredits:cap,usageConfirmed:true}});
+        response=await send();
+      }
       const data = response?.data || response || {};
       const choice = Array.isArray(data.choices) ? data.choices[0] : null;
       const content = choice?.message?.content ?? choice?.text ?? response?.content ?? '';

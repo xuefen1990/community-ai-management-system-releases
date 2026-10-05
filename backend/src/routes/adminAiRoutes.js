@@ -8,16 +8,17 @@ const aiQuotaService = require('../services/aiQuotaService');
 const aiService = require('../services/aiService');
 const authService = require('../services/authService');
 const db = require('../database');
+const credits = require('../services/aiCreditPolicy');
 
 router.use(authRequired, adminRequired);
 
 router.get('/default-quota', (_req, res) => {
-  res.json({ defaultQuotaTokens: aiQuotaService.getDefaultQuotaTokens(), permanent: true });
+  res.json({ defaultQuotaTokens: aiQuotaService.getDefaultQuotaTokens(), billingUnit:credits.enabled()?'credits':'tokens', defaultQuotaCredits:aiQuotaService.getDefaultQuotaTokens()/credits.SCALE, permanent: true });
 });
 
 router.put('/default-quota', (req, res, next) => {
   try {
-    const defaultQuotaTokens = aiQuotaService.setDefaultQuotaTokens(req.body?.defaultQuotaTokens, { userId: req.user.id });
+    const defaultQuotaTokens = aiQuotaService.setDefaultQuotaTokens(credits.enabled() && req.body?.defaultQuotaCredits !== undefined ? Number(req.body.defaultQuotaCredits)*credits.SCALE : req.body?.defaultQuotaTokens, { userId: req.user.id });
     authService.writeAuditLog(req.user.id, 'update_ai_default_quota', 'ai_quota_settings', JSON.stringify({ defaultQuotaTokens }), req.ip);
     res.json({ defaultQuotaTokens, permanent: true });
   } catch (error) { next(error); }
@@ -65,8 +66,8 @@ router.put('/quotas/:organizationId', (req, res, next) => {
 router.post('/quotas/:organizationId/grants', (req, res, next) => {
   try {
     const id = mainAccountId(req);
-    const amount = req.body?.tokens ?? req.body?.amount;
-    const quota = aiQuotaService.adjustQuota(id, Math.abs(Number(amount)), { event: 'purchase', reason: req.body?.reason || '平台管理员增加额度', userId: req.user.id, metadata: { source: 'admin_grant' } });
+    const amount = credits.enabled() && req.body?.credits !== undefined ? Number(req.body.credits)*credits.SCALE : req.body?.tokens ?? req.body?.amount;
+    const quota = aiQuotaService.adjustQuota(id, Math.abs(Number(amount)), { event: 'purchase', reason: req.body?.reason || '平台管理员增加额度', userId: req.user.id, metadata: { source: 'admin_grant',billingMode:credits.enabled()?'credits':'tokens' } });
     authService.writeAuditLog(req.user.id, 'grant_ai_quota', id, JSON.stringify({ amount, reason: req.body?.reason || '' }), req.ip);
     res.status(201).json({ quota });
   } catch (error) { next(error); }

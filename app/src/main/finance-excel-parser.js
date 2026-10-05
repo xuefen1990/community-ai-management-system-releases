@@ -81,6 +81,17 @@ function amountState(value) {
   const amount = parseAmount(value);
   return amount === null ? 'invalid' : amount === 0 ? 'zero' : 'value';
 }
+function noTransactionAmount(cells, mapping) {
+  const fields = ['amount','income','expense'].filter(field => mapping[field] !== undefined);
+  // Only trust identified business columns. An unknown header still needs review.
+  return mapping.summary !== undefined && (mapping.date !== undefined || mapping.day !== undefined)
+    && fields.length > 0 && fields.every(field => amountState(cells[mapping[field]]) === 'empty');
+}
+function balanceCarryRow(cells, mapping) {
+  const label = normalize(cells[mapping.summary]);
+  return noTransactionAmount(cells,mapping)
+    && /^(?:(?:上|本)?(?:年|年度|月|期)(?:余额|余款|结余|结转)|(?:期|年|月)(?:初|末)(?:余额|结存|结余)|余额结转|结转下(?:月|年|期)|上期结存)$/u.test(label);
+}
 // Business evidence comes from date/day, summary and transaction amounts only.
 // Sequence numbers, balances, vouchers and notes never create a transaction.
 function emptyBusinessRow(cells, mapping) {
@@ -92,17 +103,48 @@ function emptyBusinessRow(cells, mapping) {
     && blank(cells[mapping.summary])
     && moneyFields.every(field => ['empty','zero'].includes(amountState(cells[mapping[field]])));
 }
+// An explicit template notice is not a transaction. Check mapped business
+// cells, never the sequence column; keep any date, amount or balance evidence.
+function businessNoticeRow(cells, mapping) {
+  if (mapping.summary === undefined) return '';
+  const blank = value => clean(value).replace(/[\u200b\ufeff]/gu,'') === '';
+  const dateFields = ['date','month','day'].filter(field => mapping[field] !== undefined);
+  const moneyFields = ['amount','income','expense'].filter(field => mapping[field] !== undefined);
+  if (!dateFields.length || !moneyFields.length
+    || !dateFields.every(field => blank(cells[mapping[field]]))
+    || !moneyFields.every(field => amountState(cells[mapping[field]]) === 'empty')
+    || mapping.balance !== undefined && amountState(cells[mapping.balance]) !== 'empty') return '';
+  const label = clean(cells[mapping.summary]).normalize('NFKC').replace(/[\s\u200b\ufeff]/gu,'');
+  if (/^(?:本页)?以下(?:空白|无正文|无内容|无数据|无记录)(?:[。.!！:：]*)$/u.test(label)
+    || /^(?:此处|本行|本页)空白(?:[。.!！:：]*)$/u.test(label)) return '空白说明行';
+  if (/^(?:备注|说明|注)[:：]/u.test(label)) return '说明行';
+  return '';
+}
 function metadataRow(cells, context) {
   const text = cells.map(value=>clean(value).normalize('NFKC')).filter(Boolean);
   if (!text.length || text.some(value=>parseDate(value,context) || /^(收[：:]|付[：:]|支付|支出|收入|购买|报销)/u.test(value))) return false;
-  return text.every(value => /盖章|编制单位|^单位\s*[：:]|^(?:19|20)\d{2}\s*年\s*\d{1,2}\s*月(?:\s*$)|财务.*(?:明细表|收.*支)|财务收支明细/u.test(value));
+  return text.every(value => require('./finance-date-context').periodLabel(value) || /盖章|编制单位|^单位\s*[：:]|财务.*(?:明细表|收.*支)|财务收支明细/u.test(value));
+}
+
+function signatureRow(cells, mapping, context) {
+  const text=cells.map(clean).filter(Boolean).join(' ');
+  if(!/(?:^|[\s：:])(?:驻村领导|驻村干部|制表人?|审核人?|负责人|填表人?|经办人|审批人|分管领导|村主任|村书记)(?:[\s：:]|$)/u.test(text))return false;
+  const hasAmount=['amount','income','expense'].some(f=>mapping[f]!==undefined && ['value','zero'].includes(amountState(cells[mapping[f]])))
+    || /^(?:收|付|支付|支出|收入)[：:]?/u.test(clean(cells[mapping.summary]))
+      && ['amount','income','expense'].some(f=>mapping[f]!==undefined && amountState(cells[mapping[f]])==='invalid');
+  return !hasAmount;
 }
 
 function resolvesNonBusinessRow(row, result, grid) {
   const skipped = result.skipped.find(item => item.sourceRowNumber === row.sourceRowNumber);
   if (!skipped || row.recordDate && row.summary && row.amountCents > 0) return false;
   const cells = grid[row.sourceRowNumber-1] || row.raw || [];
+  const mapping = skipped.fieldColumns || result.mapping;
+  if (skipped.reason === '余额结转行') return balanceCarryRow(cells,mapping);
+  if (skipped.reason === '无发生额行') return noTransactionAmount(cells,mapping);
   if (skipped.reason === '业务列空白行') return emptyBusinessRow(cells,skipped.fieldColumns || result.mapping);
+  if (['空白说明行','说明行'].includes(skipped.reason)) return businessNoticeRow(cells,skipped.fieldColumns || result.mapping) === skipped.reason;
+  if (skipped.reason === '签字说明行') return signatureRow(cells,skipped.fieldColumns || result.mapping,result.context);
   if (skipped.reason === '表头说明行') return metadataRow(cells,result.context);
   return /表头|标题/u.test(skipped.reason) && !(row.raw || []).some(cell=>/[0-9０-９]/u.test(String(cell)));
 }
@@ -146,18 +188,31 @@ function inferType(fields, categoryCatalog = CATEGORIES) {
     issue: new Set(conflicts).size > 1 ? '原表中的收支方向相互矛盾' : '' };
 }
 
-function recognitionContext(grid, { sheetName = '', fileName = '', year } = {}) {
-  const explicitYear = Number(year);
-  const title = grid.slice(0, 8).flat().map(clean).join(' ');
-  const knownYear = [sheetName, fileName, title].map(value => value.match(/(?:^|[^\d])((?:19|20)\d{2})(?:[^\d]|$)/u)?.[1]).find(Boolean);
-  const fullDates = grid.slice(0, 100).flat().map(value => parseDate(value)).filter(Boolean);
-  const datedYears = [...new Set(fullDates.map(date => Number(date.slice(0, 4))))];
-  const contextYear = Number.isInteger(explicitYear) && explicitYear >= 1900 && explicitYear <= 2199 ? explicitYear
-    : Number(knownYear) || (datedYears.length === 1 ? datedYears[0] : null);
-  const monthMatch = sheetName.match(/(?:^|[^\d])(1[0-2]|0?[1-9])\s*月/u);
-  const chineseMonths = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十', '十一', '十二'];
-  const month = monthMatch ? Number(monthMatch[1]) : chineseMonths.findIndex(name => sheetName === `${name}月`) + 1 || null;
-  return { year: contextYear, month };
+function recognitionContext(grid, { sheetName = '', fileName = '', year, headerRowIndex, contextStart = 0, confirmation } = {}) {
+  const firstHeader = Number.isInteger(headerRowIndex) ? headerRowIndex : grid.findIndex((_,index)=>headerAt(grid,index).strong);
+  const labels = grid.slice(contextStart,firstHeader >= 0 ? firstHeader : 0).flatMap((cells,index)=>metadataRow(cells || [],{}) ? (cells || []).map(text=>({text:clean(text),sourceRowNumber:contextStart+index+1})) : []);
+  return require('./finance-date-context').contextOf({sheetName,fileName,labels,year,confirmation});
+}
+
+function resolveMonthRange(rows,context) {
+  const range=context.monthRange;if(!range || context.needsConfirmation)return;
+  const groups=new Map();for(const row of rows){if(!groups.has(row.regionStart))groups.set(row.regionStart,[]);groups.get(row.regionStart).push(row);}
+  for(const group of groups.values()){
+    const timeline=group.filter(row=>/^(?:\d{1,2}日?|\d{4}[-/.]\d{1,2}[-/.]\d{1,2}|\d{1,2}[-/.]\d{1,2})$/u.test(clean(row.sourceDate).normalize('NFKC')));
+    const dayOf=row=>Number(clean(row.sourceDate).normalize('NFKC').replace(/日$/u,'').split(/[-/.]/u).at(-1));
+    const candidates=[];
+    if(context.year&&range.start<=range.end)for(const direction of [1,-1]){
+      let month=direction===1?range.start:range.end,previous=null;const dates=[];
+      for(const row of timeline){const day=dayOf(row);if(previous!==null&&(direction===1?day<previous:day>previous))month+=direction;const date=parseDate(String(day),{year:context.year,month});if(month<range.start||month>range.end||!date||row.recordDate&&row.recordDate!==date){dates.length=0;break;}dates.push(date);previous=day;}
+      if(dates.length===timeline.length&&dates.length&&month===(direction===1?range.end:range.start))candidates.push(dates);
+    }
+    const unique=[...new Map(candidates.map(dates=>[JSON.stringify(dates),dates])).values()];
+    for(const [index,row] of timeline.entries()){
+      if(row.recordDate)continue;
+      if(unique.length===1){row.recordDate=unique[0][index];row.dateRecognitionSource='month-range-sequence';row.issues=row.issues.filter(issue=>issue!=='请填写完整交易日期');}
+      else {row.dateRecognitionReason='合并月份无法唯一确定，请核对原表日期';}
+    }
+  }
 }
 
 function classifyCategory(recordType, sourceCategory, summary, categoryCatalog = CATEGORIES) {
@@ -180,15 +235,33 @@ function classifyCategory(recordType, sourceCategory, summary, categoryCatalog =
     categorySource: category ? 'rules' : recordType ? 'default' : '' };
 }
 
-function parseFinanceGrid(grid, { sheetName = '', fileName = '', year, headerRowIndex, mapping: overrides = {}, categoryCatalog = CATEGORIES } = {}) {
+function refineBalanceColumn(rows,skipped,grid,headers,mapping) {
+  rows=rows.filter(row=>['date','summary','income','expense','amount'].every(f=>row.fieldColumns[f]===mapping[f]));
+  const columns=headers.map((name,index)=>({name,index})).filter(c=>/余额|结余|结存|balance/iu.test(c.name) && !/序号|编号/u.test(c.name)).map(c=>c.index);
+  if(columns.length<2)return;
+  const scores=columns.map(column=>{let prev=null,region=null,matched=0,wrong=0;
+    for(const row of rows){if(region!==row.regionStart){region=row.regionStart;prev=null;const anchor=skipped.filter(a=>a.reason==='余额结转行'&&a.sourceRowNumber>=region&&a.sourceRowNumber<row.sourceRowNumber).at(-1);if(anchor)prev=parseAmount(anchor.raw[column]);}
+      const balance=parseAmount(grid[row.sourceRowNumber-1]?.[column]);
+      if(prev!==null && balance!==null && row.amountCents>0 && row.recordType){if(prev+(row.recordType==='income'?row.amountCents:-row.amountCents)===balance)matched++;else wrong++;}prev=balance;
+    }return {column,matched,wrong};});
+  const eligible=scores.filter(s=>s.matched>=2 && s.wrong===0);if(eligible.length!==1 || eligible[0].column===mapping.balance)return;
+  const column=eligible[0].column;mapping.balance=column;
+  for(const row of rows){row.fieldColumns.balance=column;row.sourceBalanceCents=parseAmount(grid[row.sourceRowNumber-1]?.[column]);row.sourceBalanceText=clean(grid[row.sourceRowNumber-1]?.[column]);row.balanceMappingSource='continuous-balance';}
+  for(const anchor of skipped.filter(r=>r.reason==='余额结转行'))anchor.sourceBalanceCents=parseAmount(anchor.raw[column]);
+}
+
+function parseFinanceGrid(grid, { sheetName = '', fileName = '', year, dateConfirmations = {}, headerRowIndex, mapping: overrides = {}, categoryCatalog = CATEGORIES } = {}) {
   if (!Array.isArray(grid)) throw new Error('工作表内容不正确');
-  const context = recognitionContext(grid, { sheetName, fileName, year });
   const firstStrong = grid.findIndex((_,index)=>headerAt(grid,index).strong);
   const headerIndex = Number.isInteger(headerRowIndex) ? headerRowIndex : firstStrong >= 0 ? firstStrong : findHeader(grid);
+  let context = recognitionContext(grid,{sheetName,fileName,year,headerRowIndex:headerIndex,confirmation:dateConfirmations[headerIndex+1]});
+  const firstContext = context;
   const rows = [], skipped = [], regions = [];
+  let contextStart = headerIndex + 1;
   const firstHeader = headerIndex >= 0 ? headerAt(grid, headerIndex, overrides) : {headers:[],mapping:{},size:0};
   let headers = firstHeader.headers, mapping = firstHeader.mapping, regionStart = headerIndex + firstHeader.size + 1;
   let subtotalStart = regionStart;
+  if (headerIndex >= 0) regions.push({headerRowNumber:headerIndex+1,regionStart,context});
   const addSkipped = (index, reason, extra = {}) => skipped.push({sourceRowNumber:index+1, raw:(grid[index] || []).map(clean), reason, ...extra});
   let firstDataRow = headerIndex < 0 ? 0 : headerIndex + firstHeader.size;
   for (let index = 0; index < firstDataRow; index++) {
@@ -207,31 +280,45 @@ function parseFinanceGrid(grid, { sheetName = '', fileName = '', year, headerRow
     const sourceRowNumber = index + 1;
     const localHeader = headerAt(grid,index);
     if (localHeader.strong) {
-      if (JSON.stringify(localHeader.mapping)!==JSON.stringify(mapping)) {regionStart=index+localHeader.size+1;subtotalStart=regionStart;}
+      if (index !== headerIndex) {
+        context = recognitionContext(grid,{sheetName,fileName,year,headerRowIndex:index,contextStart,confirmation:dateConfirmations[index+1]});
+        contextStart=index+localHeader.size;
+        regions.push({headerRowNumber:index+1,regionStart:index+localHeader.size+1,context});
+      }
+      regionStart=index+localHeader.size+1;subtotalStart=regionStart;
       mapping = localHeader.mapping; headers = localHeader.headers;
       for (let offset=0;offset<localHeader.size;offset++) addSkipped(index+offset,'重复表头');
       index += localHeader.size-1; continue;
     }
     if (metadataRow(cells,context)) {addSkipped(index,'表头说明行');continue;}
+    if(signatureRow(cells,mapping,context)){addSkipped(index,'签字说明行',{fieldColumns:{...mapping}});continue;}
+    const notice = businessNoticeRow(cells,mapping);
+    if (notice) {addSkipped(index,notice,{fieldColumns:{...mapping}});continue;}
     const fields = Object.fromEntries(Object.entries(mapping).map(([field,column]) => [field, cells[column]]));
     const first = nonempty[0], summaryCell = clean(fields.summary);
-    const label = summaryCell || first;
-    const total = /^(合计|小计|总计|本[年月期]合计|累计|汇总|本月累计)(?:[：:]|$)/u.test(label);
-    const balance = /^(上[年月期]结[转余]|期初余额|期末余额|月初余额|月末余额|上月余额|余额结转|结转下月)(?:[：:]|$)/u.test(label);
+    const label = clean(summaryCell || first).normalize('NFKC').replace(/\s/gu,'');
+    const rawDate = mapping.date !== undefined ? fields.date : fields.month && fields.day ? `${fields.month}-${fields.day}` : fields.day;
+    const total = /^(合计|小计|总计|本[年月期]合计|累计|汇总|本月累计)(?:[：:]|$)/u.test(label)
+      && !(parseDate(rawDate,context) && amountState(fields.balance) !== 'empty');
+    const balance = balanceCarryRow(cells,mapping);
     const moneyFields = ['amount','income','expense'].filter(field=>mapping[field] !== undefined);
     const moneyStates = moneyFields.map(field=>amountState(fields[field]));
     const note = /^(备注|说明|注[：:]|制表|审核|负责人|填表)/u.test(first) && moneyStates.every(value=>value==='empty' || value==='zero');
     if (total || balance || note) {
       const scope = /^(合计|本月合计|本期合计|小计)(?:[：:]|$)/u.test(label);
       const check = total && scope && mapping.income !== undefined && mapping.expense !== undefined;
-      addSkipped(index,total?'合计或汇总行':balance?'余额结转行':'说明行',{sourceBalanceCents:balance?parseAmount(fields.balance):null,
+      addSkipped(index,total?'合计或汇总行':balance?'余额结转行':'说明行',{fieldColumns:{...mapping},sourceBalanceCents:balance?parseAmount(fields.balance):null,
         totalCheck: check ? {startRow:/^小计(?:[：:]|$)/u.test(label)?subtotalStart:/^本[月期]合计/u.test(label) && context.month ? firstDataRow+1 : regionStart,endRow:index,incomeCents:amountState(fields.income)==='empty'?0:parseAmount(fields.income),expenseCents:amountState(fields.expense)==='empty'?0:parseAmount(fields.expense)} : null});
       if (/^小计(?:[：:]|$)/u.test(label)) subtotalStart=index+2;
       continue;
     }
     if (emptyBusinessRow(cells,mapping)) {addSkipped(index,'业务列空白行',{fieldColumns:{...mapping}});continue;}
+    if (noTransactionAmount(cells,mapping)) {addSkipped(index,'无发生额行',{fieldColumns:{...mapping}});continue;}
     const sourceDate = mapping.date !== undefined ? fields.date : fields.month && fields.day ? `${fields.month}-${fields.day}` : fields.day;
-    const recordDate = parseDate(sourceDate, context);
+    const dayOnly = /^\d{1,2}日?$/u.test(clean(sourceDate).normalize('NFKC'));
+    const recordDate = parseDate(sourceDate,dayOnly && context.needsConfirmation ? {} : context);
+    const dateRecognitionReason = !recordDate && dayOnly && context.needsConfirmation ? context.conflicts.join('、') || '缺少明确的工作表年月，请确认' : '';
+    const dateRecognitionSource = recordDate ? dayOnly ? context.source === 'confirmed' ? 'confirmed-period' : 'sheet-period' : 'original-date' : ''; 
     const summary = clean(fields.summary);
     const inferred = inferType({...fields,summary,category:clean(fields.category)}, categoryCatalog);
     const issues = [];
@@ -243,14 +330,17 @@ function parseFinanceGrid(grid, { sheetName = '', fileName = '', year, headerRow
     if (!inferred.type) issues.push('请选择收入或支出');
     const { category, categorySource } = classifyCategory(inferred.type, clean(fields.category), summary, categoryCatalog);
     if (!category) issues.push('请选择现有财务分类');
-    rows.push({sheetName,sourceRowNumber,raw:cells.map(clean),fieldColumns:{...mapping},regionStart,recordDate,recordType:inferred.type,
+    const transactionEvidence = { date:!!recordDate, summary:!!summary, amount:Number.isSafeInteger(inferred.amountCents) && inferred.amountCents > 0 && !moneyStates.includes('invalid'), balance:Number.isSafeInteger(parseAmount(fields.balance)) };
+    rows.push({sheetName,sourceRowNumber,raw:cells.map(clean),fieldColumns:{...mapping},transactionEvidence,regionStart,recordDate,recordType:inferred.type,
       amountCents:moneyStates.includes('invalid')?null:inferred.amountCents ?? (moneyStates.includes('zero')?0:null),sourceBalanceCents:parseAmount(fields.balance),sourceBalanceText:clean(fields.balance),summary,category,categorySource,
-      sourceDate:clean(sourceDate),sourceCategory:clean(fields.category),handler:clean(fields.handler),counterparty:clean(fields.counterparty),voucherNo:clean(fields.voucherNo),attachmentNote:clean(fields.attachmentNote),remarks:clean(fields.remarks),issues});
+      dateContext:context,dateRecognitionSource,dateRecognitionReason,sourceDate:clean(sourceDate),sourceCategory:clean(fields.category),handler:clean(fields.handler),counterparty:clean(fields.counterparty),voucherNo:clean(fields.voucherNo),attachmentNote:clean(fields.attachmentNote),remarks:clean(fields.remarks),issues});
   }
+  for (const region of regions) resolveMonthRange(rows.filter(row=>row.regionStart===region.regionStart),region.context);
+  refineBalanceColumn(rows,skipped,grid,headers,mapping);
   const dated=rows.filter(row=>row.recordDate), descending=dated.length>1 && dated[0].recordDate>dated[dated.length-1].recordDate;
   for (const row of rows) row.sourceOrder=descending?-row.sourceRowNumber:row.sourceRowNumber;
   const coverage=grid.flatMap((cells,index)=>(cells || []).some(value=>clean(value))?[index+1]:[]);
-  return {sheetName,context,headerRowNumber:headerIndex>=0?headerIndex+1:null,headers:firstHeader.headers,mapping:firstHeader.mapping,rows,skipped,coverage,regions,error:headerIndex<0?'暂未识别表头，可使用 AI 重新识别':''};
+  return {sheetName,context:firstContext,dateConfirmations,headerRowNumber:headerIndex>=0?headerIndex+1:null,headers:firstHeader.headers,mapping:firstHeader.mapping,rows,skipped,coverage,regions,error:headerIndex<0?'暂未识别表头，可使用 AI 重新识别':''};
 }
 
 module.exports = { INCOME_CATEGORIES, EXPENSE_CATEGORIES, CATEGORIES, ALIASES, parseFinanceGrid, parseDate, parseAmount, recognitionContext, classifyCategory, headerAt, amountState, emptyBusinessRow, resolvesNonBusinessRow };

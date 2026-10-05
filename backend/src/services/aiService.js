@@ -7,12 +7,13 @@ const db = require('../database');
 const { encrypt, decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
 const aiQuotaService = require('./aiQuotaService');
-const { normalizeTaskTier, selectModel } = require('./aiModelRouting');
+const { providerOptions, routingOptions, routeCandidates, normalizeTaskTier, selectModel } = require('./aiModelRouting');
 
 function getActiveProvider() {
   const row = db.findOne('ai_providers', p => p.is_active === 1);
   if (!row) return null;
   return {
+    ...providerOptions(row),
     id: row.id,
     name: row.name,
     providerType: row.provider_type,
@@ -29,6 +30,7 @@ function getProviderById(id) {
   const row = db.findById('ai_providers', id);
   if (!row) return null;
   return {
+    ...providerOptions(row),
     id: row.id,
     name: row.name,
     providerType: row.provider_type,
@@ -234,7 +236,7 @@ function assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableMod
   }
 }
 
-function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, availableModels, supportsVision = false, visionModel = '' }) {
+function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, availableModels, supportsVision = false, visionModel = '', isActive = true, ...routing }) {
   assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableModels, supportsVision, visionModel }, { isCreate: true });
   const now = db.now();
   const id = db.genId();
@@ -247,8 +249,9 @@ function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, ava
     default_model: defaultModel,
     available_models: JSON.stringify(availableModels || [defaultModel]),
     supports_vision: supportsVision ? 1 : 0,
+    ...routingOptions(routing),
     vision_model: supportsVision ? String(visionModel || '').trim() : '',
-    is_active: 1,
+    is_active: isActive ? 1 : 0,
     created_at: now, updated_at: now,
   };
 
@@ -257,7 +260,7 @@ function createProvider({ name, providerType, baseUrl, apiKey, defaultModel, ava
   return getProviderById(id);
 }
 
-function updateProvider(id, { name, providerType, baseUrl, apiKey, defaultModel, availableModels, supportsVision, visionModel, isActive }) {
+function updateProvider(id, { name, providerType, baseUrl, apiKey, defaultModel, availableModels, supportsVision, visionModel, isActive, ...routing }) {
   const row = db.findById('ai_providers', id);
   if (!row) {
     const err = new Error('AI Provider 不存在');
@@ -266,7 +269,7 @@ function updateProvider(id, { name, providerType, baseUrl, apiKey, defaultModel,
   }
 
   assertProviderInput({ name, baseUrl, apiKey, defaultModel, availableModels, supportsVision, visionModel });
-  const patch = { updated_at: db.now() };
+  const patch = { ...routingOptions(routing), updated_at: db.now() };
   if (name !== undefined) patch.name = name;
   if (providerType !== undefined) patch.provider_type = providerType || 'custom';
   if (baseUrl !== undefined) patch.base_url = baseUrl;
@@ -293,8 +296,8 @@ function deleteProvider(id) {
 function listModels() {
   const provider = getActiveProvider();
   if (!provider) return { models: [] };
-  return { models: provider.availableModels, defaultModel: provider.defaultModel,
-    supportsVision: provider.supportsVision, visionModel: provider.visionModel };
+  return { models: [...new Set(db.findAll('ai_providers',r=>r.is_active===1).flatMap(r=>[...JSON.parse(r.available_models||'[]'),r.default_model,r.vision_model].filter(Boolean)))], defaultModel: provider.defaultModel,
+    supportsVision: db.findAll('ai_providers').some(r=>r.is_active===1&&r.supports_vision===1&&r.vision_model), visionModel: db.findAll('ai_providers').find(r=>r.is_active===1&&r.supports_vision===1&&r.vision_model)?.vision_model || '' };
 }
 
 function organizationIdOfUser(userId) {
@@ -314,7 +317,8 @@ function telemetryId(value) {
 }
 
 function estimateTask(userId, { messages, model, maxTokens, taskTier = 'basic', taskKind = '', taskId = '', attachmentCount = 0 } = {}) {
-  const provider = getActiveProvider();
+  const row = routeCandidates(db.findAll('ai_providers'), {messages,model,maxTokens,taskTier,taskKind})[0];
+  const provider = getProviderById(row.id);
   if (!provider) throw serviceError(503, '未配置可用的 AI 大模型');
   const tier = normalizeTaskTier(taskTier);
   const selectedModel = selectModel(provider, model, tier, taskKind);
@@ -330,19 +334,22 @@ function estimateTask(userId, { messages, model, maxTokens, taskTier = 'basic', 
     taskKind: String(taskKind || ''),
     taskId: String(taskId || ''),
     model: selectedModel,
+    ...(require('./aiCreditPolicy').enabled() ? {...require('./aiCreditTasks').estimate({messages,maxTokens:resolvedMaxTokens,taskTier,taskKind}), billingUnit:'credits', remainingCredits:quota?.remainingCredits, requiresConfirmation:require('./aiCreditTasks').estimate({messages,maxTokens:resolvedMaxTokens,taskTier,taskKind}).estimatedCredits>3} : {}),
     estimatedTokens,
     remainingTokens: quota?.remainingTokens ?? null,
     totalTokens: quota?.totalTokens ?? null,
     lowBalance,
     highCost,
     reminderReason: highCost ? (String(taskKind || '') === 'vision-document-review' ? '本次需要识别图片内容' : '本次任务预计用量较高') : '',
-    sufficient: quota ? quota.remainingTokens >= estimatedTokens : true,
-    requiresConfirmation: highCost,
+    sufficient: quota ? (require('./aiCreditPolicy').enabled() ? quota.remainingCredits>=require('./aiCreditTasks').estimate({messages,maxTokens:resolvedMaxTokens,taskTier,taskKind}).estimatedCredits : quota.remainingTokens >= estimatedTokens) : true,
+    requiresConfirmation: require('./aiCreditPolicy').enabled() ? require('./aiCreditTasks').estimate({messages,maxTokens:resolvedMaxTokens,taskTier,taskKind}).estimatedCredits>3 : highCost,
   };
 }
 
-function chat(userId, { messages, model, temperature, maxTokens, stream, requestId, taskTier = 'basic', taskKind = '', taskId = '' }) {
-  const provider = getActiveProvider();
+function legacyChat(userId, input) {
+  const { messages, model, temperature, maxTokens, stream, requestId, taskTier = 'basic', taskKind = '', taskId = '' } = input;
+  const selectedRow = input._selectedProviderId ? db.findById('ai_providers',input._selectedProviderId) : routeCandidates(db.findAll('ai_providers'), input)[0];
+  const provider = {...getProviderById(selectedRow.id), apiKey:decrypt(selectedRow.api_key_encrypted)};
   if (!provider) {
     const err = new Error('未配置可用的 AI 大模型');
     err.statusCode = 503;
@@ -350,7 +357,7 @@ function chat(userId, { messages, model, temperature, maxTokens, stream, request
   }
 
   const tier = normalizeTaskTier(taskTier);
-  const useModel = selectModel(provider, model, tier, taskKind);
+  const useModel = selectModel(provider, model, tier, require('./aiCreditPolicy').imageCount(messages)?'vision-document-review':taskKind);
   const organizationId = organizationIdOfUser(userId);
   const resolvedMaxTokens = Math.min(8192, Math.max(16, Number(maxTokens) || (tier === 'deep' ? 4096 : 1200)));
   const reservationTokens = organizationId ? estimateTokens(messages, resolvedMaxTokens) : 0;
@@ -509,6 +516,13 @@ function chat(userId, { messages, model, temperature, maxTokens, stream, request
   });
 }
 
+async function chat(userId,input) {
+ if(require('./aiCreditPolicy').enabled())return require('./aiModelDispatch').chat(userId,organizationIdOfUser(userId),input);
+ const candidates=routeCandidates(db.findAll('ai_providers'),input);let last;
+ for(const row of candidates){try{return await legacyChat(userId,{...input,_selectedProviderId:row.id});}catch(e){last=e;if(![502,503,504].includes(e.statusCode))throw e;}}
+ throw last;
+}
+
 function recordUsage(userId, providerId, model, promptTokens, completionTokens, totalTokens, latencyMs, status, errorMessage, extra = {}) {
   try {
     db.insert('ai_usage', {
@@ -591,6 +605,7 @@ function listUsageDetails({ organizationId, mainAccountId, userId, page = 1, pag
     completionTokens: Number(row.completion_tokens || 0),
     totalTokens: Number(row.total_tokens || 0),
     chargedTokens: Number(row.charged_tokens ?? row.total_tokens ?? 0),
+    chargedCredits: row.charged_credits ?? null,
     latencyMs: Number(row.latency_ms || 0),
     status: row.status,
     errorMessage: row.error_message || '',

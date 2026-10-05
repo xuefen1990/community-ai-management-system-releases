@@ -27,6 +27,7 @@ class FinanceWorkbookService {
       // Never propagate money cells into separate transactions.
       const initial = parseFinanceGrid(grid,{sheetName:name,fileName:path.basename(filePath),categoryCatalog});
       const businessMapping = initial.mapping, rowMappings = new Map([...initial.rows,...initial.skipped].filter(row=>row.fieldColumns).map(row=>[row.sourceRowNumber,row.fieldColumns]));
+      const noticeRows = new Set(initial.skipped.filter(row=>['空白说明行','说明行','签字说明行','合计或汇总行','余额结转行','无发生额行'].includes(row.reason)).map(row=>row.sourceRowNumber));
       const dateOrTextColumn = column => grid.slice(0, 40).some(row => /日期|摘要|内容|月份|^月$|^日$/u.test(String(row[column] || '')));
       for (const merge of sheet['!merges'] || []) {
         const original = grid[merge.s.r]?.[merge.s.c];
@@ -36,6 +37,7 @@ class FinanceWorkbookService {
         }
         if (merge.s.c !== merge.e.c || !dateOrTextColumn(merge.s.c) || original == null || original === '') continue;
         for (let row = merge.s.r + 1; row <= merge.e.r; row++) {
+          if (noticeRows.has(row+1)) continue;
           if (grid[row] && emptyBusinessRow(grid[row],rowMappings.get(row+1) || businessMapping)) continue;
           if (grid[row] && (grid[row][merge.s.c] == null || grid[row][merge.s.c] === '')) grid[row][merge.s.c] = original;
         }
@@ -58,16 +60,26 @@ class FinanceWorkbookService {
     return preview;
   }
 
-  remap({ previewId, sheetName, headerRowNumber, mapping, year }) {
+  remap({ previewId, sheetName, headerRowNumber, mapping, year, dateConfirmation }) {
     const preview = this.getPreview(previewId);
     const grid = preview?.grids.get(sheetName);
     if (!grid) throw new Error('预览已失效，请重新选择表格');
     const index = Number(headerRowNumber) - 1;
     if (!Number.isInteger(index) || index < 0 || index >= grid.length) throw new Error('表头行号不正确');
-    const result = parseFinanceGrid(grid, { sheetName, fileName: preview.fileName, headerRowIndex: index, mapping, year, categoryCatalog: preview.categoryCatalog });
     const previous=preview.sheets.get(sheetName);
+    const dateConfirmations = structuredClone(previous?.dateConfirmations || {});
+    if (dateConfirmation) {
+      const regionHeader = Number(dateConfirmation.headerRowNumber), confirmedYear = Number(dateConfirmation.year), month = Number(dateConfirmation.month);
+      if (!previous?.regions?.some(region=>region.headerRowNumber===regionHeader)
+        || !Number.isInteger(confirmedYear) || confirmedYear<1900 || confirmedYear>2199 || !Number.isInteger(month) || month<1 || month>12) throw new Error('请确认有效的工作表年份、月份及数据区域');
+      dateConfirmations[regionHeader] = {year:confirmedYear,month,reason:String(dateConfirmation.reason || `依据原表确认 ${confirmedYear} 年 ${month} 月`).trim(),source:'user'};
+    }
+    const effectiveYear=year === undefined ? previous?.yearOverride : year;
+    const result = parseFinanceGrid(grid, { sheetName, fileName: preview.fileName, headerRowIndex: index, mapping, year:effectiveYear, dateConfirmations, categoryCatalog: preview.categoryCatalog });
+    if (effectiveYear !== undefined && effectiveYear !== '') result.yearOverride=Number(effectiveYear);
     if(previous?.rows.some(row=>!result.rows.some(candidate=>candidate.sourceRowNumber===row.sourceRowNumber) && !resolvesNonBusinessRow(row,result,grid))) throw new Error('调整会遗漏已有收支行，已保留原识别结果');
     preview.sheets.set(sheetName, result);
+    preview.revision = (preview.revision || 0) + 1;
     return result;
   }
 

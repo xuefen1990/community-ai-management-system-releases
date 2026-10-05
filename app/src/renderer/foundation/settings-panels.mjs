@@ -116,6 +116,9 @@ export function installCommunitySettings() {
     const quota = ref(null), usage = ref([]), usagePagination = ref({ page: 1, totalPages: 1, total: 0 });
     const quotaStatus = ref(''); const backendUrl = ref('');
     const formatTokens = value => Number(value || 0).toLocaleString('zh-CN');
+    const creditsMode=()=>quota.value?.billingUnit==='credits';
+    const unit=()=>creditsMode()?'积分':'Token';
+    const quotaAmount=key=>Number(quota.value?.[key+(creditsMode()?'Credits':'Tokens')]||0).toLocaleString('zh-CN',{maximumFractionDigits:4});
     const refreshRuntime = async () => { [models.value, runtime.value] = await Promise.all([window.api.scanLocalModels(), window.api.getInternalAiServerStatus()]); };
     const refreshQuota = async () => {
       quotaStatus.value = '';
@@ -153,16 +156,16 @@ export function installCommunitySettings() {
       ]),
       h('div', { class: 'foundation-ai-online-card' }, [
         h('div', { class: 'foundation-ai-online-heading' }, [h('strong', {}, '在线 AI（单位共享额度）'), h('span', { class: 'foundation-ai-online-badge' }, '后端统一管理')]),
-        h('p', {}, '在线模型由社区账号服务统一调用，桌面端不保存或填写 API 密钥。所有本单位账号共用同一 Token 额度，额度永久有效，用完后请联系平台管理员购买。'),
+        h('p', {}, '在线模型由社区账号服务统一调用，桌面端不保存或填写 API 密钥。所有本单位账号共用同一 AI 额度，额度永久有效，用完后请联系平台管理员购买。'),
         h('div', { class: 'foundation-ai-server-line' }, [h('span', {}, '当前账号服务器'), h('code', {}, backendUrl.value || '尚未配置')]),
       ]),
       quota.value ? h('div', { class: 'foundation-ai-quota-grid', 'data-testid': 'community-ai-quota' }, [
-        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '永久总额度'), h('strong', {}, `${formatTokens(quota.value.totalTokens)} Token`)]),
-        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '已使用'), h('strong', {}, `${formatTokens(quota.value.usedTokens)} Token`)]),
-        h('div', { class: 'foundation-ai-quota-card is-primary' }, [h('span', {}, '当前可用'), h('strong', {}, `${formatTokens(quota.value.remainingTokens)} Token`)]),
-        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '预留中'), h('strong', {}, `${formatTokens(quota.value.reservedTokens)} Token`)]),
+        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '永久总额度'), h('strong', {}, `${quotaAmount("total")} ${unit()}`)]),
+        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '已使用'), h('strong', {}, `${quotaAmount("used")} ${unit()}`)]),
+        h('div', { class: 'foundation-ai-quota-card is-primary' }, [h('span', {}, '当前可用'), h('strong', {}, `${quotaAmount("remaining")} ${unit()}`)]),
+        h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '预留中'), h('strong', {}, `${quotaAmount("reserved")} ${unit()}`)]),
       ]) : null,
-      quota.value ? h('div', { class: 'foundation-ai-quota-progress' }, [h('div', { class: 'foundation-ai-quota-progress-head' }, [h('span', {}, '本单位在线 AI 用量'), h('span', {}, `${formatTokens(quota.value.usedTokens)} / ${formatTokens(quota.value.totalTokens)} Token`)]), h('div', { class: 'foundation-ai-quota-progress-track' }, [h('span', { style: { width: `${Math.min(100, Math.round((quota.value.usedTokens / Math.max(1, quota.value.totalTokens)) * 100))}%` } })])]) : null,
+      quota.value ? h('div', { class: 'foundation-ai-quota-progress' }, [h('div', { class: 'foundation-ai-quota-progress-head' }, [h('span', {}, '本单位在线 AI 用量'), h('span', {}, `${formatTokens(quota.value.usedTokens)} / ${quotaAmount("total")} ${unit()}`)]), h('div', { class: 'foundation-ai-quota-progress-track' }, [h('span', { style: { width: `${Math.min(100, Math.round((quota.value.usedTokens / Math.max(1, quota.value.totalTokens)) * 100))}%` } })])]) : null,
       h('div', { class: 'foundation-setting-actions' }, [
         button('保存设置', () => run(save), busy.value, 'community-ai-save'),
         button('测试在线 AI（会消耗少量额度）', () => run(async () => { await window.api.testOnlineAi(); await refreshQuota(); status.value = '在线 AI 连接成功'; }), busy.value),
@@ -170,7 +173,7 @@ export function installCommunitySettings() {
       ]),
       quotaStatus.value ? h('p', { class: 'foundation-ai-quota-warning' }, quotaStatus.value) : null,
       h('div', { class: 'foundation-ai-usage' }, [h('div', { class: 'foundation-ai-usage-heading' }, [h('h4', {}, '最近在线 AI 使用记录'), h('span', {}, `近 30 天 ${formatTokens(usagePagination.value.total)} 次`)]),
-        usage.value.length ? h('div', { class: 'foundation-ai-usage-table-wrap' }, [h('table', { class: 'foundation-ai-usage-table' }, [h('thead', {}, [h('tr', {}, ['时间', '账号', '模型', '消耗 Token', '状态'].map(label => h('th', {}, label)))]), h('tbody', {}, usage.value.map(row => h('tr', { key: row.id }, [h('td', {}, new Date(row.createdAt).toLocaleString()), h('td', {}, row.userName || '当前账号'), h('td', {}, row.model || '在线模型'), h('td', {}, formatTokens(row.chargedTokens ?? row.totalTokens)), h('td', { class: row.status === 'success' ? 'is-success' : 'is-error' }, row.status === 'success' ? '成功' : '失败')])))] )]) : h('p', { class: 'foundation-ai-usage-empty' }, quotaStatus.value ? '登录后可查看本单位使用明细' : '暂无在线 AI 使用记录'),
+        usage.value.length ? h('div', { class: 'foundation-ai-usage-table-wrap' }, [h('table', { class: 'foundation-ai-usage-table' }, [h('thead', {}, [h('tr', {}, ['时间', '账号', '模型', `消耗 ${unit()}`, '状态'].map(label => h('th', {}, label)))]), h('tbody', {}, usage.value.map(row => h('tr', { key: row.id }, [h('td', {}, new Date(row.createdAt).toLocaleString()), h('td', {}, row.userName || '当前账号'), h('td', {}, row.model || '在线模型'), h('td', {}, creditsMode() && row.chargedCredits !== null && row.chargedCredits !== undefined ? `${Number(row.chargedCredits).toLocaleString('zh-CN')} 积分` : `${formatTokens(row.chargedTokens ?? row.totalTokens)} Token`), h('td', { class: row.status === 'success' ? 'is-success' : 'is-error' }, row.status === 'success' ? '成功' : '失败')])))] )]) : h('p', { class: 'foundation-ai-usage-empty' }, quotaStatus.value ? '登录后可查看本单位使用明细' : '暂无在线 AI 使用记录'),
       ]),
       message(status),
     ]);

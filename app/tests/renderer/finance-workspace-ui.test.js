@@ -13,11 +13,12 @@ function fixture({ aiFails = false, saveFails = false, records = [], role = 'mai
   for (const row of records) { if (!Object.hasOwn(row,'recordDate') && !Object.hasOwn(row,'date')) row.recordDate='2026-02-01'; if (!Object.hasOwn(row,'amountCents')) row.amountCents=1000; if (!row.recordType && !row.type) row.recordType='expense'; }
   const events = new Map(), calls = [], chartInstances = [], chartFilters = {}, typeInput = {}, panel = {scrolls:0, scrollIntoView(){this.scrolls++;}};
   const chartNodes = [{dataset:{finChart:'monthly'}},{dataset:{finChart:'category'}}];
-  const sheet = parseFinanceGrid(importGrid || [['日期', '收、支内容摘要', '收入', '支出', '余额'], ['1.2', '拨款到账', 100, '', 100],
+  let sheet = parseFinanceGrid(importGrid || [['日期', '收、支内容摘要', '收入', '支出', '余额'], ['', '期初余额','','',0], ['1.2', '拨款到账', 100, '', 100],
     ['1.3', '购买纸张', '', 10, 90]], { sheetName: importSheetName, fileName: importFileName });
   const results = { innerHTML: '' }, counter = {}, deleteButton = {}, clearButton = {}, jumpInput = { value: '1' }, pageError = {}, searchInput = { value: '', focus() {} };
   let opening = null;
-  const host = { innerHTML: '', querySelector(selector) { return selector === '[data-chart-filters]' ? chartFilters : selector === '[data-field="type"]' ? typeInput : selector === '[data-ledger-panel]' ? panel : selector === '[data-action="clear-search"]' ? clearButton : selector === '[data-page-jump]' ? jumpInput : selector === '[data-page-error]' ? pageError : selector === '[data-field="search"]' ? searchInput : selector === '[data-ledger-results]' ? results : selector === '[data-ledger-count]' ? counter : selector === '[data-action="batch-delete"]' ? deleteButton : null; }, querySelectorAll() { return charts ? chartNodes : []; }, addEventListener(name, callback) { events.set(name, callback); } };
+  const periodInputs={};
+  const host = { innerHTML: '', querySelector(selector) { if (periodInputs[selector]) return periodInputs[selector];return selector === '[data-chart-filters]' ? chartFilters : selector === '[data-field="type"]' ? typeInput : selector === '[data-ledger-panel]' ? panel : selector === '[data-action="clear-search"]' ? clearButton : selector === '[data-page-jump]' ? jumpInput : selector === '[data-page-error]' ? pageError : selector === '[data-field="search"]' ? searchInput : selector === '[data-ledger-results]' ? results : selector === '[data-ledger-count]' ? counter : selector === '[data-action="batch-delete"]' ? deleteButton : null; }, querySelectorAll() { return charts ? chartNodes : []; }, addEventListener(name, callback) { events.set(name, callback); } };
   const renders=[]; Object.defineProperty(host,'innerHTML',{get:()=>renders.at(-1)||'',set:value=>renders.push(value)});
   const api = {
     getLocalAuthStatus: async () => ({ authenticated: true, account: { role, permissions: { finance: ['view'] } } }),
@@ -38,19 +39,21 @@ function fixture({ aiFails = false, saveFails = false, records = [], role = 'mai
  if (input.method === 'POST') return saveFails ? { ok: false, error: { message: '保存失败测试' } } : { ok: true, data: { count: input.body.rows.length } };
       return { ok: true, data: input.path.includes('finance-analysis') ? report || { startDate:'2026-01-01', endDate:'2026-12-31', totals: {}, records, recordCount: records.length, months:[{month:'2026-02',incomeCents:1000,expenseCents:2000},{month:'2026-03',incomeCents:1000,expenseCents:2000}], categories:[{type:'expense', category:'水费', amountCents:2000,count:2},{type:'income',category:'补贴资金',amountCents:1000,count:1}] } : { items: records } }; },
     generateFinanceNarrative: async input => { calls.push({ method: 'NARRATIVE', ...input }); return narrativeResponder ? narrativeResponder(input) : { content: JSON.stringify({summary:'收支概况',findings:[],sections:[{title:'月度变化',text:'基于完整台账'}],suggestions:[]}) }; },
+    remapFinanceSheet: async input => { calls.push({method:'REMAP',...input}); const dateConfirmations={...(sheet.dateConfirmations||{})};if(input.dateConfirmation)dateConfirmations[input.dateConfirmation.headerRowNumber]={...input.dateConfirmation,source:'user'};sheet=parseFinanceGrid(importGrid,{sheetName:importSheetName,fileName:importFileName,headerRowIndex:input.headerRowNumber-1,mapping:input.mapping,dateConfirmations});return structuredClone(sheet); },
     selectFinanceWorkbook: async () => ({ previewId: 'p', fileHash: 'a'.repeat(64), fileName: importFileName, sheets: [structuredClone(sheet)] }),
     previewFinanceCategories: async () => ({startDate:'2026-01-01',endDate:'2026-12-31',total:3,rows:[{id:'1',baseVersion:1,category:'水费'}],groups:[{category:'水费',count:1,amountCents:10000,examples:['水费账单']}],unresolved:[{summary:'报销',reason:'用途不明'}]}),
     classifyFinanceWorkbook: async input => { calls.push({method:'CLASSIFY',...input}); if(aiFails) throw new Error('AI 网络断开'); return {sheets:[structuredClone(sheet)],categories:review.categories,warnings:[]}; },
     createV3ImportSnapshot: async () => ({ success: true }),
     recognizeFinanceWorkbook: async () => { calls.push({method:'HEADERS'}); if (aiFails) throw new Error('AI 网络断开'); return { sheets: [structuredClone(sheet)], warnings: [] }; },
   };
-  const context = { window: { echarts: {init: node => {const chart={node,events:{},setOption(options){this.options=options;},on(event,callback){this.events[event]=callback;},dispose(){},resize(){}};chartInstances.push(chart);return chart;}}, api, CommunityFinanceImportReview: review, CommunityFinanceChartGroups: chartGroups, CommunityFinanceDefaultPeriod: defaultPeriod, confirm: () => true,
+  const context = { window: { echarts: {init: node => {const chart={node,events:{},setOption(options){this.options=options;},on(event,callback){this.events[event]=callback;},dispose(){},resize(){}};chartInstances.push(chart);return chart;}}, api, CommunityFinanceImportReview: review, CommunityFinanceChartGroups: chartGroups, CommunityFinanceDefaultPeriod: defaultPeriod, confirm: () => true, location: { hash: '/finance' },
     showToast: () => { throw new Error('finance messages must not overlap controls as global toasts'); } },
     structuredClone, crypto: { randomUUID }, Date, setTimeout: () => 0, clearTimeout: () => {}, CSS: { escape: value => value } };
   vm.runInNewContext(fs.readFileSync(require.resolve('../../src/renderer/js/finance-workspace-ui.js'), 'utf8'), context);
-  const click = async dataset => events.get('click')({ target: { closest: () => ({ dataset }) } });
+  const click = async dataset => events.get('click')({ target: { closest: selector => dataset.confirmPeriod && !selector.includes('[data-confirm-period]') ? null : ({ dataset }) } });
   const action = async name => events.get('click')({ target: { closest: () => ({ dataset: { action: name } }) } });
-  return { host, renders, calls, chartInstances, chartFilters, typeInput, panel, action, events, click, results, deleteButton, jumpInput, pageError, searchInput, clearButton, mount: () => context.window.CommunityFinanceWorkspace.mount(host) };
+  const confirmBalances=async()=>{for(const row of sheet.rows){const key=`${encodeURIComponent(sheet.sheetName)}:${row.sourceRowNumber}`;events.get('change')({target:{dataset:{balanceReason:key},value:'核对原表，确认真实收支'}});await click({confirmBalance:key});}};
+  return { periodInputs, location: context.window.location, confirmBalances, host, renders, calls, chartInstances, chartFilters, typeInput, panel, action, events, click, results, deleteButton, jumpInput, pageError, searchInput, clearButton, mount: () => context.window.CommunityFinanceWorkspace.mount(host) };
 }
 
 test('upload automatically selects recognized rows and confirms without manual checks; details are initially collapsed', async () => {
@@ -58,7 +61,7 @@ test('upload automatically selects recognized rows and confirms without manual c
   assert.match(ui.host.innerHTML, /确认导入 2 条/);
   assert.match(ui.host.innerHTML, /data-import-details\s*>/);
   assert.doesNotMatch(ui.host.innerHTML, /class="fin-message"/);
-  await ui.action('commit-import');
+  await ui.confirmBalances(); await ui.action('commit-import');
   const saved = ui.calls.find(call => call.method === 'POST' && call.path.endsWith('/finance-imports'));
   assert.equal(saved.body.rows.length, 2);
   assert.deepEqual(saved.body.rows.map(row => row.recordDate), ['2026-01-02', '2026-01-03']);
@@ -70,10 +73,10 @@ test('AI network failure and save failure preserve recognition and allow retry w
   await ui.action('ai-classify');
   assert.match(ui.host.innerHTML, /AI 网络断开/);
   assert.match(ui.host.innerHTML, /确认导入 2 条/);
-  await ui.action('commit-import');
+  await ui.confirmBalances(); await ui.action('commit-import');
   assert.match(ui.host.innerHTML, /保存失败测试/);
   assert.match(ui.host.innerHTML, /确认导入 2 条/);
-  await ui.action('commit-import');
+  await ui.confirmBalances(); await ui.action('commit-import');
   const attempts = ui.calls.filter(call => call.method === 'POST' && call.path.endsWith('/finance-imports'));
   assert.equal(attempts.length, 2);
   assert.equal(attempts[0].body.batchId, attempts[1].body.batchId);
@@ -152,6 +155,7 @@ test('opening settings save updates balance; default cutoff is today and date qu
   await ui.action('save-opening');
   assert.match(ui.host.innerHTML, /1,234.56/);
   assert.equal(ui.calls.find(call => call.method === 'PATCH').body.amountCents, 123456);
+  ui.events.get('change')({ target: { dataset: { field: 'startDate' }, value: '2026-02-01' } });
   ui.events.get('change')({ target: { dataset: { field: 'endDate' }, value: '2026-02-28' } });
   await ui.action('apply-dates');
   assert.ok(ui.calls.some(call => call.path.includes('finance-account-balance?asOfDate=2026-02-28')));
@@ -319,29 +323,83 @@ test('unresolved original transaction blocks whole save and opens details; manua
  const ui=fixture({aiFails:true,importGrid:[['日期','摘要','收入','支出','余额'],['2026-01-02','收：捐款',100,'',100],['2026-01-03','付：水费','','10.001',90]]});
  await ui.mount();await ui.action('import');await ui.action('pick-file');
  assert.match(ui.host.innerHTML,/暂停整批导入/u);assert.match(ui.host.innerHTML,/data-import-details[^>]*open/u);assert.match(ui.host.innerHTML,/data-action="commit-import" disabled/u);
- await ui.action('commit-import');assert.equal(ui.calls.filter(call=>call.path?.endsWith('/finance-imports')).length,0);
+ await ui.confirmBalances(); await ui.action('commit-import');assert.equal(ui.calls.filter(call=>call.path?.endsWith('/finance-imports')).length,0);
  ui.events.get('change')({target:{dataset:{rowKey:'1%E6%9C%88:3',rowField:'amount'},value:'10.00'}});
- await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));
+ await ui.confirmBalances(); await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));
  assert.equal(saved.body.rows.length,2);assert.equal(saved.body.reviewRows.length,2);assert.equal(saved.body.previewId,'p');assert.ok(saved.body.reviewRows[1].manualFields.includes('amountCents'));
 });
 test('cross-file similarities pause import until grouped independent/existing choice, never deduplicate source rows',async()=>{
  const records=[{id:'old',recordDate:'2026-01-02',recordType:'income',summary:'拨款到账',category:'上级拨款',amountCents:10000,sourceFileHash:'c'.repeat(64)}];
  const ui=fixture({records});await ui.mount();await ui.action('import');await ui.action('pick-file');
  assert.match(ui.host.innerHTML,/其他来源相似/u);assert.match(ui.host.innerHTML,/data-action="commit-import" disabled/u);
- await ui.action('duplicates-independent');await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));assert.equal(saved.body.rows.length,2);assert.equal(saved.body.reviewRows[0].duplicateDecision,'independent');
+ await ui.action('duplicates-independent');await ui.confirmBalances(); await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));assert.equal(saved.body.rows.length,2);assert.equal(saved.body.reviewRows[0].duplicateDecision,'independent');
  const second=fixture({records});await second.mount();await second.action('import');await second.action('pick-file');await second.action('duplicates-existing');await second.action('commit-import');const remaining=second.calls.find(call=>call.path?.endsWith('/finance-imports'));assert.equal(remaining.body.rows.length,1);assert.equal(remaining.body.reviewRows.length,2);
 });
 test('explicit source total mismatch pauses whole import until corrected or original-total error explained',async()=>{
  const ui=fixture({importGrid:[['日期','摘要','收入','支出'],['2026-01-02','收：捐款',100,''],['2026-01-03','付：水费','',30],['','本月合计',100,20]]});
- await ui.mount();await ui.action('import');await ui.action('pick-file');assert.match(ui.host.innerHTML,/存在差异/u);await ui.action('commit-import');assert.equal(ui.calls.filter(call=>call.path?.endsWith('/finance-imports')).length,0);
- ui.events.get('change')({target:{dataset:{totalReason:'1%E6%9C%88:4'},value:'已核对凭证，原表合计遗漏10元'}});await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));assert.equal(saved.body.rows.length,2);assert.equal(saved.body.totalAcknowledgements['1%E6%9C%88:4'],'已核对凭证，原表合计遗漏10元');
+ await ui.mount();await ui.action('import');await ui.action('pick-file');assert.match(ui.host.innerHTML,/存在差异/u);await ui.confirmBalances(); await ui.action('commit-import');assert.equal(ui.calls.filter(call=>call.path?.endsWith('/finance-imports')).length,0);
+ ui.events.get('change')({target:{dataset:{totalReason:'1%E6%9C%88:4'},value:'已核对凭证，原表合计遗漏10元'}});await ui.confirmBalances(); await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));assert.equal(saved.body.rows.length,2);assert.equal(saved.body.totalAcknowledgements['1%E6%9C%88:4'],'已核对凭证，原表合计遗漏10元');
 });
 
 test('April numbered template shows exactly 15 importable payments without blank row corrections or AI header retries',async()=>{
  const grid=require('../helpers/finance-april-template.cjs')();
  const ui=fixture({importGrid:grid,importSheetName:'4月',importFileName:'财务2024.xlsx'});await ui.mount();await ui.action('import');await ui.action('pick-file');
- assert.match(ui.host.innerHTML,/确认导入 15 条/u);assert.doesNotMatch(ui.host.innerHTML,/data-action="commit-import" disabled/u);assert.doesNotMatch(ui.host.innerHTML,/暂停整批导入/u);
+ assert.match(ui.host.innerHTML,/确认导入 15 条/u);assert.doesNotMatch(ui.host.innerHTML,/data-action="commit-import" disabled/u);assert.match(ui.host.innerHTML,/data-import-blockers hidden/u);
  assert.equal(ui.calls.filter(call=>call.method==='HEADERS').length,0);
- await ui.action('commit-import');const submitted=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));
+ await ui.confirmBalances(); await ui.action('commit-import');const submitted=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));
  assert.equal(submitted.body.rows.length,15);assert.equal(submitted.body.reviewRows.length,15);assert.equal(submitted.body.rows.at(-1).recordDate,'2024-04-16');assert.ok(submitted.body.rows.every(row=>row.sourceRowNumber>=5 && row.sourceRowNumber<=19));
+});
+
+test('last-year balance is only an anchor and does not block the confirmation button',async()=>{
+ const grid=[['2026年01月'],['序号','日期','摘要','收入','支出','余额'],['','','上年余额','','',100],
+ [1,4,'付：水费','',10,90],[2,6,'收：捐款',20,'',110],['','','本月合计',20,10,'']];
+ const ui=fixture({importGrid:grid});await ui.mount();await ui.action('import');await ui.action('pick-file');
+ assert.match(ui.host.innerHTML,/确认导入 2 条/u);assert.doesNotMatch(ui.host.innerHTML,/data-action="commit-import" disabled/u);
+ await ui.action('commit-import');const saved=ui.calls.find(call=>call.path?.endsWith('/finance-imports'));
+ assert.equal(saved.body.rows.length,2);assert.deepEqual(Array.from(saved.body.rows,row=>row.sourceRowNumber),[4,5]);
+});
+
+test('ledger keyword search includes both income and expense amounts in yuan, with grouping and fullwidth input',async()=>{
+ const ui=fixture({records:[{id:'income',recordDate:'2026-01-02',recordType:'income',amountCents:9800000,summary:'租金',category:'收入'},
+ {id:'expense',recordDate:'2026-01-03',recordType:'expense',amountCents:9800000,summary:'工程',category:'支出'},
+ {id:'small',recordDate:'2026-01-04',recordType:'expense',amountCents:12345,summary:'水费',category:'支出'}],realAnalysis:true});
+ await ui.mount();
+ for(const query of ['98000','98,000','98000.00','￥９８，０００．００元']){
+  ui.events.get('input')({target:{dataset:{field:'search'},value:query}});
+  assert.match(ui.results.innerHTML,/data-ledger-row="income"/u);assert.match(ui.results.innerHTML,/data-ledger-row="expense"/u);assert.doesNotMatch(ui.results.innerHTML,/data-ledger-row="small"/u);
+ }
+ ui.events.get('input')({target:{dataset:{field:'search'},value:'123.45'}});assert.match(ui.results.innerHTML,/data-ledger-row="small"/u);
+});
+
+
+test('invalid date ranges keep correction and return controls; recent data and corrected dates recover', async () => {
+  const ui=fixture({records:[{id:'1',recordDate:'2025-07-30',recordType:'income',amountCents:10000}],realAnalysis:true});await ui.mount();
+  const before=ui.calls.length;
+  ui.events.get('change')({target:{dataset:{field:'startDate'},value:''}});await ui.action('apply-dates');
+  assert.equal(ui.calls.length,before);assert.match(ui.host.innerHTML,/请选择有效的起止日期/);
+  assert.match(ui.host.innerHTML,/data-field="startDate"/);assert.match(ui.host.innerHTML,/恢复最近数据/);assert.match(ui.host.innerHTML,/返回工作台/);
+  await ui.action('reload');assert.equal(ui.calls.length,before);
+  await ui.action('recent-data');assert.doesNotMatch(ui.host.innerHTML,/读取财务数据失败/);assert.match(ui.host.innerHTML,/最新记录为 2025-07-30/);
+  ui.events.get('change')({target:{dataset:{field:'startDate'},value:'2025-08-01'}});
+  ui.events.get('change')({target:{dataset:{field:'endDate'},value:'2025-07-31'}});await ui.action('apply-dates');assert.match(ui.host.innerHTML,/结束日期不能早于开始日期/);
+  ui.events.get('change')({target:{dataset:{field:'endDate'},value:'2025-08-31'}});await ui.action('apply-dates');assert.doesNotMatch(ui.host.innerHTML,/读取财务数据失败/);assert.match(ui.host.innerHTML,/所选日期范围暂无收支记录/);
+  const failed=fixture({ledgerFails:true});await failed.mount();await failed.action('return-overview');assert.equal(failed.location.hash,'/overview');
+});
+
+
+test('worksheet period conflict is visible; one confirmation fills days while preserving manually edited records',async()=>{
+ const grid=[['2025年11月'],['序号','日期','摘要','收入','支出','余额'],['','','期初余额','','',100],[1,5,'收：经费',10,'',110],[2,12,'收：经费',20,'',130]];
+ const ui=fixture({importGrid:grid,importSheetName:'12月',importFileName:'财务2025.xlsx'});await ui.mount();await ui.action('import');await ui.action('pick-file');
+ assert.match(ui.host.innerHTML,/确认“12月”的年月/);assert.match(ui.host.innerHTML,/月份依据不一致/);assert.match(ui.host.innerHTML,/原表第 1 行/);
+ const change=(key,field,value)=>ui.events.get('change')({target:{dataset:{rowKey:key,rowField:field},value}});
+ const first=`${encodeURIComponent('12月')}:4`,second=`${encodeURIComponent('12月')}:5`;
+ change(first,'summary','手工核对摘要');change(first,'recordDate','2025-12-06');change(second,'category','其他收入');
+ const key=`${encodeURIComponent('12月')}:2`;
+ ui.periodInputs[`[data-period-year="${key}"]`]={value:'2025'};ui.periodInputs[`[data-period-month="${key}"]`]={value:'12'};
+ await ui.click({confirmPeriod:'12月',periodHeader:'2'});
+ assert.doesNotMatch(ui.host.innerHTML,/确认“12月”的年月/);assert.match(ui.host.innerHTML,/2025-12-12/);assert.match(ui.host.innerHTML,/手工核对摘要/);
+ await ui.action('commit-import');
+ const saved=ui.calls.find(call=>call.method==='POST'&&call.path.endsWith('/finance-imports'));
+ assert.deepEqual(saved.body.rows.map(row=>row.recordDate),['2025-12-06','2025-12-12']);assert.equal(saved.body.rows[0].summary,'手工核对摘要');assert.equal(saved.body.rows[1].categorySource,'manual');
+ assert.equal(ui.calls.filter(call=>call.method==='REMAP').length,1);
 });

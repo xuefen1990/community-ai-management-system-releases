@@ -394,6 +394,14 @@ test('手机号注册主账号，并管理成员、有效期和模型', async (t
   assert.equal(savedProviderTest.body.totalTokens, 10);
   assert.equal(aiRequestCount, 3);
 
+  const batchBefore = await request(url, '/ai/providers', { token: adminToken });
+  const invalidBatch = await request(url, '/ai/providers/batch', { token: adminToken, method:'POST', body:{providers:[{name:'rollback-test',baseUrl:'https://example.invalid/v1',apiKey:'test-only',defaultModel:'chat',availableModels:['chat'],contextTokens:32768},{name:'invalid',contextTokens:1}]}});
+  assert.equal(invalidBatch.status,400);
+  const batchAfter = await request(url, '/ai/providers', { token: adminToken });
+  assert.deepEqual(batchAfter.body.providers.map(p=>p.id),batchBefore.body.providers.map(p=>p.id));
+  const disabledCredits = await request(url, '/ai/credit-policy', {token:adminToken});
+  assert.equal(disabledCredits.body.enabled,false);
+
   const ordinaryEstimate = await request(url, '/ai/estimate', {
     token: restoredUnitAdminLogin.body.token,
     method: 'POST',
