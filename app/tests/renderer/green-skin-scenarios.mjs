@@ -3,10 +3,10 @@ import { foundation } from '../../src/renderer/foundation/bootstrap.mjs';
 
 const menus = [
   ['工作台', '/overview'], ['数据统计', '/statistics'], ['居民档案', '/personnel'],
-  ['党员管理', '/party'], ['公文拟写', '/drafting'], ['证明管理', '/certificate-workspace'],
-  ['民情记录', '/visits'], ['资金发放中心', '/funds'], ['村务值班', '/village-duty'],
-  ['财务收支', '/finance'], ['工作事项', '/work'], ['土地承包确权', '/land'],
-  ['电子档案柜', '/documents'], ['AI 操作记录', '/assistant-records'], ['系统设置', '/settings'],
+  ['党员管理', '/party'], ['民情记录', '/visits'], ['公文拟写', '/drafting'],
+  ['证明管理', '/certificate-workspace'], ['电子档案柜', '/documents'], ['资金发放中心', '/funds'],
+  ['财务收支', '/finance'], ['土地承包确权', '/land'], ['村务值班', '/village-duty'],
+  ['工作事项', '/work'], ['AI 操作记录', '/assistant-records'], ['系统设置', '/settings'],
 ];
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 const assert = (value, message) => { if (!value) throw new Error(message); };
@@ -47,6 +47,7 @@ export async function checkGreenSkinLayout(width, height) {
   assert(getComputedStyle(document.querySelector('.app-wrapper')).backgroundImage === 'none', '旧背景图在底部露出');
   assert(getComputedStyle(document.querySelector('#community-skin-titlebar')).webkitAppRegion === 'drag', '标题栏不能拖动窗口');
   assert([...document.querySelectorAll('.sidebar-menu .menu-item')].map(item => item.textContent.trim()).join('|') === menus.map(item => item[0]).join('|'), '15 项默认菜单名称或顺序不正确');
+  assert([...document.querySelectorAll('[data-skin-group-start]')].map(item => item.dataset.skinGroupStart).join('|') === '常用|居民服务|办公文书|资金土地|值班事项|智能与系统', '侧栏分类缺失或重复');
   const results = [];
   for (const [label, route] of menus) {
     await openGreenSkinRoute(route);

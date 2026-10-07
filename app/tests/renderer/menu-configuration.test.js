@@ -29,10 +29,9 @@ test('默认菜单与截图顺序一致，设置中的排序号从 1 连续排�
   ];
   const rows = menuRows(orderDefaultMenus(keys.map(key => ({ key, label: key }))));
   assert.deepEqual(rows.map(row => row.key), [
-    'overview', 'statistics', 'personnel', 'party', 'document-drafting',
-    'certificate-management', 'visit-records', 'contract-fees', 'village-duty',
-    'finance', 'work-management', 'land', 'documents', 'ai-assistant-records',
-    'settings',
+    'overview', 'statistics', 'personnel', 'party', 'visit-records',
+    'document-drafting', 'certificate-management', 'documents', 'contract-fees',
+    'finance', 'land', 'village-duty', 'work-management', 'ai-assistant-records', 'settings',
   ]);
   assert.deepEqual(rows.map(row => row.order), Array.from({ length: 15 }, (_, index) => index + 1));
 });

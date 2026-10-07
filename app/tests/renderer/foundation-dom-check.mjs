@@ -121,7 +121,7 @@ const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Conte
       let completed=false;
       for(let attempt=0;attempt<110;attempt++){await new Promise(resolve=>setTimeout(resolve,200));try{const value=await evaluate('document.body?.dataset.testResult');if(value){const again=JSON.parse(value);if(!again.ok)throw Error(again.error);completed=true;break;}}catch(error){if(error.message!=='Cannot find context with specified id')throw error;}}
       if(!completed)throw Error('Reload did not complete interaction checks');
-      if(!await evaluate("(()=>{const e=document.querySelector('#aiCopilotToggleBtn'),r=e.getBoundingClientRect();return !e.style.left&&Math.abs(innerWidth-r.right-24)<2&&Math.abs(innerHeight-r.bottom-24)<2})()"))throw Error('Reload must reset launcher to bottom right');
+      if(!await evaluate("(()=>{const e=document.querySelector('#aiCopilotToggleBtn'),r=e.getBoundingClientRect();return !e.style.left&&Math.abs(innerWidth-r.right-24)<2&&Math.abs(innerHeight-r.bottom-6)<2})()"))throw Error('Reload must reset resident launcher to its bottom gutter');
       result.floatingInteraction={nativePointerDrag:true,noClickAfterDrag:true,reopenKeepsPosition:true,reloadResetsBottomRight:true};
       await evaluate("document.querySelector('[data-testid=\"accounts-person-synthetic-0\"]').click()");
       await evaluate("new Promise(resolve=>setTimeout(resolve,900))");

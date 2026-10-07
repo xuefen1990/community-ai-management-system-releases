@@ -6,12 +6,19 @@ const withDefaultLabel = menu => DEFAULT_LABELS[menu.key]
   ? { ...menu, label: DEFAULT_LABELS[menu.key] }
   : menu;
 
-const DEFAULT_MENU_KEYS = [
-  'overview', 'statistics', 'personnel', 'party', 'document-drafting',
-  'certificate-management', 'visit-records', 'contract-fees', 'village-duty',
-  'finance', 'work-management', 'land', 'documents', 'ai-assistant-records',
-  'settings',
+const MENU_GROUPS = [
+  { label: '常用', keys: ['overview', 'statistics'] },
+  { label: '居民服务', keys: ['personnel', 'party', 'visit-records'] },
+  { label: '办公文书', keys: ['document-drafting', 'certificate-management', 'documents'] },
+  { label: '资金土地', keys: ['contract-fees', 'finance', 'land'] },
+  { label: '值班事项', keys: ['village-duty', 'work-management'] },
+  { label: '智能与系统', keys: ['ai-assistant-records', 'settings'] },
 ];
+const DEFAULT_MENU_KEYS = MENU_GROUPS.flatMap(group => group.keys);
+
+export function menuGroupLabel(key) {
+  return MENU_GROUPS.find(group => group.keys.includes(key))?.label || '';
+}
 
 export function orderDefaultMenus(menus) {
   const position = new Map(DEFAULT_MENU_KEYS.map((key, index) => [key, index]));
