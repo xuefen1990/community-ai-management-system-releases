@@ -25,6 +25,9 @@
     --skin-titlebar-height: 44px;
   }
   body.community-desktop-skin { --skin-titlebar-height: 44px; }
+  /* Focus may scroll overflowing descendants, but must never shift the
+     desktop shell underneath its fixed native titlebar. */
+  html:has(body.community-skin-shell-ready), body.community-skin-shell-ready { overflow: clip; }
   .community-skin-titlebar {
     position: fixed;
     inset: 0 0 auto;
@@ -95,19 +98,18 @@
   }
   body.community-green-skin .sidebar-footer { padding: 9px 10px; }
   body.community-green-skin .admin-profile-card { padding: 8px; border-radius: 8px; }
-  /* A dedicated lower gutter keeps the default floating launcher clear of all
-     scrolling business controls, including intermediate rows and reminders. */
+  /* Content reaches the bottom; only the launcher corner needs clearance. */
   body.community-green-skin .app-wrapper { background: var(--bg-main); }
   body.community-green-skin .app-wrapper.dashboard-view {
     background-image: none !important;
     background-color: var(--bg-main) !important;
   }
-  body.community-green-skin .app-main { min-width: 0; padding: 18px; height: calc(100vh - 68px); box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
-  body.community-skin-shell-ready .app-main { height: calc(100vh - var(--skin-titlebar-height) - 68px); }
-  /* Extend the resident table towards the bottom while keeping its launcher
-     in a separate gutter; the footer itself remains within the scroll area. */
-  body.community-skin-shell-ready .app-main:has(#tab-personnel) { height: calc(100vh - var(--skin-titlebar-height) - 48px); padding-bottom: 4px; }
-  body.community-green-skin:has(#tab-personnel) .foundation-ai-launcher { bottom: 6px; }
+  body.community-green-skin .app-main { min-width: 0; padding: 18px 18px 4px; height: 100vh; box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
+  body.community-skin-shell-ready .app-main { height: calc(100vh - var(--skin-titlebar-height)); }
+  body.community-green-skin .foundation-ai-launcher { bottom: 6px; }
+  /* Long pages without pagination can scroll their last controls above the
+     launcher. This end spacer is inside the page, not a viewport-wide gutter. */
+  body.community-green-skin .app-main:not(:has(.pagination-bar, .cwt-pagination-bar, .doc-pagination-bar, .fin-ledger-pagination, .cf-pager))::after { content: ""; display: block; height: 44px; flex: none; }
 
   /* Shared business surfaces; selectors exclude document paper/editor content. */
   body.community-green-skin.light-theme :is(.detail-panel, .main-table-card, .file-list-card, .dropzone-card, .settings-card,
@@ -157,7 +159,9 @@
   body.community-green-skin .table-wrapper { min-width: 0; }
   /* Summary cards must not consume the resident table's entire viewport at
      the minimum window size. The main area can scroll to the remaining rows. */
-  body.community-green-skin #tab-personnel .personnel-content-card { flex: 1 0 340px; min-height: 340px; }
+  body.community-green-skin #tab-personnel, body.community-green-skin #tab-personnel .personnel-view { overflow: visible; }
+  body.community-green-skin #tab-personnel .land-table-container { overflow: clip; }
+  body.community-green-skin #tab-personnel .personnel-content-card { flex: 1 0 340px; min-height: 340px; overflow: clip; }
   body.community-green-skin #tab-personnel .el-table__body-wrapper { min-height: 160px; }
   body.community-green-skin.light-theme .data-table thead th {
     background: #f8fafb !important;
@@ -309,12 +313,12 @@
   body.community-green-skin.light-theme .foundation-ai-launcher { background: #059669; color: #fff; }
   body.community-green-skin .foundation-ai-launcher svg { width: 15px; height: 15px; }
   body.community-green-skin :is(.el-pagination, .table-pagination, .pagination-footer, .cf-pager) { flex-wrap: wrap; row-gap: 8px; }
-  body.community-green-skin .app-main :is(.pagination-bar, .cwt-pagination-bar, .doc-pagination-bar, .fin-ledger-pagination) { padding-right: 130px; flex-wrap: wrap; row-gap: 8px; }
+  body.community-green-skin .app-main :is(.pagination-bar, .cwt-pagination-bar, .doc-pagination-bar, .fin-ledger-pagination, .cf-pager, .table-pagination, .pagination-footer) { position: sticky; bottom: 0; z-index: 4; background: var(--bg-card); min-height: 40px; padding: 4px 130px 4px 8px; box-sizing: border-box; flex-shrink: 0; flex-wrap: wrap; row-gap: 8px; }
   body.community-green-skin #tab-personnel .pagination-bar { justify-content: space-between; padding-left: 8px; }
 
   @media (max-width: 1250px) {
     body.community-green-skin .app-sidebar { flex-basis: 184px; width: 184px; }
-    body.community-green-skin .app-main { padding: 14px; }
+    body.community-green-skin .app-main { padding: 14px 14px 4px; }
     body.community-green-skin .workbench-details { grid-template-columns: minmax(0, 1fr) 280px !important; }
     body.community-green-skin .wb-stat-value,
     body.community-green-skin .community-overview-balance strong { font-size: 18px; }

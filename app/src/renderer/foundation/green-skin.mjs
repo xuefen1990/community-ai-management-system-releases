@@ -9,6 +9,16 @@ export function installGreenSkin(document, platform) {
   document.body.classList.add('community-desktop-skin');
   document.body.dataset.skinPlatform = platform;
 
+  // Keep only the outer desktop viewport anchored. Inner business scroll
+  // positions remain owned by their existing pages. Focus can leave a stale
+  // document offset when the authenticated shell first replaces the login.
+  const alignShell = () => {
+    if (document.body.classList.contains('community-skin-shell-ready') && document.scrollingElement?.scrollTop) document.scrollingElement.scrollTop = 0;
+  };
+  const view = document.defaultView;
+  view?.addEventListener('scroll', alignShell);
+  view?.addEventListener('resize', alignShell);
+
   const decorate = () => {
     const shell = document.querySelector('[data-testid="business-shell"]');
     const existing = document.getElementById(TITLEBAR_ID);
@@ -28,6 +38,7 @@ export function installGreenSkin(document, platform) {
       document.body.append(titlebar);
     }
     document.body.classList.add('community-skin-shell-ready');
+    alignShell();
     const buttons = [...shell.querySelectorAll('.sidebar-menu .menu-item')];
     const menus = foundation.shell.allowedMenus;
     let previousGroup = '';
@@ -55,6 +66,8 @@ export function installGreenSkin(document, platform) {
   decorate();
   return () => {
     observer.disconnect();
+    view?.removeEventListener('scroll', alignShell);
+    view?.removeEventListener('resize', alignShell);
     document.getElementById(TITLEBAR_ID)?.remove();
     document.body.classList.remove('community-green-skin', 'community-desktop-skin', 'community-skin-shell-ready');
     delete document.body.dataset.skinPlatform;

@@ -52,7 +52,7 @@ export async function checkGreenSkinLayout(width, height) {
   for (const [label, route] of menus) {
     await openGreenSkinRoute(route);
     assert(!document.querySelector('.foundation-extension-error'), `${label} 扩展错误`);
-    assert(main.getBoundingClientRect().top >= 34, `${label} 内容与标题栏重叠`);
+    assert(main.getBoundingClientRect().top >= 34, `${label} 内容与标题栏重叠 top=${main.getBoundingClientRect().top} scrollY=${scrollY} body=${document.body.className}`);
     assert(document.documentElement.scrollWidth <= width + 1, `${label} 窗口横向溢出`);
     assert(main.scrollWidth <= main.clientWidth + 2, `${label} 主区域横向溢出：${main.scrollWidth}/${main.clientWidth}`);
     const active = document.querySelector('.sidebar-menu .menu-item.active');
@@ -73,7 +73,22 @@ export async function checkGreenSkinLayout(width, height) {
     const rect = launcher.getBoundingClientRect();
     assert(rect.width > 0 && rect.height >= 32 && rect.height <= 42, 'AI 浮钮尺寸不正确');
     assert(rect.right <= width && rect.bottom <= height, 'AI 浮钮超出窗口');
-    assert(rect.top >= main.getBoundingClientRect().bottom, `AI 浮钮与业务滚动区重叠：${label} launcher=${rect.top} main=${main.getBoundingClientRect().bottom} margin=${getComputedStyle(main).marginBottom}`);
+    assert(Math.abs(main.getBoundingClientRect().bottom - height) <= 1, `${label} 内容区未延伸到窗口底边`);
+    for (const target of main.querySelectorAll('button, input, select, textarea, .el-pagination, .pagination-info')) {
+      if (!visible(target)) continue;
+      const bounds = target.getBoundingClientRect();
+      const left = Math.max(rect.left, bounds.left), right = Math.min(rect.right, bounds.right);
+      const top = Math.max(rect.top, bounds.top), bottom = Math.min(rect.bottom, bounds.bottom);
+      const pager = main.querySelector('.pagination-bar');
+      const pagerBounds = pager?.getBoundingClientRect();
+      // Sticky pagination already covers rows underneath its own opaque strip.
+      // Test actual footer controls, not those hidden behind the footer.
+      if (pagerBounds && !pager.contains(target) && top >= pagerBounds.top && bottom <= pagerBounds.bottom) continue;
+      if (right > left && bottom > top) {
+        const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+        assert(hit !== launcher && !launcher.contains(hit), `AI 浮钮遮挡操作：${label} ${target.textContent.trim()} viewport=${width}x${height} target=${JSON.stringify(bounds.toJSON())} footer=${JSON.stringify(main.querySelector(".pagination-bar")?.getBoundingClientRect().toJSON())}`);
+      }
+    }
     const footer = document.querySelector('.sidebar-footer');
     assert(footer.getBoundingClientRect().bottom <= height + 1, `侧栏底部操作超出窗口：${footer.getBoundingClientRect().bottom}/${height}`);
     if (route === '/overview') {
@@ -88,6 +103,7 @@ export async function checkGreenSkinLayout(width, height) {
     if (route === '/personnel') {
       const body = main.querySelector('.el-table__body-wrapper');
       assert(body && body.getBoundingClientRect().height >= 150, '居民表格被摘要挤压，无法查看数据行');
+      assert(height - main.querySelector('.pagination-bar').getBoundingClientRect().bottom >= -1 && height - main.querySelector('.pagination-bar').getBoundingClientRect().bottom <= 6, `居民分页未贴近窗口底边 ${width}x${height} footer=${main.querySelector('.pagination-bar').getBoundingClientRect().bottom} main=${main.getBoundingClientRect().bottom}`);
     }
     results.push({ label, route, mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, clickableControl: control?.textContent.trim() });
   }

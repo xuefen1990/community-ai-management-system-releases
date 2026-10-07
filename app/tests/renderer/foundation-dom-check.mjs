@@ -105,7 +105,7 @@ const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Conte
     if(mode==='interaction'&&result.ok){
       const evaluate=async expression=>{const response=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true},sessionId);if(response.exceptionDetails)throw Error(response.exceptionDetails.text);return response.result.value;};
       const rect=await evaluate("(()=>{const r=document.querySelector('#aiCopilotToggleBtn').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:innerWidth-r.right,bottom:innerHeight-r.bottom}})()");
-      if(Math.abs(rect.right-24)>2||Math.abs(rect.bottom-24)>2)throw Error('AI launcher initial position is not bottom right');
+      if(Math.abs(rect.right-24)>2||Math.abs(rect.bottom-6)>2)throw Error('AI launcher initial position is not bottom right');
       const x=rect.x+rect.width/2,y=rect.y+rect.height/2;
       await call('Input.dispatchMouseEvent',{type:'mousePressed',x,y,button:'left',clickCount:1},sessionId);
       for(let i=1;i<=8;i++)await call('Input.dispatchMouseEvent',{type:'mouseMoved',x:x-i*30,y:y-i*15,button:'left',buttons:1},sessionId);
