@@ -36,3 +36,16 @@ test('默认菜单与截图顺序一致，设置中的排序号从 1 连续排�
   ]);
   assert.deepEqual(rows.map(row => row.order), Array.from({ length: 15 }, (_, index) => index + 1));
 });
+
+test('居民档案仅替换默认 label，保留菜单身份、输入和自定义别名', async () => {
+  const { orderDefaultMenus, menuRows, menuConfigFromRows } = await import('../../src/renderer/foundation/menu-configuration.mjs');
+  const original = { key: 'personnel', label: '居民一户一档', tab: 'personnel', route: '/personnel' };
+  const [display] = orderDefaultMenus([original]);
+  assert.deepEqual(display, { ...original, label: '居民档案' });
+  assert.equal(original.label, '居民一户一档');
+  const [row] = menuRows([original], { personnel: { customAlias: '本村名册', visible: false } });
+  assert.equal(row.label, '居民档案');
+  assert.equal(row.customAlias, '本村名册');
+  assert.equal(row.visible, false);
+  assert.equal(menuConfigFromRows([row]).personnel.customAlias, '本村名册');
+});

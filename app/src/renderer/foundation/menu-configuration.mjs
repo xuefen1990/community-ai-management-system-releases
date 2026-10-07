@@ -1,5 +1,11 @@
 const CONFIG_KEY = 'cwt_menu_visibility_config';
 
+// Default presentation only; stable keys, routes and saved aliases stay intact.
+const DEFAULT_LABELS = { personnel: '居民档案' };
+const withDefaultLabel = menu => DEFAULT_LABELS[menu.key]
+  ? { ...menu, label: DEFAULT_LABELS[menu.key] }
+  : menu;
+
 const DEFAULT_MENU_KEYS = [
   'overview', 'statistics', 'personnel', 'party', 'document-drafting',
   'certificate-management', 'visit-records', 'contract-fees', 'village-duty',
@@ -11,7 +17,7 @@ export function orderDefaultMenus(menus) {
   const position = new Map(DEFAULT_MENU_KEYS.map((key, index) => [key, index]));
   return [...menus].sort((a, b) =>
     (position.get(a.key) ?? DEFAULT_MENU_KEYS.length) - (position.get(b.key) ?? DEFAULT_MENU_KEYS.length)
-    || menus.indexOf(a) - menus.indexOf(b));
+    || menus.indexOf(a) - menus.indexOf(b)).map(withDefaultLabel);
 }
 
 export function readMenuConfiguration() {
@@ -47,7 +53,7 @@ export function moveMenuRow(rows, key, target) {
 export function menuRows(menus, config = {}) {
   return menus.map((menu, index) => ({
     key: menu.key,
-    label: menu.label,
+    label: DEFAULT_LABELS[menu.key] || menu.label,
     svgContent: menu.svgContent,
     icon: menu.icon,
     visible: menu.key === 'settings' || config[menu.key]?.visible !== false,
