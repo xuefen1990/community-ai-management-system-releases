@@ -1,0 +1,1949 @@
+{
+  "beforeSkinHead": "4ebdc5cd23e880347be5f188b7dbf30a89bc4bc5",
+  "statusEntries": 484,
+  "groups": {
+    "构建、文档及其他既有文件": 155,
+    "应用业务及渲染代码（既有）": 167,
+    "应用测试（既有）": 112,
+    "本地后端代码与测试（既有）": 49,
+    "新版 foundation 及其锁定资源（既有）": 1
+  },
+  "files": [
+    {
+      "status": " M",
+      "path": ".gitignore"
+    },
+    {
+      "status": " M",
+      "path": "AGENTS.md"
+    },
+    {
+      "status": " M",
+      "path": "README.md"
+    },
+    {
+      "status": " M",
+      "path": "app/build/icon.icns"
+    },
+    {
+      "status": " M",
+      "path": "app/electron-builder.yml"
+    },
+    {
+      "status": " M",
+      "path": "app/package-lock.json"
+    },
+    {
+      "status": " M",
+      "path": "app/package.json"
+    },
+    {
+      "status": " D",
+      "path": "app/src/legacy/server/mobile-upload-server.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/ai-assistant-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/ai-router.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/ai-settings-store.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/backend-update-client.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/contract-fee-file-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/document-conversation-interpreter.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/document-drafting-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/document-export-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/empty-database.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/index.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/ipc-handlers.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/openai-compatible-client.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/remembered-login-store.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/remote-auth-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/remote-database-store.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/update-service.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/main/window-config.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/preload/index.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/css/contract-fee-workspace.css"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/css/disbursement-workbench.css"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/index.html"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/ai-settings-ui.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/contract-fee-workspace.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/core/ai-server.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/core/excel-cell-normalizer.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/core/utils.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/core/xlsx-raw-cell-reader.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/disbursement-workbench.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/document-drafting-ui.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/echarts.min.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/html2canvas.min.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/local-auth-ui.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_audit_logger.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_config.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_confirmation_guard.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_conversation_manager.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_dictionary_registry.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_entity_extractor.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_llm_client.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_masking_utils.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_mode_router.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_orchestrator.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_prompt_context.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_schema_validator.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_skill_registry.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_text_normalizer.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_ui_adapter.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/ai_workflow.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/dictionary/person_dictionary.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/dictionary/record_dictionary.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/schemas/person_skill_schemas.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/schemas/record_skill_schemas.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_duty.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_household.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_land.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_party.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_person.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_record.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_stats.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/ai/skills_ui.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/appeal_visit_skill.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/certificate.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/duty-flexible.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/household-360.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/party.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/personnel_skills.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/js/modules/visit_skills.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/modules/work-management.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/personnel-search.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/resident-subsidy-profile.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/renderer/js/update-ui.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/login_bg.jpg"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/login_bg_dark.jpg"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/logo.png"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/mobile_upload.html"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/renderer.js"
+    },
+    {
+      "status": " D",
+      "path": "app/src/renderer/style.css"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/contract-fee-excel-parser.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/contract-fee-model.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/disbursement-excel-parser.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/disbursement-workbench-model.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/farmland-subsidy-excel-parser.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/ipc-contract.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/personnel-excel-parser.js"
+    },
+    {
+      "status": " M",
+      "path": "app/src/shared/special-personnel-profiles.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/brand/branding.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/ai-assistant-service.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/ai-router.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/ai-settings-store.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/backend-update-client.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/contract-fee-file-service.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/database-store.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/document-drafting-service.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/ipc-handlers.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/remembered-login-store.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/remote-auth-service.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/remote-database-store.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/update-service.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/main/window-config.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/preload/ipc-contract.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/ai-settings-ui.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/contract-fee-workspace.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/document-drafting-ui.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/local-auth-ui.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/resident-subsidy-profile.test.js"
+    },
+    {
+      "status": " D",
+      "path": "app/tests/renderer/sidebar-footer-layout.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/update-ui.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/workbench-dom-scenarios.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/renderer/workbench-fixture.html"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/shared/contract-fee-excel-parser.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/shared/contract-fee-model.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/shared/disbursement-excel-parser.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/shared/disbursement-workbench-model.test.js"
+    },
+    {
+      "status": " M",
+      "path": "app/tests/shared/personnel-excel-parser.test.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/.env.example"
+    },
+    {
+      "status": " M",
+      "path": "backend/README.md"
+    },
+    {
+      "status": " M",
+      "path": "backend/package-lock.json"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/admin/index.html"
+    },
+    {
+      "status": " D",
+      "path": "backend/src/admin/tenant-management.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/config.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/database.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/index.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/middleware/auth.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/middleware/errorHandler.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/routes/adminRoutes.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/routes/aiRoutes.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/routes/authRoutes.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/routes/unitWorkspaceRoutes.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/routes/updateRoutes.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/services/adminService.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/services/aiService.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/services/authService.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/services/unitWorkspaceService.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/src/services/updateService.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/tests/admin-console.test.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/tests/legacy-password-upgrade.test.js"
+    },
+    {
+      "status": " M",
+      "path": "backend/tests/unit-workspace-contract-fee-permissions.test.js"
+    },
+    {
+      "status": " M",
+      "path": "docs/brand/asset-usage.md"
+    },
+    {
+      "status": " M",
+      "path": "docs/build/apple-silicon.md"
+    },
+    {
+      "status": " M",
+      "path": "docs/features/document-drafting.md"
+    },
+    {
+      "status": " M",
+      "path": "docs/licensing/offline-licensing.md"
+    },
+    {
+      "status": " M",
+      "path": "license-generator/electron-builder.yml"
+    },
+    {
+      "status": " M",
+      "path": "license-generator/package.json"
+    },
+    {
+      "status": " M",
+      "path": "license-generator/src/main/index.js"
+    },
+    {
+      "status": " M",
+      "path": "license-generator/src/renderer/index.html"
+    },
+    {
+      "status": " M",
+      "path": "scripts/build-arm64-dmg.mjs"
+    },
+    {
+      "status": " M",
+      "path": "scripts/build-ci-arm64-dmg.mjs"
+    },
+    {
+      "status": " M",
+      "path": "scripts/build-license-generator-arm64-dmg.mjs"
+    },
+    {
+      "status": " M",
+      "path": "scripts/community-ai-component.plist"
+    },
+    {
+      "status": " M",
+      "path": "scripts/prepare-local-runtime.mjs"
+    },
+    {
+      "status": " M",
+      "path": "scripts/release-sync.mjs"
+    },
+    {
+      "status": " M",
+      "path": "scripts/sync-local-update.mjs"
+    },
+    {
+      "status": "??",
+      "path": ".release-worktree-v0.3.11/"
+    },
+    {
+      "status": "??",
+      "path": ".workbuddy/"
+    },
+    {
+      "status": "??",
+      "path": "app/build/icon.ico"
+    },
+    {
+      "status": "??",
+      "path": "app/electron-builder.win.yml"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/account-workspace-manager.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-anomaly-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-certificate-template-intake-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-document-category-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-file-task-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-model-routing.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-semantic-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-storage-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-task-planner.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-task-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-tools/"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/ai-vision-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/application-menu.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/assets/"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/certificate-document-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/development-mode.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/disbursement-print-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-account-balance.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-ai-recognition.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-category-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-date-context.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-excel-parser.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-import-integrity.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-imports.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-ledger-analysis.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-narrative-data.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-narrative-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-summary-classifier.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-transaction-balances.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/finance-workbook-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-auth-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-backup-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-business-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-certificate-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-certificate-templates.json"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-data-model.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-document-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-domains.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-duty-reference.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-duty.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-excel-reader.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-file-protocol.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-household-member-registration.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-households.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-ipc-handlers.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-mobile-upload.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-party-reference.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-party.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-personnel-actions.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-resident-editor.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/foundation-workspace-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/lan-ai-state.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/lan-discovery.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/lan-workspace-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/local-file-boundary.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/local-storage-target.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/macos-vision-ocr-service.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/offline-session-cache.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/product-brand.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/status-tray.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/update-diagnostics.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/main/workspace-relocation.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/native/"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/css/contract-fee-ledger.css"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/css/finance-workspace.css"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/css/unit-member-management.css"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/foundation/"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/certificate-management-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/contract-fee-ledger-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/core/purify.min.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/finance-workspace-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/personnel-directory-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/renderer/js/unit-member-management-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/ai-operation-presentation.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/certificate-management-model.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/chinese-identity-card.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/duty-schedule.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/finance-category-rules.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/finance-chart-groups.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/finance-default-period.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/finance-import-review.js"
+    },
+    {
+      "status": "??",
+      "path": "app/src/shared/resident-record-presentation.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/brand/terminology-compatibility.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/helpers/"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/account-workspace-manager.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-anomaly-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-certificate-template-intake-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-document-category-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-file-task-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-semantic-task.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-storage-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-tool-registry.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/ai-vision-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/application-menu.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/certificate-document-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/community-defaults.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/development-mode.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/disbursement-print-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-account-balance.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-blank-notice.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-business-row-detection.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-carry-balance.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-category-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-date-context.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-import-flow.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-import-integrity.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-multi-month-dates.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-narrative-data.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-narrative-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-source-balance-review.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-summary-classifier.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/finance-transaction-balances.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-auth-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-backup-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-business-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-certificate-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-document-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-domains.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-excel-reader.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-household-member-registration.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-mobile-upload.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-relationships.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-resident-editor.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/foundation-workspace-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/lan-ai-state.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/lan-discovery.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/lan-workspace-service.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/local-file-boundary.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/party-duty-lan.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/party-duty-reference.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/status-tray.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/update-diagnostics.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/main/update-differential.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/ai-file-viewer.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/ai-token-status.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/certificate-management-ui.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/contract-fee-ledger-ui.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/finance-balance-card.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/finance-workspace-ui.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-dom-check.mjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-electron-check.cjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-fixture.html"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-ipc-data.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-navigation.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/foundation-scenarios.mjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/funds-history.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/funds-management.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/household-member-registration.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/menu-configuration.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/menu-icons.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/mobile-cadre-roster.test.mjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/party-duty-electron-check.cjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/personnel-directory-ui.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/personnel-search.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/resident-editor-identity.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/renderer/workspace-connection.test.mjs"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/ai-operation-presentation.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/certificate-management-model.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/chinese-identity-card.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/disbursement-center-flow.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/duty-schedule.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/finance-chart-groups.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/finance-default-period.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/finance-import-review.test.js"
+    },
+    {
+      "status": "??",
+      "path": "app/tests/shared/resident-record-presentation.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/admin/account-management.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/admin/ai-credit-policy-ui.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/admin/ai-model-management.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/admin/ai-quota-management.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/routes/adminAiRoutes.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/adminAccountDirectory.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiAssistantStateService.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiCreditPolicy.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiCreditTasks.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiModelDispatch.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiModelRouting.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/aiQuotaService.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/mainAccountScope.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/permissionPolicy.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/src/services/userPreferenceService.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/admin-account-directory.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/ai-credit-tasks.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/ai-model-dispatch.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/ai-model-routing.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/ai-multi-provider-routing.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/ai-utf8-response.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/direct-unit-members.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/local-workspace-cutover.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/main-account-migration.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/platform-admin-workspace.test.js"
+    },
+    {
+      "status": "??",
+      "path": "backend/tests/security-hardening.test.js"
+    },
+    {
+      "status": "??",
+      "path": "docs/development.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.60.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.61.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.62.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.63.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.64.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.65.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.66.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.67.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.3.68.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.4.0.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/0.4.1.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.0.0.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.0.1.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.0.3.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.0.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.1.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.2.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.3.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.4.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.5.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.6.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.1.7.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.0.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.1.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.2-verification.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.2.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.3-verification.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/releases/1.2.3.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/security-review-2026-09-27.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/slim-review-2026-09-27.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-08-16-document-editor-a4-preview-and-print-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-08-20-macos-installer-update-repair-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-08-21-permanent-access-and-pkg-installer-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-07-v264-foundation-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-09-funds-bulk-edit-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-09-resident-records-ui-redesign-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-13-contract-fee-project-ledger-redesign-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-14-ai-context-memory-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-14-backend-ai-provider-test-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-14-certificate-management-redesign.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-14-household-member-registration.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-14-online-ai-backend-quota-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-15-ai-certificate-issuing-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-control-center-implementation-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-first-batch-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-fourth-batch-file-intake-foundation-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-fourth-batch-resident-import-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-second-batch-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-assistant-third-batch-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-20-ai-capability-inventory.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-anomaly-review-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-business-file-handoff-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-model-token-control-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-ocr-review-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-storage-index-management-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-structured-documents-handoff-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-assistant-upload-toolbar-implementation-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-21-ai-system-administrator-assistant-implementation-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-23-unit-account-direct-members-and-permissions-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-09-24-main-account-registration-and-ai-quota-plan.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-ai-chinese-utf8-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-balance-grouping-deep-analysis-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-category-recheck-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-import-integrity-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-recent-month-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-summary-categories-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-04-finance-transaction-balances-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-ai-response-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-blank-notice-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-business-row-detection-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-carry-balance-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-multi-month-date-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-source-balance-review-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-finance-worksheet-period-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-05-multi-model-credits-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-06-admin-account-directory-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-06-chart-login-differential-update-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-07-party-duty-reference-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/plans/2026-10-07-village-brand-rename-completion.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-08-21-permanent-access-and-pkg-installer-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-08-21-pkg-bundle-relocation-repair-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-08-21-pkg-install-location-repair-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-08-21-pkg-symlink-startup-repair-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-06-resident-account-card-editor-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-07-v264-foundation-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-08-resident-editor-floating-ai.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-09-funds-reuse-first-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-09-resident-records-ui-redesign-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-13-contract-fee-project-ledger-redesign-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-14-ai-context-memory-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-14-backend-ai-provider-test-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-14-certificate-management-redesign-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-14-household-member-registration-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-14-online-ai-backend-quota-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-15-ai-certificate-issuing-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-15-login-default-workbench-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-21-ai-assistant-upload-toolbar-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-21-ai-system-administrator-assistant-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-21-document-drafting-signature-date-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-22-ai-upload-auto-archive-compact-ui-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-23-ai-assistant-centered-window-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-23-unit-account-direct-members-and-permissions-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-24-codebase-cleanup-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-24-main-account-registration-and-ai-quota-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-24-product-website-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-09-25-settings-reference-sync-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-10-01-local-business-data-and-lan-discovery-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-10-02-main-account-per-device-local-workspace-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-10-04-finance-category-refinement-design.md"
+    },
+    {
+      "status": "??",
+      "path": "docs/superpowers/specs/2026-10-05-multi-model-credits-design.md"
+    },
+    {
+      "status": "??",
+      "path": "package-lock.json"
+    },
+    {
+      "status": "??",
+      "path": "package.json"
+    },
+    {
+      "status": "??",
+      "path": "scripts/brand-terminology.cjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/build-win-x64.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/check-development.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/check-foundation-electron.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/deploy-website.sh"
+    },
+    {
+      "status": "??",
+      "path": "scripts/dev-electron.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/dev/"
+    },
+    {
+      "status": "??",
+      "path": "scripts/enable-website-watch.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/foundation-adaptations.cjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/import-party-duty-reference.cjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/import-v264-foundation.cjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/party-duty-adaptations.cjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/party-duty-reference-map.json"
+    },
+    {
+      "status": "??",
+      "path": "scripts/update-blockmap.mjs"
+    },
+    {
+      "status": "??",
+      "path": "scripts/watch-website.mjs"
+    },
+    {
+      "status": "??",
+      "path": "website/"
+    }
+  ]
+}
