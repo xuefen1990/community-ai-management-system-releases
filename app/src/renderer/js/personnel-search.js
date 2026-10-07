@@ -31,8 +31,9 @@
 
   function renderPersonnelResults(results) {
     try {
-      if (typeof renderPersonnel === 'function') {
-        renderPersonnel(results);
+      const renderer = window.ResidentDirectoryUi?.render || window.renderPersonnel || (typeof renderPersonnel === 'function' ? renderPersonnel : null);
+      if (typeof renderer === 'function') {
+        renderer(results);
         return true;
       }
     } catch (error) {
@@ -42,9 +43,10 @@
   }
 
   function getBirthDate(person) {
-    const direct = text(valueOf(person, ['birth_date', 'birthDate', 'birthday']));
     const idCard = text(valueOf(person, ['idCard', 'id_card', 'identity_card', 'id_number'])).toUpperCase();
-    const raw = direct || (/^\d{17}[\dX]$/u.test(idCard) ? `${idCard.slice(6, 10)}-${idCard.slice(10, 12)}-${idCard.slice(12, 14)}` : '');
+    const verified = window.ResidentDirectoryUi?.validateIdCard?.(idCard);
+    const direct = text(valueOf(person, ['birth_date', 'birthDate', 'birthday']));
+    const raw = verified?.valid ? verified.birthDate : direct;
     const date = raw ? new Date(`${raw.slice(0, 10)}T00:00:00`) : null;
     return date && !Number.isNaN(date.getTime()) ? date : null;
   }
@@ -59,7 +61,7 @@
 
   function hasValidIdCard(person) {
     const idCard = text(valueOf(person, ['idCard', 'id_card', 'identity_card', 'id_number'])).toUpperCase();
-    return /^\d{17}[\dX]$/u.test(idCard);
+    return window.ResidentDirectoryUi?.validateIdCard?.(idCard)?.valid || /^\d{17}[\dX]$/u.test(idCard);
   }
 
   function hasIdentity(person, identity) {
@@ -124,13 +126,14 @@
   function matchesFilters(person, filters) {
     const queryMatch = !filters.query || SEARCH_FIELDS.some((field) => text(person?.[field]).includes(filters.query));
     const group = valueOf(person, ['village_group', 'villageGroup']);
-    const gender = valueOf(person, ['gender', 'sex']);
+    const derived = window.ResidentDirectoryUi?.identityProfile?.(person);
+    const gender = derived?.gender === '待核对' ? '' : (derived?.gender || valueOf(person, ['gender', 'sex']));
     const relation = valueOf(person, ['relation_to_head', 'relationType', 'relation_type']);
     return queryMatch
       && (!filters.group || text(group) === text(filters.group))
       && (!filters.identity || hasIdentity(person, filters.identity))
       && (!filters.gender || text(gender) === text(filters.gender))
-      && (!filters.relation || text(relation) === text(filters.relation))
+      && (!filters.relation || text(window.ResidentDirectoryUi?.relationDisplay?.(relation) || relation) === text(filters.relation))
       && matchesAge(person, filters.age)
       && matchesAudit(person, filters.audit)
       && matchesRegistry(person, filters.registry);
@@ -143,6 +146,9 @@
       age: selected('filterAge'), audit: selected('filterDataAudit'), registry: selected('filterRegistryStatus'),
     };
   }
+
+  let isComposing = false;
+  let compositionCommitPending = false;
 
   function applyFilters() {
     const filters = currentFilters();
@@ -177,7 +183,26 @@
     if (!search || search.dataset.personnelSearchReady === 'true') return;
     search.dataset.personnelSearchReady = 'true';
     search.removeAttribute('oninput');
-    search.addEventListener('input', applyFilters);
+    search.oninput = null;
+    search.addEventListener('compositionstart', () => { isComposing = true; });
+    search.addEventListener('compositionend', () => {
+      isComposing = false;
+      compositionCommitPending = true;
+      window.setTimeout(() => {
+        compositionCommitPending = false;
+        applyFilters();
+      }, 0);
+    });
+    // The legacy page also has an inline input handler. Capture the event
+    // before it reaches that handler, otherwise its immediate re-rendering
+    // cancels the macOS Chinese IME composition session.
+    search.addEventListener('input', (event) => {
+      if (isComposing || event?.isComposing || compositionCommitPending) {
+        event?.stopImmediatePropagation?.();
+        return;
+      }
+      applyFilters();
+    }, true);
     FILTER_IDS.forEach((id) => {
       const input = document.getElementById(id);
       if (!input) return;
@@ -197,7 +222,13 @@
     }, true);
   }
 
-  window.filterPersonnel = applyFilters;
+  // Inline legacy calls must use the same composition guard as our listener.
+  // This is deliberately a function rather than a direct alias so a pinyin
+  // composition cannot cause a table redraw through the old HTML attribute.
+  window.filterPersonnel = () => {
+    if (isComposing || compositionCommitPending) return;
+    applyFilters();
+  };
   window.clearPersonnelFilters = clearFilters;
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', install, { once: true });
   else install();

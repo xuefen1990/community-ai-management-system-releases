@@ -16,14 +16,14 @@
   };
 
   const BUSINESS_LABELS = {
-    personnel: '村民档案', households: '家庭档案', partyMembers: '党员信息',
+    personnel: "居民档案", households: '家庭档案', partyMembers: '党员信息',
     visitRecords: '民情记录', dutyRecords: '值班记录', finances: '财务记录',
     landParcel: '土地记录', certificates: '证明记录', documents: '电子档案',
   };
 
   const DOCUMENT_LAYOUT_PRESETS = {
-    request: { preset: 'request', paper: 'A4', titleFont: 'heiti', titleSize: 22, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 30, right: 26, bottom: 35, left: 28 }, addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会' },
-    report: { preset: 'report', paper: 'A4', titleFont: 'songti', titleSize: 24, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 25.4, right: 31.75, bottom: 25.4, left: 31.75 }, addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会' },
+    request: { preset: 'request', paper: 'A4', titleFont: 'heiti', titleSize: 22, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 30, right: 26, bottom: 35, left: 28 }, addressee: '', signatureUnit: '' },
+    report: { preset: 'report', paper: 'A4', titleFont: 'songti', titleSize: 24, titleBold: true, bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2, margins: { top: 25.4, right: 31.75, bottom: 25.4, left: 31.75 }, addressee: '', signatureUnit: '' },
   };
 
   const DOCUMENT_FONT_FAMILIES = {
@@ -35,8 +35,38 @@
 
   const A4_ASPECT_RATIO = 297 / 210;
 
+  function todayDateInput() {
+    const date = new Date();
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function normalizeDateInput(value) {
+    const match = String(value || '').trim().match(/^(\d{4})(?:-|年|\/)(\d{1,2})(?:-|月|\/)(\d{1,2})日?$/u);
+    if (!match) return '';
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  }
+
+  function chineseDate(value) {
+    const normalized = normalizeDateInput(value) || todayDateInput();
+    const [year, month, day] = normalized.split('-').map(Number);
+    return `${year}年${month}月${day}日`;
+  }
+
   function escapeHtml(value) {
     return String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+  }
+
+  function safeDocumentHtml(value) {
+    if (!window.DOMPurify) throw new Error('公文安全组件未加载，请刷新页面后重试');
+    return window.DOMPurify.sanitize(String(value || ''), {
+      ALLOWED_TAGS: ['p', 'div', 'br', 'b', 'strong', 'i', 'em', 'u', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'li', 'blockquote', 'span', 'table', 'thead', 'tbody', 'tr', 'td', 'th'],
+      ALLOWED_ATTR: ['data-doc-role', 'data-doc-align', 'data-doc-font', 'data-doc-size', 'colspan', 'rowspan'],
+    });
   }
 
   function cloneLayout(layout) {
@@ -48,7 +78,9 @@
     if (current) {
       preset.addressee = current.addressee || preset.addressee;
       preset.signatureUnit = current.signatureUnit || preset.signatureUnit;
+      preset.issuedDate = normalizeDateInput(current.issuedDate) || todayDateInput();
     }
+    if (!preset.issuedDate) preset.issuedDate = todayDateInput();
     return preset;
   }
 
@@ -59,7 +91,9 @@
   }
 
   function currentLayout() {
-    return cloneLayout(state.layout || DOCUMENT_LAYOUT_PRESETS.report);
+    const layout = cloneLayout(state.layout || DOCUMENT_LAYOUT_PRESETS.report);
+    layout.issuedDate = normalizeDateInput(layout.issuedDate) || todayDateInput();
+    return layout;
   }
 
   function inferMarginPreset(layout) {
@@ -138,10 +172,12 @@
 
   function applyLayoutToUi(layout) {
     state.layout = cloneLayout(layout || DOCUMENT_LAYOUT_PRESETS.report);
+    state.layout.issuedDate = normalizeDateInput(state.layout.issuedDate) || todayDateInput();
     const setValue = (id, value) => { const element = document.getElementById(id); if (element) element.value = String(value); };
     setValue('documentLayoutPreset', state.layout.preset);
     setValue('documentAddressee', state.layout.addressee);
     setValue('documentSignatureUnit', state.layout.signatureUnit);
+    setValue('documentIssuedDate', state.layout.issuedDate);
     setValue('documentInlineFont', state.layout.bodyFont);
     setValue('documentInlineSize', state.layout.bodySize);
     setValue('documentLineSpacing', state.layout.lineSpacing);
@@ -158,20 +194,26 @@
     const editor = document.getElementById('documentEditor');
     const addressee = editor?.querySelector('[data-doc-role="addressee"]');
     const signature = editor?.querySelector('[data-doc-role="signature"]');
+    const issuedDate = editor?.querySelector('[data-doc-role="date"]');
     if (addressee) addressee.textContent = `${state.layout.addressee}：`;
     if (signature) signature.textContent = state.layout.signatureUnit;
+    if (issuedDate) issuedDate.textContent = chineseDate(state.layout.issuedDate);
   }
 
   function syncIdentityFieldsFromEditor() {
     const editor = document.getElementById('documentEditor');
     const addressee = editor?.querySelector('[data-doc-role="addressee"]')?.innerText.trim().replace(/[：:]$/u, '');
     const signature = editor?.querySelector('[data-doc-role="signature"]')?.innerText.trim();
+    const issuedDate = normalizeDateInput(editor?.querySelector('[data-doc-role="date"]')?.innerText.trim());
     if (addressee) state.layout.addressee = addressee;
     if (signature) state.layout.signatureUnit = signature;
+    if (issuedDate) state.layout.issuedDate = issuedDate;
     const addresseeInput = document.getElementById('documentAddressee');
     const signatureInput = document.getElementById('documentSignatureUnit');
+    const issuedDateInput = document.getElementById('documentIssuedDate');
     if (addresseeInput && addressee) addresseeInput.value = addressee;
     if (signatureInput && signature) signatureInput.value = signature;
+    if (issuedDateInput && issuedDate) issuedDateInput.value = issuedDate;
   }
 
   function selectedRangeInsideEditor() {
@@ -257,21 +299,25 @@
               <button id="documentKindReport" data-document-kind="report">报告</button>
               <button id="documentKindContract" data-document-kind="contract">合同</button>
             </div>
+            <div id="documentSignatureFields" class="document-signature-fields">
+              <div class="document-signature-fields-heading"><b>报告落款</b><span>默认带入，可修改</span></div>
+              <div class="document-signature-field-grid"><label><span>署名</span><input id="documentSignatureUnit" class="document-control" value="" placeholder="请填写单位名称"></label><label><span>日期</span><input id="documentIssuedDate" class="document-control" type="date"></label></div>
+            </div>
             <div id="documentDirectIntro" class="document-direct-intro">
               <b>只需描述一次，直接生成全文</b>
               <p>可写明事项、对象、金额、时间和重点要求。资料不完整时，AI 会先完成可写内容，合同关键缺项将标记“【待补充】”。</p>
-              <div class="document-prompt-examples"><button data-example="写一份申请拨付过渡房费用的请示，说明事项、金额和拨付要求。">费用请示示例</button><button data-example="写一份社区保洁服务合同，已知内容直接写入，缺少的关键条款标记待补充。">服务合同示例</button></div>
+              <div class="document-prompt-examples"><button data-example="虚构示例：写一份关于青禾村居便民活动室修缮费用的请示，说明事项、预算和拨付要求；实际使用时请替换名称和金额。">费用请示示例</button><button data-example="虚构示例：写一份青禾村居保洁服务合同，已知内容直接写入，缺少的关键条款标记待补充；实际使用时请替换项目资料。">服务合同示例</button></div>
             </div>
             <div class="document-chat-composer">
               <label for="documentConversationInput" id="documentConversationLabel">描述需要拟写的内容</label>
-              <textarea id="documentConversationInput" rows="5" placeholder="例如：写一份申请拨付小杨庄过渡房费用的请示。东七组占地40余亩，每亩900元，合计36000元，请求按期拨付。"></textarea>
+              <textarea id="documentConversationInput" rows="5" placeholder="虚构示例：写一份青禾村居便民活动室修缮费用的请示，说明修缮事项和预算，请求按程序拨付；实际使用时请替换为真实资料。"></textarea>
               <div class="document-composer-actions"><span id="documentReferenceCount">未引用历史资料</span><button class="btn btn-primary" id="documentConversationSendBtn">✦ 开始 AI 拟写</button></div>
-              <p class="document-chat-hint">生成后可直接修改右侧正文；整体不满意时，在同一输入框补充要求并重新生成全文。</p>
+              <div class="document-chat-hint"><span>Enter 发送 · Shift + Enter 换行</span><span class="ai-token-status-line" data-ai-token-status aria-live="polite"><span data-ai-token-used>本次消耗 — Token</span><span aria-hidden="true">·</span><span data-ai-token-remaining>余量读取中</span></span></div>
             </div>
             <details class="document-advanced-settings">
               <summary>参考资料与高级设置</summary>
               <label class="document-field-label" for="documentVisibility">可见范围</label>
-              <select id="documentVisibility" class="document-control"><option value="shared">社区共享</option><option value="private">仅自己可见</option></select>
+              <select id="documentVisibility" class="document-control"><option value="shared">村居共享</option><option value="private">仅自己可见</option></select>
               <label class="document-field-label" for="documentHistoryReferenceQuery">手动查找历史公文</label>
               <div class="document-inline-picker"><input id="documentHistoryReferenceQuery" class="document-control" placeholder="输入标题或事项关键词"><button class="btn btn-outline" id="documentRefreshRecommendationsBtn">查找</button></div>
               <div id="documentRecommendedReferences" class="document-reference-list"></div>
@@ -282,7 +328,7 @@
           </aside>
           <main class="document-editor-panel">
             <div class="document-editor-toolbar"><div class="document-format-toolbar"><select id="documentInlineFont" aria-label="字体"><option value="fangsong">仿宋</option><option value="songti">宋体</option><option value="heiti">黑体</option><option value="kaiti">楷体</option></select><select id="documentInlineSize" aria-label="字号"><option value="22">二号</option><option value="18">小二</option><option value="16">三号</option><option value="15">小三</option><option value="14">四号</option><option value="12">小四</option></select><button type="button" data-editor-command="bold"><b>B</b></button><button type="button" data-editor-command="insertUnorderedList">• 列表</button><button type="button" data-editor-align="left">左对齐</button><button type="button" data-editor-align="center">居中</button><button type="button" data-editor-align="right">右对齐</button><button type="button" id="documentFormatToggle">版式设置</button></div><div class="document-editor-meta"><div class="document-preview-toolbar" aria-label="A4 预览缩放"><select id="documentPreviewZoomMode" aria-label="预览比例"><option value="page">适合页面</option><option value="width">适合宽度</option><option value="actual">100%</option><option value="manual" hidden>自定义</option></select><button type="button" id="documentPreviewZoomOut" title="缩小预览">−</button><span id="documentPreviewZoomValue">100%</span><button type="button" id="documentPreviewZoomIn" title="放大预览">＋</button></div><span id="documentAutosaveStatus">等待描述</span></div></div>
-            <div id="documentFormatPanel" class="document-format-panel hidden"><label>参考版式<select id="documentLayoutPreset"><option value="request">请示版（样稿一）</option><option value="report">报告版（样稿二）</option></select></label><label>抬头<input id="documentAddressee" value="晓店街道办事处"></label><label>落款单位<input id="documentSignatureUnit" value="陆庄社区居民委员会"></label><label>正文行距<select id="documentLineSpacing"><option value="28.95">固定 29 磅</option><option value="24">固定 24 磅</option><option value="32">固定 32 磅</option><option value="36">固定 36 磅</option></select></label><label>页边距<select id="documentMarginPreset"><option value="reference">参考样稿</option><option value="standard">标准</option><option value="compact">紧凑</option></select></label><button type="button" class="btn btn-outline" id="documentRestoreLayoutBtn">恢复样稿版式</button><small>无选区时字体字号作用于全文；选中文字后只调整选中内容。</small></div>
+            <div id="documentFormatPanel" class="document-format-panel hidden"><label>参考版式<select id="documentLayoutPreset"><option value="request">请示版（样稿一）</option><option value="report">报告版（样稿二）</option></select></label><label>抬头<input id="documentAddressee" value="晓店街道办事处"></label><label>正文行距<select id="documentLineSpacing"><option value="28.95">固定 29 磅</option><option value="24">固定 24 磅</option><option value="32">固定 32 磅</option><option value="36">固定 36 磅</option></select></label><label>页边距<select id="documentMarginPreset"><option value="reference">参考样稿</option><option value="standard">标准</option><option value="compact">紧凑</option></select></label><button type="button" class="btn btn-outline" id="documentRestoreLayoutBtn">恢复样稿版式</button><small>无选区时字体字号作用于全文；选中文字后只调整选中内容。</small></div>
             <div id="documentContractWarning" class="document-contract-warning hidden">合同由 AI 辅助生成，请重点核对主体、金额、期限、付款、违约责任和争议解决条款。</div>
             <div id="documentEditorViewport" class="document-editor-viewport"><div id="documentEditorStage" class="document-editor-stage"><div id="documentEditor" class="document-editor" contenteditable="true" data-placeholder="在左侧描述需求后，生成的公文会出现在这里"></div></div></div>
             <div id="documentSourceSummary" class="document-source-summary hidden"></div>
@@ -324,6 +370,7 @@
     document.querySelectorAll('[data-document-kind]').forEach((button) => button.classList.toggle('active', button.dataset.documentKind === kind));
     const effectiveKind = state.current?.document?.documentKind || (kind === 'auto' ? null : kind);
     document.getElementById('documentContractWarning')?.classList.toggle('hidden', effectiveKind !== 'contract');
+    document.getElementById('documentSignatureFields')?.classList.toggle('hidden', effectiveKind === 'contract');
   }
 
   function updateDraftStatus() {
@@ -335,11 +382,13 @@
     document.getElementById('documentFinalizeBtn').textContent = isFinal ? '取消定稿后编辑' : '标记定稿';
     document.getElementById('documentConversationSendBtn').disabled = Boolean(isFinal);
     document.getElementById('documentSaveVersionBtn').disabled = Boolean(isFinal);
+    document.getElementById('documentSignatureUnit').disabled = Boolean(isFinal);
+    document.getElementById('documentIssuedDate').disabled = Boolean(isFinal);
     document.querySelectorAll('#documentFormatPanel input, #documentFormatPanel select, #documentFormatPanel button, .document-format-toolbar select, .document-format-toolbar button').forEach((control) => { control.disabled = Boolean(isFinal); });
     document.getElementById('documentConversationLabel').textContent = documentValue?.workingContentText ? '补充修改要求' : '描述需要拟写的内容';
     document.getElementById('documentConversationInput').placeholder = documentValue?.workingContentText
       ? '例如：语气更正式，增加分期付款依据，并结合右侧当前正文重新生成全文……'
-      : '例如：写一份申请拨付小杨庄过渡房费用的请示。东七组占地40余亩，每亩900元，合计36000元，请求按期拨付。';
+      : "虚构示例：写一份青禾村居便民活动室修缮费用的请示，说明修缮事项和预算，请求按程序拨付；实际使用时请替换为真实资料。";
     document.getElementById('documentConversationSendBtn').textContent = documentValue?.workingContentText ? '↻ 根据补充重新生成' : '✦ 开始 AI 拟写';
     updateKindUi(state.preferredKind);
   }
@@ -384,6 +433,12 @@
         confirmedReferences: [...state.selectedReferences.values()],
         layout: currentLayout(),
       });
+      window.communityAiTokenStatus?.record({
+        ...(result.routing || {}),
+        actualTokens: result.routing?.actualTokens ?? result.usage?.total_tokens
+          ?? (result.routing?.provider === 'local' ? 0 : undefined),
+        remainingTokens: result.routing?.remainingTokens ?? result.quotaSnapshot?.remainingTokens,
+      });
       const versions = state.current?.versions || [];
       state.current = {
         document: result.document,
@@ -393,7 +448,7 @@
       if (result.version) {
         input.value = '';
         state.savedSelectionRange = null;
-        document.getElementById('documentEditor').innerHTML = result.version.contentHtml;
+        document.getElementById('documentEditor').innerHTML = safeDocumentHtml(result.version.contentHtml);
         applyLayoutToUi(result.document.layout || result.version.layoutSnapshot || state.layout);
         document.getElementById('documentAutosaveStatus').textContent = `AI 已生成 · 版本 ${result.version.versionNumber}`;
         showSourceSummary(result);
@@ -516,7 +571,7 @@
   }
 
   function historyCard(item) {
-    return `<article class="document-history-card"><div class="document-history-main"><div class="document-history-title"><span class="badge ${item.documentKind === 'contract' ? 'badge-warning' : 'badge-info'}">${item.documentKind === 'contract' ? '合同' : '报告'}</span><b>${escapeHtml(item.title)}</b></div><p>${item.status === 'final' ? '已定稿' : '草稿'} · ${item.visibility === 'private' ? '仅自己' : '社区共享'}</p><small>更新于 ${escapeHtml(new Date(item.updatedAt).toLocaleString('zh-CN'))}</small></div><div class="document-history-actions"><button class="btn btn-outline" data-history-action="open" data-document-id="${escapeHtml(item.id)}">继续编辑</button><button class="btn btn-outline" data-history-action="report" data-document-id="${escapeHtml(item.id)}">基于此文写报告</button><button class="btn btn-outline" data-history-action="contract" data-document-id="${escapeHtml(item.id)}">基于此文写合同</button><button class="btn btn-outline" data-history-action="word" data-document-id="${escapeHtml(item.id)}">Word</button><button class="btn btn-outline" data-history-action="archive" data-document-id="${escapeHtml(item.id)}">归档</button></div></article>`;
+    return `<article class="document-history-card"><div class="document-history-main"><div class="document-history-title"><span class="badge ${item.documentKind === 'contract' ? 'badge-warning' : 'badge-info'}">${item.documentKind === 'contract' ? '合同' : '报告'}</span><b>${escapeHtml(item.title)}</b></div><p>${item.status === 'final' ? '已定稿' : '草稿'} · ${item.visibility === 'private' ? '仅自己' : "村居共享"}</p><small>更新于 ${escapeHtml(new Date(item.updatedAt).toLocaleString('zh-CN'))}</small></div><div class="document-history-actions"><button class="btn btn-outline" data-history-action="open" data-document-id="${escapeHtml(item.id)}">继续编辑</button><button class="btn btn-outline" data-history-action="report" data-document-id="${escapeHtml(item.id)}">基于此文写报告</button><button class="btn btn-outline" data-history-action="contract" data-document-id="${escapeHtml(item.id)}">基于此文写合同</button><button class="btn btn-outline" data-history-action="word" data-document-id="${escapeHtml(item.id)}">Word</button><button class="btn btn-outline" data-history-action="archive" data-document-id="${escapeHtml(item.id)}">归档</button></div></article>`;
   }
 
   async function loadHistory() {
@@ -541,7 +596,7 @@
     state.selectedReferences.clear();
     for (const reference of state.current.document.pendingReferences || []) state.selectedReferences.set(referenceKey(reference), reference);
     const currentVersion = state.current.versions.find((version) => version.id === state.current.document.currentVersionId);
-    document.getElementById('documentEditor').innerHTML = state.current.document.workingContentHtml || currentVersion?.contentHtml || '';
+    document.getElementById('documentEditor').innerHTML = safeDocumentHtml(state.current.document.workingContentHtml || currentVersion?.contentHtml || '');
     applyLayoutToUi(state.current.document.layout || currentVersion?.layoutSnapshot || DOCUMENT_LAYOUT_PRESETS.report);
     document.getElementById('documentVisibility').value = state.current.document.visibility;
     updateReferenceCount();
@@ -589,6 +644,21 @@
     await switchView('workspace');
   }
 
+  async function openMaterialHandoff(prepared = {}) {
+    const payload = prepared.payload || prepared;
+    await resetDraft();
+    const input = document.getElementById('documentConversationInput');
+    if (!input) throw new Error('公文拟写输入框尚未加载，请重试');
+    const excerpt = String(payload.text || '').trim().slice(0, 20_000);
+    input.value = `请根据下面这份已经人工核对的材料起草公文。不得补造材料中没有的事实；缺少文种、收文单位或具体要求时先向我提问。\n\n材料名称：${payload.fileName || '未命名材料'}\n识别用途：${payload.classification?.name || '公文材料'}\n\n核对内容：\n${excerpt}`;
+    const summary = document.getElementById('documentSourceSummary');
+    if (summary) {
+      summary.textContent = `已带入人工核对材料：${payload.fileName || '未命名材料'}。发送前可以继续补充要求。`;
+      summary.classList.remove('hidden');
+    }
+    input.focus();
+  }
+
   async function openProfile() {
     const profile = await callApi('getWritingProfile');
     document.getElementById('documentProfileSummary').textContent = profile ? `已根据 ${profile.finalizedCount || 0} 份定稿学习，最后更新：${profile.updatedAt ? new Date(profile.updatedAt).toLocaleString('zh-CN') : '暂无'}` : '尚未从定稿中学习写作偏好。';
@@ -610,8 +680,13 @@
     });
   }
 
-  function injectPage() {
-    if (!document.getElementById('tab-document-drafting')) document.getElementById('tab-certificate')?.insertAdjacentHTML('beforebegin', sectionMarkup());
+  function injectPage(container) {
+    if (!document.getElementById('tab-document-drafting')) {
+      if (container) {
+        container.insertAdjacentHTML('beforeend', sectionMarkup());
+        container.querySelector('#tab-document-drafting')?.classList.remove('hidden');
+      } else document.getElementById('tab-certificate')?.insertAdjacentHTML('beforebegin', sectionMarkup());
+    }
     const quickRow = document.querySelector('.wb-quick-buttons-row');
     if (quickRow && !document.getElementById('workbenchDocumentDraftingBtn')) {
       const button = document.createElement('button');
@@ -643,8 +718,8 @@
     });
   }
 
-  async function initialize() {
-    injectPage();
+  async function initialize(container) {
+    injectPage(container instanceof Element ? container : null);
     if (!document.getElementById('tab-document-drafting')) return;
     bind('documentConversationSendBtn', 'click', () => submitConversation());
     bind('documentNewDraftBtn', 'click', resetDraft);
@@ -666,7 +741,13 @@
     bind('documentProfileSaveBtn', 'click', saveProfile);
     bind('documentProfileResetBtn', 'click', async () => { if (window.confirm('重置写作偏好不会删除历史公文，确认继续吗？')) { await callApi('resetWritingProfile'); await openProfile(); } });
     document.querySelectorAll('[data-document-kind]').forEach((button) => button.addEventListener('click', () => updateKindUi(button.dataset.documentKind)));
-    document.getElementById('documentConversationInput').addEventListener('keydown', (event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') submitConversation().catch((error) => showMessage(error.message, 'error')); });
+    document.getElementById('documentConversationInput').addEventListener('keydown', (event) => {
+      // Enter sends; Shift+Enter inserts a line break in the AI composer.
+      // Do not intercept the Enter used to confirm Chinese IME composition.
+      if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault();
+      submitConversation().catch((error) => showMessage(error.message, 'error'));
+    });
     document.getElementById('documentDirectIntro').addEventListener('click', (event) => {
       const example = event.target.closest('[data-example]');
       if (example) document.getElementById('documentConversationInput').value = example.dataset.example;
@@ -685,7 +766,7 @@
     });
     document.addEventListener('pointerdown', (event) => {
       const editor = document.getElementById('documentEditor');
-      if (editor.contains(event.target) || event.target.closest?.('#documentInlineFont, #documentInlineSize')) return;
+      if (!editor || editor.contains(event.target) || event.target.closest?.('#documentInlineFont, #documentInlineSize')) return;
       state.savedSelectionRange = null;
     });
     bind('documentFormatToggle', 'click', () => document.getElementById('documentFormatPanel').classList.toggle('hidden'));
@@ -698,6 +779,7 @@
     bind('documentRestoreLayoutBtn', 'click', () => { applyLayoutToUi(layoutPreset(document.getElementById('documentLayoutPreset').value, state.layout)); syncIdentityFieldsToEditor(); queueAutosave(); showMessage('已恢复参考样稿版式'); });
     bind('documentAddressee', 'input', (event) => { state.layout.addressee = event.target.value.trim() || DOCUMENT_LAYOUT_PRESETS[state.layout.preset].addressee; syncIdentityFieldsToEditor(); queueAutosave(); });
     bind('documentSignatureUnit', 'input', (event) => { state.layout.signatureUnit = event.target.value.trim() || DOCUMENT_LAYOUT_PRESETS[state.layout.preset].signatureUnit; syncIdentityFieldsToEditor(); queueAutosave(); });
+    bind('documentIssuedDate', 'change', (event) => { state.layout.issuedDate = normalizeDateInput(event.target.value) || todayDateInput(); syncIdentityFieldsToEditor(); queueAutosave(); });
     bind('documentLineSpacing', 'change', (event) => { state.layout.lineSpacing = Number(event.target.value); applyLayoutToUi(state.layout); queueAutosave(); });
     bind('documentMarginPreset', 'change', (event) => {
       if (event.target.value === 'reference') state.layout.margins = cloneLayout(DOCUMENT_LAYOUT_PRESETS[state.layout.preset].margins);
@@ -719,9 +801,12 @@
     }
     bindReferenceLists();
     await resetDraft();
+    await window.communityAiTokenStatus?.refresh();
   }
 
-  window.DocumentDrafting = { openDocument };
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
-  else initialize();
+  window.DocumentDrafting = { openDocument, openMaterialHandoff, mount: initialize };
+  if (!window.communityFoundation) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize, { once: true });
+    else initialize();
+  }
 }());

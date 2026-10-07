@@ -1,0 +1,39 @@
+{
+  "version": "2.8.6",
+  "reference": "村务通管理系统",
+  "sourceBundle": "index-CLME29lw.js",
+  "bundleSha256": "5a025d3afc1fb7ee630fa74cd8bbf0462ccf904f63426a98f9e71605868d05ca",
+  "componentRoots": [
+    "PartyView286",
+    "DutyView286"
+  ],
+  "declarations": 486,
+  "scopes": [
+    "data-v-59004a14",
+    "data-v-e87ab4c3",
+    "data-v-676238aa",
+    "data-v-c763d1ae",
+    "data-v-131c2eca",
+    "data-v-9aee1bdf",
+    "data-v-f8c2e087",
+    "data-v-719cfc0d",
+    "data-v-53c898e4",
+    "data-v-6ca94c86",
+    "data-v-7c7ee8a0",
+    "data-v-b2ffdf6d",
+    "data-v-1a7f41da",
+    "data-v-26e05af8",
+    "data-v-5d57223d",
+    "data-v-0844eb48",
+    "data-v-cc5d17c0",
+    "data-v-56d42e8a",
+    "data-v-08e16645",
+    "data-v-1bedb834",
+    "data-v-b530b710",
+    "data-v-b17b0447",
+    "data-v-c8af2749",
+    "data-v-e982cc16",
+    "data-v-ea987fdf"
+  ],
+  "scope": "Only party and village-duty; business calls use community IPC; no reference records imported"
+}

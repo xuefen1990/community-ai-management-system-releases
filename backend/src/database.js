@@ -19,10 +19,19 @@ const DEFAULT_DATA = {
   member_applications: [],
   unit_invites: [],
   unit_workspaces: [],
+  workspace_cutovers: [],
+  user_preferences: [],
   licenses: [],
   versions: [],
   ai_providers: [],
   ai_usage: [],
+  ai_credit_tasks: [],
+  ai_quotas: [],
+  ai_quota_ledger: [],
+  ai_quota_settings: [],
+  ai_assistant_conversations: [],
+  ai_assistant_memories: [],
+  ai_assistant_tasks: [],
   audit_logs: [],
 };
 
@@ -62,6 +71,12 @@ function flushNow() {
   const tmp = dbPath + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
   fs.renameSync(tmp, dbPath);
+}
+
+function atomic(work) {
+  const snapshot = structuredClone(data);
+  try { return work(); }
+  catch (error) { data = snapshot; persist(); throw error; }
 }
 
 function genId() {
@@ -123,6 +138,9 @@ function ensureDefaultData() {
 
   // 管理员账号
   const admin = data.users.find(u => u.role === 'admin');
+  if (admin && typeof admin.password_hash === 'string' && ['admin123456', '123456', 'password'].some(password => bcrypt.compareSync(password, admin.password_hash))) {
+    throw new Error('现有平台管理员仍使用公开弱密码；请先备份数据库并完成管理员密码重置，再启动服务');
+  }
   if (!admin) {
     const nowStr = now();
     const hash = bcrypt.hashSync(config.admin.password, 10);
@@ -137,6 +155,8 @@ function ensureDefaultData() {
       plan_expires_at: null,
       trial_started_at: null,
       machine_id: '',
+      session_version: 0,
+      must_change_password: 1,
       is_active: 1,
       last_login_at: null,
       created_at: nowStr,
@@ -158,6 +178,8 @@ function ensureDefaultData() {
       api_key_encrypted: encrypted,
       default_model: config.ai.defaultModel,
       available_models: JSON.stringify([config.ai.defaultModel]),
+      supports_vision: 0,
+      vision_model: '',
       is_active: 1,
       created_at: nowStr,
       updated_at: nowStr,
@@ -189,6 +211,7 @@ module.exports = {
   now,
   persist,
   flushNow,
+  atomic,
   // 直接访问原始数据（只读快照）
   raw: () => data,
 };

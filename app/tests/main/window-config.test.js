@@ -9,7 +9,7 @@ const { createWindowOptions } = require('../../src/main/window-config');
 test('window configuration isolates renderer from Node.js', () => {
   const root = path.resolve('/tmp/community-ai-app');
   const options = createWindowOptions(root);
-  assert.equal(options.title, '社区AI管理系统');
+  assert.equal(options.title, '村居AI管理系统');
   assert.equal(options.webPreferences.contextIsolation, true);
   assert.equal(options.webPreferences.nodeIntegration, false);
   assert.equal(options.webPreferences.webSecurity, true);
@@ -23,4 +23,9 @@ test('window configuration opens with a comfortable desktop workspace', () => {
   assert.equal(options.height, 900);
   assert.equal(options.minWidth, 1080);
   assert.equal(options.minHeight, 680);
+});
+
+test('Windows window uses the product icon for the taskbar', () => {
+  const root = path.resolve('/tmp/community-ai-app');
+  assert.equal(createWindowOptions(root, 'win32').icon, path.join(root, 'src', 'main', 'assets', 'app-icon.ico'));
 });

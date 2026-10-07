@@ -7,10 +7,10 @@ const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..', '..');
 
-test('sidebar exposes the document drafting top-level destination', async () => {
-  const html = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'index.html'), 'utf8');
-  assert.match(html, /data-target="tab-document-drafting"/u);
-  assert.match(html, />\s*公文拟写\s*</u);
+test('foundation exposes the document drafting destination', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'extensions.mjs'), 'utf8');
+  assert.match(source, /key: 'document-drafting'/u);
+  assert.match(source, /label: '公文拟写'/u);
 });
 
 test('readable renderer module builds a direct drafting workspace with one input and editable preview', async () => {
@@ -36,6 +36,11 @@ test('readable renderer module builds a direct drafting workspace with one input
   assert.match(source, /documentLayoutPreset/u);
   assert.match(source, /documentAddressee/u);
   assert.match(source, /documentSignatureUnit/u);
+  assert.match(source, /id="documentSignatureFields"/u);
+  assert.match(source, /id="documentIssuedDate"[^>]*type="date"/u);
+  assert.match(source, /state\.layout\.issuedDate/u);
+  assert.match(source, /data-doc-role="date"/u);
+  assert.match(source, /bind\('documentIssuedDate', 'change'/u);
   assert.match(source, /getDraftLayoutDefaults/u);
   assert.match(source, /layout: currentLayout\(\)/u);
   assert.match(source, /documentEditorViewport/u);
@@ -47,15 +52,31 @@ test('readable renderer module builds a direct drafting workspace with one input
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
 });
 
-test('document preview styling keeps the workspace fixed and the A4 canvas independently scrollable', async () => {
-  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
+test('foundation document preview keeps the workspace fixed and the A4 canvas independently scrollable', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'document-extension.css'), 'utf8');
   assert.match(source, /\.document-conversation-grid\s*\{[^}]*height:\s*calc\(100vh\s*-\s*\d+px\)/su);
   assert.match(source, /\.document-chat-panel\s*\{[^}]*overflow-y:\s*auto/su);
   assert.match(source, /\.document-editor-viewport\s*\{[^}]*overflow:\s*auto/su);
   assert.match(source, /\.document-editor\s*\{[^}]*width:\s*210mm[^}]*min-height:\s*297mm/su);
 });
 
-test('document module is loaded through the readable local auth adapter', async () => {
-  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
+test('foundation route styles the report signature and date fields as a compact editable group', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'document-extension.css'), 'utf8');
+  assert.match(source, /\.document-signature-fields\s*\{[^}]*border:/su);
+  assert.match(source, /\.document-signature-field-grid\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:/su);
+});
+
+test('公文拟写不再弹 Token 确认，并在输入区显示共用额度', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'document-drafting-ui.js'), 'utf8');
+  const service = await fs.readFile(path.join(appRoot, 'src', 'main', 'document-drafting-service.js'), 'utf8');
+  assert.doesNotMatch(source, /estimateAiUsage|本次拟写将使用深度 AI|预计最多使用约/u);
+  assert.match(source, /data-ai-token-status/u);
+  assert.match(source, /communityAiTokenStatus\?\.record/u);
+  assert.match(service, /routing: aiResponse\?\.routing/u);
+  assert.match(service, /usage: aiResponse\?\.usage/u);
+});
+
+test('document module is loaded through the foundation extension', async () => {
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'extensions.mjs'), 'utf8');
   assert.match(source, /document-drafting-ui\.js/u);
 });

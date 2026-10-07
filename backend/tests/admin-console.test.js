@@ -3,10 +3,12 @@
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const fs = require('node:fs/promises');
+const http = require('node:http');
 const net = require('node:net');
 const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
+const zlib = require('node:zlib');
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -39,7 +41,7 @@ async function request(url, pathName, { token, method = 'GET', body } = {}) {
   return { status: response.status, body: await response.json() };
 }
 
-test('平台审核单位管理员，并管理成员、有效期和模型', async (t) => {
+test('手机号注册主账号，并管理成员、有效期和模型', async (t) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-backend-'));
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
@@ -47,12 +49,13 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
     cwd: path.resolve(__dirname, '..'),
     env: {
       ...process.env,
+      NODE_ENV: 'test',
       PORT: String(port),
       DB_PATH: path.join(directory, 'backend.db'),
       UPDATE_FILES_DIR: path.join(directory, 'updates'),
       JWT_SECRET: 'test-only-jwt-secret',
       ADMIN_PHONE: '13800000000',
-      ADMIN_PASSWORD: 'admin123456',
+      ADMIN_PASSWORD: 'test-admin-bootstrap-pass',
     },
     stdio: 'ignore',
   });
@@ -63,39 +66,136 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   });
   await waitForHealth(url);
 
-  const adminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13800000000', password: 'admin123456' } });
+  const adminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13800000000', password: 'test-admin-bootstrap-pass' } });
   assert.equal(adminLogin.status, 200);
-  const adminToken = adminLogin.body.token;
+  assert.equal(adminLogin.body.user.mustChangePassword, true);
+  assert.equal((await request(url, '/auth/users', { token: adminLogin.body.token })).status, 403);
+  const initialPasswordChange = await request(url, '/auth/password', { token: adminLogin.body.token, method: 'PUT', body: { oldPassword: 'test-admin-bootstrap-pass', newPassword: 'test-admin-working-pass' } });
+  assert.equal(initialPasswordChange.status, 200);
+  const adminToken = (await request(url, '/auth/login', { method: 'POST', body: { phone: '13800000000', password: 'test-admin-working-pass' } })).body.token;
 
-  const submitted = await request(url, '/auth/unit-admin-applications', { method: 'POST', body: {
-    phone: '139 0013 9000', password: 'secret88', name: '李主任', organizationName: '示范社区', region: '示范街道', machineId: 'mac-test-001',
+  const registered = await request(url, '/auth/register', { method: 'POST', body: {
+    phone: '139 0013 9000', password: 'secret88', confirmPassword: 'secret88', machineId: 'mac-test-001',
   } });
-  assert.equal(submitted.status, 201);
-  assert.equal(submitted.body.application.status, 'pending');
-
-  const applications = await request(url, '/auth/unit-admin-applications?status=pending', { token: adminToken });
-  assert.equal(applications.status, 200);
-  assert.equal(applications.body.applications.length, 1);
-  const approved = await request(url, `/auth/unit-admin-applications/${submitted.body.application.id}/review`, { token: adminToken, method: 'POST', body: { approve: true } });
-  assert.equal(approved.status, 200);
-  assert.equal(approved.body.user.role, 'unit_admin');
-  assert.equal(approved.body.user.planType, 'trial');
-  const registered = { body: { user: approved.body.user } };
+  assert.equal(registered.status, 201);
+  assert.equal(registered.body.user.role, 'main_account');
+  assert.equal(registered.body.user.planType, 'trial');
+  assert.equal(registered.body.user.mainAccountId, registered.body.user.id);
+  assert.equal(registered.body.user.organizationId, null);
 
   const unitAdminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13900139000', password: 'secret88' } });
   assert.equal(unitAdminLogin.status, 200);
-  const invite = await request(url, '/auth/unit/invites', { token: unitAdminLogin.body.token, method: 'POST', body: { maxUses: 3 } });
-  assert.equal(invite.status, 201);
-  assert.match(invite.body.code, /^CJ-/u);
-  const memberSubmitted = await request(url, '/auth/member-applications', { method: 'POST', body: { inviteCode: invite.body.code, phone: '13700137000', password: 'member88', name: '张成员' } });
-  assert.equal(memberSubmitted.status, 201);
-  const pendingMemberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
-  assert.equal(pendingMemberLogin.status, 403);
-  const reviewedMember = await request(url, `/auth/unit/member-applications/${memberSubmitted.body.application.id}/review`, { token: unitAdminLogin.body.token, method: 'POST', body: { approve: true, permissions: { personnel: ['view', 'create'], party: ['view'], workspace: ['view', 'update'] } } });
-  assert.equal(reviewedMember.status, 200);
+  const unitQuota = await request(url, '/ai/quota', { token: unitAdminLogin.body.token });
+  assert.equal(unitQuota.status, 200);
+  assert.equal(unitQuota.body.quota.permanent, true);
+  assert.equal(unitQuota.body.quota.totalTokens, 1000000);
+  const unitLedger = await request(url, '/ai/quota/ledger?pageSize=10', { token: unitAdminLogin.body.token });
+  assert.equal(unitLedger.status, 200);
+  assert.equal(unitLedger.body.pagination.total, 1);
+  const grantedQuota = await request(url, `/admin/ai/quotas/${unitQuota.body.quota.mainAccountId}/grants`, { token: adminToken, method: 'POST', body: { tokens: 5000, reason: '测试购买额度' } });
+  assert.equal(grantedQuota.status, 201);
+  assert.equal(grantedQuota.body.quota.totalTokens, 1005000);
+  const stoppedInvite = await request(url, '/auth/unit/invites', { token: unitAdminLogin.body.token, method: 'POST', body: { maxUses: 3 } });
+  assert.equal(stoppedInvite.status, 410);
+  const stoppedApplication = await request(url, '/auth/member-applications', { method: 'POST', body: { phone: '13700137000', password: 'member88', name: '张成员' } });
+  assert.equal(stoppedApplication.status, 410);
+  const reviewedMember = await request(url, '/auth/unit/members', { token: unitAdminLogin.body.token, method: 'POST', body: { phone: '13700137000', name: '张成员', preset: 'custom', permissions: { personnel: ['view', 'create'], party: ['view'], workspace: ['view', 'update'] }, aiAccessEnabled: true } });
+  assert.equal(reviewedMember.status, 201);
   assert.deepEqual(reviewedMember.body.user.permissions.personnel, ['view', 'create']);
+  const initialMemberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: reviewedMember.body.initialPassword } });
+  assert.equal(initialMemberLogin.status, 200);
+  const firstPasswordChange = await request(url, '/auth/password', { token: initialMemberLogin.body.token, method: 'PUT', body: { oldPassword: reviewedMember.body.initialPassword, newPassword: 'member88' } });
+  assert.equal(firstPasswordChange.status, 200);
   const memberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
   assert.equal(memberLogin.status, 200);
+
+  assert.equal((await request(url, '/admin/accounts')).status, 401);
+  assert.equal((await request(url, '/admin/accounts', {token: memberLogin.body.token})).status, 403);
+  const accountList = await request(url, '/admin/accounts', {token: adminToken});
+  assert.equal(accountList.status, 200);
+  assert.equal(accountList.body.accounts.length, 1);
+  assert.equal(accountList.body.accounts[0].id, registered.body.user.id);
+  assert.equal(accountList.body.accounts[0].memberCount, 1);
+  const detail = await request(url, '/admin/accounts/'+registered.body.user.id, {token: adminToken});
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.members[0].id, reviewedMember.body.user.id);
+  assert.equal(detail.body.members[0].createdBy, registered.body.user.id);
+  assert.equal(detail.body.members[0].positionPreset, 'custom');
+  assert.equal(detail.body.members[0].password_hash, undefined);
+  const searched = await request(url, '/admin/accounts?keyword=13700137000', {token: adminToken});
+  assert.equal(searched.body.accounts[0].id, registered.body.user.id);
+
+  const savedConversation = await request(url, '/ai/assistant/conversation', {
+    token: unitAdminLogin.body.token, method: 'PUT', body: {
+      conversationId: 'conversation-unit-admin',
+      messages: [{ role: 'user', content: '查一下张三' }, { role: 'assistant', content: '请补充村民组' }],
+    },
+  });
+  assert.equal(savedConversation.status, 200);
+  assert.equal(savedConversation.body.conversation.messages.length, 2);
+  const restoredConversation = await request(url, '/ai/assistant/conversation?conversationId=conversation-unit-admin', { token: unitAdminLogin.body.token });
+  assert.equal(restoredConversation.body.conversation.messages[0].content, '查一下张三');
+  const otherUsersConversation = await request(url, '/ai/assistant/conversation?conversationId=conversation-unit-admin', { token: memberLogin.body.token });
+  assert.equal(otherUsersConversation.body.conversation, null);
+
+  const longConversation = Array.from({ length: 30 }, (_, index) => ({ role: index % 2 ? 'assistant' : 'user', content: `第 ${index + 1} 条对话内容` }));
+  const compactedConversation = await request(url, '/ai/assistant/conversation', {
+    token: unitAdminLogin.body.token, method: 'PUT', body: { conversationId: 'conversation-long', messages: longConversation },
+  });
+  assert.equal(compactedConversation.status, 200);
+  assert.equal(compactedConversation.body.conversation.messages.length, 20);
+  assert.match(compactedConversation.body.conversation.summary, /第 1 条对话内容/u);
+
+  const savedTask = await request(url, '/ai/assistant/tasks/task-unit-admin', {
+    token: unitAdminLogin.body.token, method: 'PUT', body: {
+      conversationId: 'conversation-unit-admin', title: '跨模块核对', originalRequest: '查询张三的土地和发放', status: 'waiting-input',
+      steps: [{ id: 'step-1', title: '查询土地', toolId: 'land.resident-parcels-query', status: 'completed' }, { id: 'step-2', title: '查询发放', toolId: 'funds.paid-summary', status: 'waiting-input' }],
+      clarification: { field: 'year', question: '请补充年份' },
+      taskKind: 'file-recognition', artifactIds: ['file-1'], fileEntries: [{ id: 'file-1', fileName: '测试.xlsx' }],
+      pendingAction: { id: 'action-1', type: 'resident_phone_update', before: { phone: '13800000000' }, after: { phone: '13900000000' } },
+      permissionDecision: { allowed: true, permission: { module: 'personnel', action: 'update' } },
+      confirmationHistory: [{ step: 1, label: '执行确认', confirmedAt: '2026-09-20T08:00:00.000Z' }],
+      operationId: 'operation-1', verification: { passed: true, status: 'passed', message: '复核通过' },
+    },
+  });
+  assert.equal(savedTask.status, 200);
+  assert.deepEqual(savedTask.body.task.progress, { completed: 1, total: 2 });
+  const restoredTasks = await request(url, '/ai/assistant/tasks?conversationId=conversation-unit-admin', { token: unitAdminLogin.body.token });
+  assert.equal(restoredTasks.body.tasks[0].id, 'task-unit-admin');
+  assert.equal(restoredTasks.body.tasks[0].pendingAction.type, 'resident_phone_update');
+  assert.equal(restoredTasks.body.tasks[0].taskKind, 'file-recognition');
+  assert.deepEqual(restoredTasks.body.tasks[0].artifactIds, ['file-1']);
+  assert.equal(restoredTasks.body.tasks[0].fileEntries[0].fileName, '测试.xlsx');
+  assert.equal(restoredTasks.body.tasks[0].permissionDecision.allowed, true);
+  assert.equal(restoredTasks.body.tasks[0].confirmationHistory.length, 1);
+  assert.equal(restoredTasks.body.tasks[0].operationId, 'operation-1');
+  assert.equal(restoredTasks.body.tasks[0].verification.passed, true);
+  const otherUsersTasks = await request(url, '/ai/assistant/tasks?conversationId=conversation-unit-admin', { token: memberLogin.body.token });
+  assert.deepEqual(otherUsersTasks.body.tasks, []);
+
+  const personalMemory = await request(url, '/ai/assistant/memories', {
+    token: unitAdminLogin.body.token, method: 'POST', body: { scope: 'personal', content: '称呼我为李主任' },
+  });
+  assert.equal(personalMemory.status, 201);
+  const unitMemory = await request(url, '/ai/assistant/memories', {
+    token: unitAdminLogin.body.token, method: 'POST', body: { scope: 'organization', content: '承包费先核对各组固定总额' },
+  });
+  assert.equal(unitMemory.status, 201);
+  const forbiddenUnitMemory = await request(url, '/ai/assistant/memories', {
+    token: memberLogin.body.token, method: 'POST', body: { scope: 'organization', content: '成员不能直接发布单位规则' },
+  });
+  assert.equal(forbiddenUnitMemory.status, 403);
+  const sensitiveMemory = await request(url, '/ai/assistant/memories', {
+    token: unitAdminLogin.body.token, method: 'POST', body: { scope: 'personal', content: '记住手机号 13800000000' },
+  });
+  assert.equal(sensitiveMemory.status, 400);
+  const memberMemories = await request(url, '/ai/assistant/memories', { token: memberLogin.body.token });
+  assert.deepEqual(memberMemories.body.memories.map(item => item.content), ['承包费先核对各组固定总额']);
+  const forbiddenDelete = await request(url, `/ai/assistant/memories/${personalMemory.body.memory.id}`, { token: memberLogin.body.token, method: 'DELETE' });
+  assert.equal(forbiddenDelete.status, 403);
+  const deletedPersonalMemory = await request(url, `/ai/assistant/memories/${personalMemory.body.memory.id}`, { token: unitAdminLogin.body.token, method: 'DELETE' });
+  assert.equal(deletedPersonalMemory.status, 200);
+
   const emptyWorkspace = await request(url, '/unit/workspace/data', { token: memberLogin.body.token });
   assert.equal(emptyWorkspace.status, 200);
   const workspaceWrite = await request(url, '/unit/workspace/data', { token: memberLogin.body.token, method: 'PUT', body: { version: emptyWorkspace.body.version, data: { personnel: [{ name: '测试村民' }] } } });
@@ -110,6 +210,8 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   const restoredMember = await request(url, `/auth/unit/members/${reviewedMember.body.user.id}/status`, { token: unitAdminLogin.body.token, method: 'PUT', body: { isActive: true } });
   assert.equal(restoredMember.status, 200);
   assert.equal(restoredMember.body.user.isActive, true);
+  const reactivatedMemberLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13700137000', password: 'member88' } });
+  assert.equal(reactivatedMemberLogin.status, 200);
   const invalidMemberStatus = await request(url, `/auth/unit/members/${reviewedMember.body.user.id}/status`, { token: unitAdminLogin.body.token, method: 'PUT', body: { isActive: 'yes' } });
   assert.equal(invalidMemberStatus.status, 400);
 
@@ -136,7 +238,15 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   assert.equal(updateCheck.body.latestVersion, '0.3.1');
   assert.equal(updateCheck.body.githubReleaseUrl, 'https://github.com/example/releases/tag/v0.3.1');
 
+  const oldMacBlockMap = zlib.gzipSync(JSON.stringify({version:'2',files:[{name:'file',checksums:['old-mac'],sizes:[7]}]}));
+  const oldMacForm = new FormData();
+  oldMacForm.set('version','0.3.0');oldMacForm.set('platform','darwin-arm64');oldMacForm.set('packageType','zip');
+  oldMacForm.set('file',new Blob(['old zip']),'community-ai-management-system-0.3.0-arm64.zip');
+  oldMacForm.set('blockmap',new Blob([oldMacBlockMap]),'community-ai-management-system-0.3.0-arm64.zip.blockmap');
+  assert.equal((await fetch(`${url}/api/update/publish`,{method:'POST',headers:{Authorization:`Bearer ${adminToken}`},body:oldMacForm})).status,201);
   const zipForm = new FormData();
+  const macBlockMap = zlib.gzipSync(JSON.stringify({ version: '2', files: [{ name: 'file', checksums: ['mac'], sizes: [18] }] }));
+  zipForm.set('blockmap', new Blob([macBlockMap]), 'community-ai-management-system-0.3.2-arm64.zip.blockmap');
   zipForm.set('version', '0.3.2');
   zipForm.set('platform', 'darwin-arm64');
   zipForm.set('packageType', 'zip');
@@ -160,6 +270,77 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   const inAppDownload = await fetch(new URL(downloadMatch[1], `${url}/api/update/electron/latest-mac.yml`));
   assert.equal(inAppDownload.status, 200);
   assert.equal(await inAppDownload.text(), 'zip update package');
+  const macDownloadUrl = new URL(downloadMatch[1], `${url}/api/update/electron/latest-mac.yml`);
+  const macMapResponse = await fetch(`${macDownloadUrl}.blockmap`);
+  assert.equal(macMapResponse.status, 200);
+  assert.deepEqual(Buffer.from(await macMapResponse.arrayBuffer()), macBlockMap);
+  const oldMacMapResponse = await fetch(`${macDownloadUrl.toString().replace('0.3.2','0.3.0')}.blockmap`);
+  assert.equal(oldMacMapResponse.status,200);
+  assert.deepEqual(Buffer.from(await oldMacMapResponse.arrayBuffer()),oldMacBlockMap);
+  const missingMacMap = await fetch(`${macDownloadUrl.toString().replace('0.3.2', '0.2.9')}.blockmap`);
+  assert.equal(missingMacMap.status, 404);
+  const macRange = await fetch(macDownloadUrl, {headers: {Range: 'bytes=0-2'}});
+  assert.equal(macRange.status, 206);
+  assert.equal(await macRange.text(), 'zip');
+
+  const oldWindowsBlockMap = zlib.gzipSync(JSON.stringify({ version: '2', files: [{ name: 'file', checksums: ['old'], sizes: [12] }] }));
+  const oldWindowsForm = new FormData();
+  oldWindowsForm.set('version', '0.3.1');
+  oldWindowsForm.set('platform', 'win32-x64');
+  oldWindowsForm.set('packageType', 'exe');
+  oldWindowsForm.set('file', new Blob(['previous exe']), 'community-ai-management-system-0.3.1-win-x64.exe');
+  oldWindowsForm.set('blockmap', new Blob([oldWindowsBlockMap]), 'community-ai-management-system-0.3.1-win-x64.exe.blockmap');
+  const oldWindowsPublished = await fetch(`${url}/api/update/publish`, {
+    method: 'POST', headers: { Authorization: `Bearer ${adminToken}` }, body: oldWindowsForm,
+  });
+  assert.equal(oldWindowsPublished.status, 201);
+
+  const newWindowsBlockMap = zlib.gzipSync(JSON.stringify({ version: '2', files: [{ name: 'file', checksums: ['new'], sizes: [19] }] }));
+  const windowsForm = new FormData();
+  windowsForm.set('version', '0.3.2');
+  windowsForm.set('platform', 'win32-x64');
+  windowsForm.set('packageType', 'exe');
+  windowsForm.set('file', new Blob(['nsis update package']), 'community-ai-management-system-0.3.2-win-x64.exe');
+  windowsForm.set('blockmap', new Blob([newWindowsBlockMap]), 'community-ai-management-system-0.3.2-win-x64.exe.blockmap');
+  const windowsPublished = await fetch(`${url}/api/update/publish`, {
+    method: 'POST', headers: { Authorization: `Bearer ${adminToken}` }, body: windowsForm,
+  });
+  assert.equal(windowsPublished.status, 201);
+  const windowsCheck = await request(url, '/update/check?version=0.3.1&platform=win32-x64');
+  assert.equal(windowsCheck.body.hasUpdate, true);
+  assert.equal(windowsCheck.body.packageType, 'exe');
+  assert.match(windowsCheck.body.fileSha512, /^[A-Za-z0-9+/]+=*$/u);
+  const windowsManifest = await fetch(`${url}/api/update/electron/latest.yml`);
+  assert.equal(windowsManifest.status, 200);
+  const windowsManifestText = await windowsManifest.text();
+  assert.match(windowsManifestText, /version: 0\.3\.2/u);
+  const windowsDownloadMatch = windowsManifestText.match(/url: (\.\.\/download\/[^/]+\/[^\n]+\.exe)/u);
+  assert.ok(windowsDownloadMatch, 'Windows 更新清单应指向 NSIS 安装包');
+  const windowsDownload = await fetch(new URL(windowsDownloadMatch[1], `${url}/api/update/electron/latest.yml`));
+  assert.equal(windowsDownload.status, 200);
+  assert.equal(await windowsDownload.text(), 'nsis update package');
+  const windowsDownloadUrl = new URL(windowsDownloadMatch[1], `${url}/api/update/electron/latest.yml`);
+  const newBlockMapResponse = await fetch(`${windowsDownloadUrl}.blockmap`);
+  assert.equal(newBlockMapResponse.status, 200);
+  assert.deepEqual(Buffer.from(await newBlockMapResponse.arrayBuffer()), newWindowsBlockMap);
+  const oldBlockMapResponse = await fetch(`${windowsDownloadUrl.toString().replace('0.3.2', '0.3.1')}.blockmap`);
+  assert.equal(oldBlockMapResponse.status, 200);
+  assert.deepEqual(Buffer.from(await oldBlockMapResponse.arrayBuffer()), oldWindowsBlockMap);
+  const singleRange = await fetch(windowsDownloadUrl, { headers: { Range: 'bytes=0-3' } });
+  assert.equal(singleRange.status, 206);
+  assert.equal(singleRange.headers.get('content-range'), 'bytes 0-3/19');
+  assert.equal(singleRange.headers.get('accept-ranges'), 'bytes');
+  assert.equal(await singleRange.text(), 'nsis');
+  const multipleRanges = await fetch(windowsDownloadUrl, { headers: { Range: 'bytes=0-3,5-10' } });
+  assert.equal(multipleRanges.status, 206);
+  assert.match(multipleRanges.headers.get('content-type'), /^multipart\/byteranges; boundary=/u);
+  const multipart = await multipleRanges.text();
+  assert.match(multipart, /Content-Range: bytes 0-3\/19\r\n\r\nnsis\r\n/u);
+  assert.match(multipart, /Content-Range: bytes 5-10\/19\r\n\r\nupdate\r\n/u);
+  const invalidRange = await fetch(windowsDownloadUrl, { headers: { Range: 'bytes=999-1000' } });
+  assert.equal(invalidRange.status, 416);
+  assert.equal(invalidRange.headers.get('content-range'), 'bytes */19');
+  assert.equal((await (await fetch(`${url}/api/update/electron/latest-mac.yml`)).text()).includes('.exe'), false);
 
   const duplicateForm = new FormData();
   duplicateForm.set('version', '0.3.1');
@@ -194,11 +375,94 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   assert.equal(adminDisabled.status, 200);
   const memberAfterAdminDisabled = await request(url, '/auth/entitlement', { token: memberLogin.body.token });
   assert.equal(memberAfterAdminDisabled.status, 401);
+  const adminRestored = await request(url, `/auth/users/${registered.body.user.id}/entitlement`, { token: adminToken, method: 'PUT', body: { isActive: true } });
+  assert.equal(adminRestored.status, 200);
+  const restoredUnitAdminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13900139000', password: 'new-secret88' } });
+  assert.equal(restoredUnitAdminLogin.status, 200);
 
-  const provider = await request(url, '/ai/providers', { token: adminToken, method: 'POST', body: { name: '测试模型', providerType: 'openai-compatible', baseUrl: 'https://example.com/v1', apiKey: 'secret-api-key', defaultModel: 'demo-chat', availableModels: ['demo-chat'] } });
+  const mockAiPort = await freePort();
+  const mockAiUrl = `http://127.0.0.1:${mockAiPort}`;
+  let aiRequestCount = 0;
+  const mockAi = http.createServer(async (req, res) => {
+    aiRequestCount += 1;
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    assert.equal(req.url, '/v1/chat/completions');
+    assert.equal(body.model, 'demo-chat');
+    assert.equal(body.messages[0].content, '请只回复：连接成功');
+    res.setHeader('Content-Type', 'application/json');
+    if (req.headers.authorization !== 'Bearer secret-api-key') {
+      res.statusCode = 401;
+      res.end(JSON.stringify({ error: { message: 'API 密钥无效' } }));
+      return;
+    }
+    res.end(JSON.stringify({
+      model: body.model,
+      choices: [{ message: { content: '连接成功' } }],
+      usage: { prompt_tokens: 8, completion_tokens: 2, total_tokens: 10 },
+    }));
+  });
+  await new Promise(resolve => mockAi.listen(mockAiPort, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => mockAi.close(resolve)));
+
+  const unauthorizedTest = await request(url, '/ai/providers/test', { method: 'POST', body: { baseUrl: `${mockAiUrl}/v1`, apiKey: 'secret-api-key', defaultModel: 'demo-chat' } });
+  assert.equal(unauthorizedTest.status, 401);
+
+  const unsavedTest = await request(url, '/ai/providers/test', { token: adminToken, method: 'POST', body: { baseUrl: `${mockAiUrl}/v1`, apiKey: 'secret-api-key', defaultModel: 'demo-chat' } });
+  assert.equal(unsavedTest.status, 200);
+  assert.equal(unsavedTest.body.success, true);
+  assert.equal(unsavedTest.body.model, 'demo-chat');
+  assert.equal(unsavedTest.body.totalTokens, 10);
+  assert.equal(unsavedTest.body.reply, '连接成功');
+  assert.equal(Object.hasOwn(unsavedTest.body, 'apiKey'), false);
+
+  const invalidKeyTest = await request(url, '/ai/providers/test', { token: adminToken, method: 'POST', body: { baseUrl: `${mockAiUrl}/v1`, apiKey: 'wrong-secret', defaultModel: 'demo-chat' } });
+  assert.equal(invalidKeyTest.status, 502);
+  assert.match(invalidKeyTest.body.error, /API 密钥无效/u);
+
+  const provider = await request(url, '/ai/providers', { token: adminToken, method: 'POST', body: { name: '测试模型', providerType: 'openai-compatible', baseUrl: `${mockAiUrl}/v1`, apiKey: 'secret-api-key', defaultModel: 'demo-chat', availableModels: ['demo-chat'] } });
   assert.equal(provider.status, 201);
   assert.equal(Object.hasOwn(provider.body.provider, 'apiKey'), false);
   assert.equal(provider.body.provider.hasApiKey, true);
+  const savedProviderTest = await request(url, '/ai/providers/test', { token: adminToken, method: 'POST', body: { providerId: provider.body.provider.id, apiKey: '', defaultModel: 'demo-chat' } });
+  assert.equal(savedProviderTest.status, 200);
+  assert.equal(savedProviderTest.body.totalTokens, 10);
+  assert.equal(aiRequestCount, 3);
+
+  const batchBefore = await request(url, '/ai/providers', { token: adminToken });
+  const invalidBatch = await request(url, '/ai/providers/batch', { token: adminToken, method:'POST', body:{providers:[{name:'rollback-test',baseUrl:'https://example.invalid/v1',apiKey:'test-only',defaultModel:'chat',availableModels:['chat'],contextTokens:32768},{name:'invalid',contextTokens:1}]}});
+  assert.equal(invalidBatch.status,400);
+  const batchAfter = await request(url, '/ai/providers', { token: adminToken });
+  assert.deepEqual(batchAfter.body.providers.map(p=>p.id),batchBefore.body.providers.map(p=>p.id));
+  const disabledCredits = await request(url, '/ai/credit-policy', {token:adminToken});
+  assert.equal(disabledCredits.body.enabled,false);
+
+  const ordinaryEstimate = await request(url, '/ai/estimate', {
+    token: restoredUnitAdminLogin.body.token,
+    method: 'POST',
+    body: { messages: [{ role: 'user', content: '你好' }], taskTier: 'basic', taskKind: 'assistant-conversation' },
+  });
+  assert.equal(ordinaryEstimate.status, 200);
+  assert.equal(ordinaryEstimate.body.highCost, false);
+  assert.equal(ordinaryEstimate.body.requiresConfirmation, false);
+  assert.equal(ordinaryEstimate.body.sufficient, true);
+  assert.equal(ordinaryEstimate.body.totalTokens, 1005000);
+
+  const documentEstimate = await request(url, '/ai/estimate', {
+    token: restoredUnitAdminLogin.body.token,
+    method: 'POST',
+    body: { messages: [{ role: 'user', content: '根据这些材料起草一份证明' }], taskTier: 'deep', taskKind: 'document-draft' },
+  });
+  assert.equal(documentEstimate.status, 200);
+  assert.equal(documentEstimate.body.highCost, true);
+  assert.equal(documentEstimate.body.requiresConfirmation, true);
+  assert.match(documentEstimate.body.reminderReason, /预计用量较高/u);
+
+  const usageAfterProviderTests = await request(url, '/ai/usage/all?days=30', { token: adminToken });
+  assert.equal(usageAfterProviderTests.body.stats.total_calls, 0);
+  const auditAfterProviderTests = await request(url, '/auth/audit-logs', { token: adminToken });
+  assert.doesNotMatch(JSON.stringify(auditAfterProviderTests.body), /secret-api-key|wrong-secret/u);
 
   const overview = await request(url, '/admin/overview', { token: adminToken });
   assert.equal(overview.status, 200);
@@ -210,4 +474,40 @@ test('平台审核单位管理员，并管理成员、有效期和模型', async
   const staticHtml = await staticPage.text();
   assert.match(staticHtml, /function bindDynamicActions\(\)/u);
   assert.match(staticHtml, /button\.removeAttribute\('onclick'\)/u);
+  assert.match(staticHtml, /ai-quota-management\.js/u);
+  assert.match(staticHtml, /id="testProvider"/u);
+  assert.match(staticHtml, /window\.testSavedProvider/u);
+  assert.match(staticHtml, />测试连接<\/button>/u);
+  assert.match(staticHtml, /providerTestResult/u);
+  assert.match(staticHtml, /\/ai\/providers\/test/u);
+  assert.match(staticHtml, /id="supportsVision"/u);
+  assert.match(staticHtml, /id="visionModel"/u);
+  assert.match(staticHtml, /id="testVisionProvider"/u);
+  assert.match(staticHtml, /账户安全/u);
+  assert.match(staticHtml, /window\.deleteUser/u);
+  assert.match(staticHtml, /window\.unlockLogin/u);
+  const quotaPageScript = await fetch(`${url}/admin/ai-quota-management.js`);
+  assert.equal(quotaPageScript.status, 200);
+  assert.match(await quotaPageScript.text(), /AI 额度管理/u);
+
+  const changedAdminPassword = await request(url, '/auth/password', { token: adminToken, method: 'PUT', body: { oldPassword: 'test-admin-working-pass', newPassword: 'admin-new-secret88' } });
+  assert.equal(changedAdminPassword.status, 200);
+  const staleAdminToken = await request(url, '/auth/users', { token: adminToken });
+  assert.equal(staleAdminToken.status, 401);
+  const refreshedAdminLogin = await request(url, '/auth/login', { method: 'POST', body: { phone: '13800000000', password: 'admin-new-secret88' } });
+  assert.equal(refreshedAdminLogin.status, 200);
+
+  const deletedMember = await request(url, `/auth/users/${reviewedMember.body.user.id}`, { token: refreshedAdminLogin.body.token, method: 'DELETE' });
+  assert.equal(deletedMember.status, 200);
+  const deletedMemberToken = await request(url, '/auth/entitlement', { token: reactivatedMemberLogin.body.token });
+  assert.equal(deletedMemberToken.status, 401);
+  const memberRecreation = await request(url, '/auth/unit/members', { token: restoredUnitAdminLogin.body.token, method: 'POST', body: { phone: '13700137000', name: '张成员再次开通', preset: 'custom' } });
+  assert.equal(memberRecreation.status, 201);
+
+  const deletedUnitAdmin = await request(url, `/auth/users/${registered.body.user.id}`, { token: refreshedAdminLogin.body.token, method: 'DELETE' });
+  assert.equal(deletedUnitAdmin.status, 200);
+  const deletedUnitAdminToken = await request(url, '/auth/entitlement', { token: restoredUnitAdminLogin.body.token });
+  assert.equal(deletedUnitAdminToken.status, 401);
+  const unitAdminReapplication = await request(url, '/auth/register', { method: 'POST', body: { phone: '13900139000', password: 'unit-new88', confirmPassword: 'unit-new88' } });
+  assert.equal(unitAdminReapplication.status, 201);
 });

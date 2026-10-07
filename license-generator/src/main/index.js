@@ -6,7 +6,7 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 
 const { issueLicense } = require('./license-issuer');
 
-app.setName('社区AI授权工具');
+app.setName("村居AI授权工具");
 app.setPath('userData', path.join(app.getPath('appData'), '社区AI授权工具'));
 
 function getPrivateKeyPath() {
@@ -22,7 +22,7 @@ function createWindow() {
     minWidth: 720,
     minHeight: 640,
     backgroundColor: '#f4faf8',
-    title: '社区AI授权工具',
+    title: "村居AI授权工具",
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.js'),
       contextIsolation: true,

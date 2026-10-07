@@ -17,6 +17,21 @@ function cleanText(value) {
   return String(value || '').replaceAll(/\r\n?/gu, '\n').trim();
 }
 
+function normalizeDateInput(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  }
+  const text = cleanText(value);
+  const match = text.match(/^(\d{4})(?:-|年|\/)(\d{1,2})(?:-|月|\/)(\d{1,2})日?(?:T.*)?$/u);
+  if (!match) return '';
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return '';
+  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
 function escapeHtml(value) {
   return String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 }
@@ -26,13 +41,13 @@ const DOCUMENT_LAYOUT_PRESETS = Object.freeze({
     preset: 'request', paper: 'A4', titleFont: 'heiti', titleSize: 22, titleBold: true,
     bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2,
     margins: Object.freeze({ top: 30, right: 26, bottom: 35, left: 28 }),
-    addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会',
+    addressee: '', signatureUnit: '',
   }),
   report: Object.freeze({
     preset: 'report', paper: 'A4', titleFont: 'songti', titleSize: 24, titleBold: true,
     bodyFont: 'fangsong', bodySize: 16, lineSpacing: 28.95, firstLineChars: 2,
     margins: Object.freeze({ top: 25.4, right: 31.75, bottom: 25.4, left: 31.75 }),
-    addressee: '晓店街道办事处', signatureUnit: '陆庄社区居民委员会',
+    addressee: '', signatureUnit: '',
   }),
 });
 
@@ -47,7 +62,7 @@ function presetForTemplate(templateId = '') {
   return String(templateId).includes('request') ? 'request' : 'report';
 }
 
-function normalizeDocumentLayout(value, fallbackPreset = 'report') {
+function normalizeDocumentLayout(value, fallbackPreset = 'report', fallbackIssuedDate = '') {
   const requestedPreset = value?.preset;
   const presetName = Object.hasOwn(DOCUMENT_LAYOUT_PRESETS, requestedPreset) ? requestedPreset : fallbackPreset;
   const preset = DOCUMENT_LAYOUT_PRESETS[presetName] || DOCUMENT_LAYOUT_PRESETS.report;
@@ -62,6 +77,7 @@ function normalizeDocumentLayout(value, fallbackPreset = 'report') {
     bodyFont: font(value?.bodyFont, preset.bodyFont),
     bodySize: clampNumber(value?.bodySize, preset.bodySize, 9, 42),
     lineSpacing: clampNumber(value?.lineSpacing, preset.lineSpacing, 12, 72),
+    signatureGapLines: clampNumber(value?.signatureGapLines, 2, 0, 8),
     firstLineChars: clampNumber(value?.firstLineChars, preset.firstLineChars, 0, 4),
     margins: {
       top: clampNumber(margins.top, preset.margins.top, 10, 50),
@@ -71,14 +87,17 @@ function normalizeDocumentLayout(value, fallbackPreset = 'report') {
     },
     addressee: cleanText(value?.addressee) || preset.addressee,
     signatureUnit: cleanText(value?.signatureUnit) || preset.signatureUnit,
+    issuedDate: normalizeDateInput(value?.issuedDate) || normalizeDateInput(fallbackIssuedDate),
   };
 }
 
-function latestLayoutFor(database, accountId, fallbackPreset) {
+function latestLayoutFor(database, accountId, fallbackPreset, issuedDate = '') {
   const latest = (database.documentDrafts || [])
     .filter((item) => item.ownerUserId === accountId && item.layout)
     .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
-  return normalizeDocumentLayout(latest?.layout, fallbackPreset);
+  const layout = normalizeDocumentLayout(latest?.layout, fallbackPreset, issuedDate);
+  if (normalizeDateInput(issuedDate)) layout.issuedDate = normalizeDateInput(issuedDate);
+  return layout;
 }
 
 function textToHtml(value) {
@@ -118,17 +137,27 @@ function documentTextFromHtml(value) {
   return cleanText(String(value || '').replaceAll(/<br\s*\/?\s*>/giu, '\n').replaceAll(/<\/(p|h[1-4]|li|blockquote)\s*>/giu, '\n').replaceAll(/<[^>]+>/gu, '').replaceAll('&nbsp;', ' ').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', "'").replaceAll('&amp;', '&'));
 }
 
+function issuedDateFromHtml(value) {
+  const match = String(value || '').match(/<p\b[^>]*data-doc-role\s*=\s*(["'])date\1[^>]*>([\s\S]*?)<\/p>/iu);
+  return match ? normalizeDateInput(documentTextFromHtml(match[2])) : '';
+}
+
 function comparableText(value) {
   return cleanText(value).replaceAll(/[\s：:，,。！？!?、（）()《》]/gu, '');
 }
 
 function dateText(value) {
+  const normalized = normalizeDateInput(value);
+  if (normalized) {
+    const [year, month, day] = normalized.split('-').map(Number);
+    return `${year}年${month}月${day}日`;
+  }
   const date = value instanceof Date ? value : new Date(value);
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function structuredDocumentHtml({ documentKind, title, documentText, layout, fields = {}, now = new Date() }) {
-  const normalizedLayout = normalizeDocumentLayout(layout, presetForTemplate(fields.templateId));
+  const normalizedLayout = normalizeDocumentLayout(layout, presetForTemplate(fields.templateId), now);
   const paragraphs = cleanText(documentText).split(/\n{2,}/u).map(cleanText).filter(Boolean);
   if (paragraphs.length) {
     const firstLines = paragraphs[0].split('\n').map(cleanText).filter(Boolean);
@@ -156,7 +185,10 @@ function structuredDocumentHtml({ documentKind, title, documentText, layout, fie
     const tailLines = paragraphs.at(-1).split('\n').map(cleanText).filter(Boolean);
     const originalLength = tailLines.length;
     if (tailLines.at(-1) && /^\d{4}年\d{1,2}月\d{1,2}日$/u.test(tailLines.at(-1))) tailLines.pop();
-    if (tailLines.at(-1) && tailLines.at(-1).length <= 40 && /(社区|居民委员会|村民委员会|公司|办事处|人民政府)$/u.test(tailLines.at(-1))) tailLines.pop();
+    if (tailLines.at(-1) && (
+      comparableText(tailLines.at(-1)) === comparableText(normalizedLayout.signatureUnit)
+      || (tailLines.at(-1).length <= 40 && /((?:社区|村居)|居民委员会|村民委员会|公司|办事处|人民政府)$/u.test(tailLines.at(-1)))
+    )) tailLines.pop();
     if (tailLines.length === originalLength) break;
     if (tailLines.length) paragraphs[paragraphs.length - 1] = tailLines.join('\n');
     else paragraphs.pop();
@@ -171,7 +203,7 @@ function structuredDocumentHtml({ documentKind, title, documentText, layout, fie
     `<p data-doc-role="addressee">${escapeHtml(normalizedLayout.addressee)}：</p>`,
     body,
     `<p data-doc-role="signature">${escapeHtml(normalizedLayout.signatureUnit)}</p>`,
-    `<p data-doc-role="date">${escapeHtml(dateText(now))}</p>`,
+    `<p data-doc-role="date">${escapeHtml(dateText(normalizedLayout.issuedDate || now))}</p>`,
   ].join('');
 }
 
@@ -229,7 +261,7 @@ class DocumentDraftingService {
   async getLayoutDefaults({ templateId = 'report-work' } = {}) {
     const account = await requireAccount(this.getCurrentAccount);
     const database = await this.databaseStore.read();
-    return latestLayoutFor(database, account.id, presetForTemplate(templateId));
+    return latestLayoutFor(database, account.id, presetForTemplate(templateId), this.now());
   }
 
   async listDocuments(filters = {}) {
@@ -258,12 +290,14 @@ class DocumentDraftingService {
     const database = await this.databaseStore.read();
     const document = requireDocument(database, documentId);
     if (!canRead(document, account.id)) throw new Error('无权查看该公文');
-    const documentLayout = normalizeDocumentLayout(document.layout, presetForTemplate(document.templateId));
+    const currentVersion = versionFor(database, document);
+    const fallbackIssuedDate = issuedDateFromHtml(document.workingContentHtml || currentVersion?.contentHtml) || normalizeDateInput(this.now());
+    const documentLayout = normalizeDocumentLayout(document.layout, presetForTemplate(document.templateId), fallbackIssuedDate);
     return {
       document: { ...structuredClone(document), layout: documentLayout },
       versions: (database.documentVersions || []).filter((version) => version.documentId === documentId).sort((left, right) => right.versionNumber - left.versionNumber).map((version) => ({
         ...structuredClone(version),
-        layoutSnapshot: normalizeDocumentLayout(version.layoutSnapshot || documentLayout, presetForTemplate(document.templateId)),
+        layoutSnapshot: normalizeDocumentLayout(version.layoutSnapshot || documentLayout, presetForTemplate(document.templateId), issuedDateFromHtml(version.contentHtml) || fallbackIssuedDate),
       })),
       references: (database.documentReferences || []).filter((reference) => reference.documentId === documentId),
       messages: (database.documentDraftMessages || []).filter((message) => message.documentId === documentId),
@@ -281,8 +315,8 @@ class DocumentDraftingService {
       const documentId = this.createId('document');
       const versionId = this.createId('version');
       const documentLayout = layout
-        ? normalizeDocumentLayout(layout, presetForTemplate(templateId))
-        : latestLayoutFor(database, account.id, presetForTemplate(templateId));
+        ? normalizeDocumentLayout(layout, presetForTemplate(templateId), this.now())
+        : latestLayoutFor(database, account.id, presetForTemplate(templateId), this.now());
       const document = {
         id: documentId, documentKind: validation.template.documentKind, templateId,
         customTypeName: cleanText(customTypeName), title: validation.fields.title,
@@ -318,8 +352,11 @@ class DocumentDraftingService {
       if (contentHtml !== undefined) document.workingContentHtml = sanitizeDocumentHtml(contentHtml);
       if (contentText !== undefined) document.workingContentText = cleanText(contentText);
       else if (contentHtml !== undefined) document.workingContentText = documentTextFromHtml(document.workingContentHtml);
-      if (layout !== undefined) document.layout = normalizeDocumentLayout(layout, presetForTemplate(document.templateId));
-      else if (!document.layout) document.layout = normalizeDocumentLayout(null, presetForTemplate(document.templateId));
+      const fallbackIssuedDate = normalizeDateInput(document.layout?.issuedDate)
+        || issuedDateFromHtml(document.workingContentHtml)
+        || normalizeDateInput(this.now());
+      if (layout !== undefined) document.layout = normalizeDocumentLayout(layout, presetForTemplate(document.templateId), fallbackIssuedDate);
+      else if (!document.layout) document.layout = normalizeDocumentLayout(null, presetForTemplate(document.templateId), fallbackIssuedDate);
       document.updatedAt = this.now().toISOString();
       return structuredClone(document);
     });
@@ -335,7 +372,10 @@ class DocumentDraftingService {
       const versions = database.documentVersions.filter((item) => item.documentId === documentId);
       const normalizedHtml = sanitizeDocumentHtml(contentHtml === undefined ? document.workingContentHtml : contentHtml);
       const normalizedText = cleanText(contentText === undefined ? (document.workingContentText || documentTextFromHtml(normalizedHtml)) : contentText);
-      const normalizedLayout = normalizeDocumentLayout(layout === undefined ? document.layout : layout, presetForTemplate(document.templateId));
+      const fallbackIssuedDate = normalizeDateInput(document.layout?.issuedDate)
+        || issuedDateFromHtml(document.workingContentHtml)
+        || normalizeDateInput(this.now());
+      const normalizedLayout = normalizeDocumentLayout(layout === undefined ? document.layout : layout, presetForTemplate(document.templateId), fallbackIssuedDate);
       const now = this.now().toISOString();
       const version = {
         id: this.createId('version'), documentId, versionNumber: Math.max(0, ...versions.map((item) => item.versionNumber)) + 1,
@@ -455,7 +495,7 @@ class DocumentDraftingService {
         ? structuredClone(confirmedReferences)
         : structuredClone(document.pendingReferences || []);
       document.pendingReferences = references;
-      document.layout = normalizeDocumentLayout(layout || document.layout, presetForTemplate(document.templateId));
+      document.layout = normalizeDocumentLayout(layout || document.layout, presetForTemplate(document.templateId), now);
       document.conversationState = {
         preferredKind,
         status: 'thinking',
@@ -487,7 +527,7 @@ class DocumentDraftingService {
       currentFields: document.conversationState?.fields || document.fieldSnapshot || {},
       currentContent: document.workingContentText || currentVersion?.contentText || '',
       referencePrompt: context.prompt,
-    }) });
+    }), task: { taskTier: 'deep', taskKind: 'document-draft', taskId: documentId } });
     const plan = parseConversationResponse(aiResponse?.content, {
       fallbackKind: document.documentKind,
       fallbackTemplateId: document.templateId,
@@ -501,7 +541,7 @@ class DocumentDraftingService {
       const now = this.now().toISOString();
       const versions = freshDatabase.documentVersions.filter((item) => item.documentId === documentId);
       const versionId = this.createId('version');
-      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(plan.templateId));
+      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(plan.templateId), now);
       const explicitRecipient = cleanText(plan.fields.recipient);
       if (explicitRecipient && !/(待补充|请补充)/u.test(explicitRecipient)) documentLayout.addressee = explicitRecipient.replace(/[：:]$/u, '');
       const contentHtml = sanitizeDocumentHtml(structuredDocumentHtml({
@@ -553,6 +593,8 @@ class DocumentDraftingService {
       summary: plan.fields,
       references: context.references,
       omitted: context.omitted,
+      routing: aiResponse?.routing || null,
+      usage: aiResponse?.usage || null,
     };
   }
 
@@ -568,9 +610,9 @@ class DocumentDraftingService {
     const profile = (database.writingProfiles || []).find((item) => item.userId === account.id) || null;
     const context = buildDocumentContext({ database, accountId: account.id, template: getTemplate(document.templateId), fields: validation.fields, selectedReferences, profile });
     const response = await this.aiRouter.chat({ messages: [
-      { role: 'system', content: '你是社区公文拟写助手。输出完整正文，不要输出分析过程。所有事实必须来自用户字段或明确提供的参考资料。' },
+      { role: 'system', content: "你是村居公文拟写助手。输出完整正文，不要输出分析过程。所有事实必须来自用户字段或明确提供的参考资料。" },
       { role: 'user', content: `${context.prompt}${instructions ? `\n\n补充修改要求：${cleanText(instructions)}` : ''}` },
-    ] });
+    ], task: { taskTier: 'deep', taskKind: 'document-draft', taskId: documentId } });
     const contentText = cleanText(response?.content);
     if (!contentText) throw new Error('AI 未返回有效正文，请重试或切换模型');
     const outcome = await this.databaseStore.update((freshDatabase) => {
@@ -580,7 +622,7 @@ class DocumentDraftingService {
       const now = this.now().toISOString();
       const versions = freshDatabase.documentVersions.filter((item) => item.documentId === documentId);
       const versionId = this.createId('version');
-      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(freshDocument.templateId));
+      const documentLayout = normalizeDocumentLayout(freshDocument.layout, presetForTemplate(freshDocument.templateId), now);
       const contentHtml = sanitizeDocumentHtml(structuredDocumentHtml({
         documentKind: freshDocument.documentKind,
         title: freshDocument.title,

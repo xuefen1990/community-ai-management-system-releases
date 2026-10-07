@@ -40,7 +40,7 @@ test('a migrated scrypt account keeps its password and upgrades to bcrypt after 
     machine_id: '', is_active: 1, created_at: '2026-08-13T00:00:00.000Z', updated_at: '2026-08-13T00:00:00.000Z',
   }] }));
   const child = spawn(process.execPath, ['src/index.js'], { cwd: path.resolve(__dirname, '..'), env: {
-    ...process.env, HOST: '127.0.0.1', PORT: String(port), DB_PATH: dbPath,
+    ...process.env, NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port), DB_PATH: dbPath,
     UPDATE_FILES_DIR: path.join(directory, 'updates'), JWT_SECRET: 'test-secret', ADMIN_PHONE: '18888190901', ADMIN_PASSWORD: 'unused-password',
   }, stdio: 'ignore' });
   t.after(async () => {
@@ -73,7 +73,7 @@ test('an imported trial administrator keeps the original trial end date', async 
     machine_id: '', is_active: 1, created_at: '2026-08-21T00:00:00.000Z', updated_at: '2026-08-21T00:00:00.000Z',
   }] }));
   const child = spawn(process.execPath, ['src/index.js'], { cwd: path.resolve(__dirname, '..'), env: {
-    ...process.env, HOST: '127.0.0.1', PORT: String(port), DB_PATH: dbPath,
+    ...process.env, NODE_ENV: 'test', HOST: '127.0.0.1', PORT: String(port), DB_PATH: dbPath,
     UPDATE_FILES_DIR: path.join(directory, 'updates'), JWT_SECRET: 'test-secret', ADMIN_PHONE: '18888190901', ADMIN_PASSWORD: 'unused-password',
   }, stdio: 'ignore' });
   t.after(async () => {

@@ -1,7 +1,47 @@
 'use strict';
+const { dutySchedule } = require('../shared/duty-schedule');
+const { createReadOnlyToolRegistry } = require('./ai-tools/read-tools');
+const { publicToolMetadata } = require('./ai-tools/tool-definition');
+const { createWriteToolRegistry, writeToolForAction } = require('./ai-tools/write-tools');
+const { AiSemanticService } = require('./ai-semantic-service');
+const { AiTaskPlanner } = require('./ai-task-planner');
+const { AiTaskService } = require('./ai-task-service');
+const { availableCategories, normalizeCategoryName } = require('./ai-document-category-service');
 
 function text(value) {
   return String(value ?? '').trim();
+}
+
+function cleanRequestedDocumentCategory(value) {
+  return text(value)
+    .replace(/^[“”"'《》【】\s]+|[“”"'《》【】\s]+$/gu, '')
+    .replace(/^(?:电子)?档案(?:分类|类别)[：:]?/u, '')
+    .replace(/(?:分类|类别)(?:里|里面|下)?$/u, '')
+    .replace(/(?:里|里面|下)$/u, '')
+    .trim();
+}
+
+function requestedDocumentCategory(message) {
+  const value = text(message);
+  const quoted = value.match(/(?:新建|建立|创建|增加|添加|归档到|存档到|放到|移到)[^“”《》]{0,10}[“”《》]([^“”《》]{2,30})[“”《》]/u)?.[1];
+  if (quoted) return cleanRequestedDocumentCategory(quoted);
+  const patterns = [
+    /(?:新建|建立|创建|增加|添加)(?:一个)?(?:电子)?档案(?:分类|类别)[：:]?\s*([^\n，,。；;]{2,30}?)(?=[，,。；;]?\s*(?:并|然后|再|把|将|用于|并归档|$))/u,
+    /(?:新建|建立|创建|增加|添加)(?:一个)?\s*([^\n，,。；;]{2,30}?)(?=(?:分类|类别)?[，,。；;]?\s*(?:并|然后|再|把|将|里|里面|下|归档|存档|$))/u,
+    /(?:归档到|存档到|放到|移到)(?:电子)?档(?:案柜)?(?:的)?(?:分类|类别)?[：:]?\s*([^\n，,。；;]{2,30}?)(?=(?:分类|类别)?[，,。；;]?\s*(?:里|里面|下|$))/u,
+  ];
+  for (const pattern of patterns) {
+    const result = cleanRequestedDocumentCategory(value.match(pattern)?.[1]);
+    if (result) return result;
+  }
+  return '';
+}
+
+function isDocumentCategoryArchiveRequest(message) {
+  const value = text(message);
+  const archiveIntent = /(?:归档|存档)|(?:录入|导入|放到|移到).{0,16}(?:电子)?档案|档案管理|电子档案柜/u.test(value);
+  const categoryIntent = /(?:新建|建立|创建|增加|添加)|(?:归档到|存档到|放到|移到)/u.test(value);
+  return archiveIntent && categoryIntent && Boolean(requestedDocumentCategory(value));
 }
 
 function yearFrom(value) {
@@ -100,6 +140,7 @@ function certificateCode(certificate) {
 function databaseFingerprint(database) {
   const snapshot = structuredClone(database || {});
   delete snapshot.aiAssistantOperations;
+  delete snapshot.aiAssistantTasks;
   return JSON.stringify(snapshot);
 }
 
@@ -162,11 +203,64 @@ function parseOnlinePlan(content) {
       canonicalMessage,
       intent: text(plan.intent) || 'query',
       needsFacts: plan.needsFacts === true,
-      dataScope: ['related_records', 'full_database'].includes(text(plan.dataScope)) ? text(plan.dataScope) : 'related_records',
+      // The model is never allowed to request the complete resident database.
+      // Local code selects a small, relevant fact bundle instead.
+      dataScope: 'related_records',
     };
   } catch {
     return null;
   }
+}
+
+function parseCertificateDraftResponse(content, templates = []) {
+  const raw = text(content).replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '');
+  const start = raw.indexOf('{');
+  const end = raw.lastIndexOf('}');
+  if (start < 0 || end < start) throw new Error('AI 返回内容无法识别，请保留当前草稿后重试');
+  let value;
+  try { value = JSON.parse(raw.slice(start, end + 1)); }
+  catch { throw new Error('AI 返回内容格式不完整，请保留当前草稿后重试'); }
+  const templateIds = new Set((Array.isArray(templates) ? templates : []).map(item => text(item?.id)).filter(Boolean));
+  const recommendedTemplateId = templateIds.has(text(value?.recommendedTemplateId)) ? text(value.recommendedTemplateId) : '';
+  const residentNames = [...new Set((Array.isArray(value?.residentNames) ? value.residentNames : []).map(name => text(name)).filter(Boolean))].slice(0, 6);
+  const manualValues = value?.manualValues && typeof value.manualValues === 'object' && !Array.isArray(value.manualValues)
+    ? Object.fromEntries(Object.entries(value.manualValues).map(([key, item]) => [text(key), text(item)]).filter(([key]) => key)) : {};
+  return {
+    reply: text(value?.reply) || (value?.needsMoreInfo ? '还需要补充一些信息。' : '草稿已生成，请核对居民和正文。'),
+    needsMoreInfo: value?.needsMoreInfo === true,
+    questions: (Array.isArray(value?.questions) ? value.questions : []).map(item => text(item)).filter(Boolean).slice(0, 5),
+    residentNames,
+    recommendedTemplateId,
+    draftMode: recommendedTemplateId && value?.draftMode !== 'temporary' ? 'template' : 'temporary',
+    title: text(value?.title).slice(0, 100),
+    content: String(value?.content || '').trim().slice(0, 12000),
+    manualValues,
+    changeSummary: text(value?.changeSummary).slice(0, 500),
+  };
+}
+
+function isResidentOverviewRequest(message) {
+  return /(基本情况|基本信息|个人情况|居民情况|档案情况|个人资料)/u.test(text(message));
+}
+
+function safeOnlineError(error) {
+  const message = text(error?.message || error)
+    .replace(/Bearer\s+[^\s"']+/giu, 'Bearer ***')
+    .replace(/sk-[A-Za-z0-9_-]{12,}/gu, '***')
+    .slice(0, 240);
+  return message || '在线服务暂时没有响应';
+}
+
+function sanitizeFactValue(value, depth = 0) {
+  if (depth > 5) return null;
+  if (Array.isArray(value)) return value.slice(0, 20).map(item => sanitizeFactValue(item, depth + 1));
+  if (!value || typeof value !== 'object') return typeof value === 'string' ? value.slice(0, 500) : value;
+  const result = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (/(?:identity|id_?card|身份证|bank|card_?number|银行卡|phone|mobile|电话|token|secret|password)/iu.test(key)) continue;
+    result[key] = sanitizeFactValue(item, depth + 1);
+  }
+  return result;
 }
 
 function relationChildGender(relation) {
@@ -184,8 +278,19 @@ function isAnnualAmountQuestion(message) {
 function isPaymentQuestion(message) {
   const value = text(message);
   return isAnnualAmountQuestion(value)
-    || /(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)/u.test(value)
-    || /(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(value);
+    || /(哪个|哪一个).{0,12}(组|(?:村民|居民)组).{0,12}(发放|实发|已发).{0,12}(最多|最高)/u.test(value)
+    || /(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|(?:村民|居民)组)/u.test(value);
+}
+
+function isAllYearsPaymentRequest(message) {
+  const value = text(message);
+  return /(历年|全部年份|所有年份|各年度|各年份|有记录以来|从建档以来|至今)/u.test(value)
+    || /(累计|总计|总共|一共|共计).{0,18}(发了|发放|实发|已发|金额|多少)/u.test(value)
+    || /(发了|发放|实发|已发).{0,18}(累计|总计|总共|一共|共计)/u.test(value);
+}
+
+function paymentPeriodLabel(year, allYears = false) {
+  return allYears ? '历年' : `${year} 年`;
 }
 
 function isSystemDataRequest(message) {
@@ -203,7 +308,7 @@ function navigationTarget(message) {
   if (!/(打开|进入|跳转|去|查看).{0,14}|.{0,14}(打开|进入|跳转|去|查看)/u.test(value)) return null;
   const targets = [
     { pattern: /(资金发放|发放中心|承包费)/u, target: 'tab-contract-fees', label: '资金发放中心' },
-    { pattern: /(村民一户一档|村民档案|居民档案|人员档案)/u, target: 'tab-personnel', label: '村民一户一档' },
+    { pattern: /(居民一户一档|(?:村民|居民)档案|居民档案|人员档案)/u, target: 'tab-personnel', label: '居民一户一档' },
     { pattern: /党员/u, target: 'tab-party', label: '党员管理' },
     { pattern: /(民情|走访)/u, target: 'tab-visit-records', label: '民情记录' },
     { pattern: /值班/u, target: 'tab-duty', label: '村里值班' },
@@ -221,14 +326,376 @@ function navigationTarget(message) {
 }
 
 class AiAssistantService {
-  constructor({ databaseStore, aiRouter, authService = null, now = () => new Date() } = {}) {
+  constructor({ databaseStore, aiRouter, authService = null, now = () => new Date(), aiToolRegistry = null, writeToolRegistry = null, semanticService = null, taskPlanner = null, taskService = null, aiFileTaskService = null } = {}) {
     if (!databaseStore?.read) throw new TypeError('databaseStore is required');
     this.databaseStore = databaseStore;
     this.aiRouter = aiRouter;
     this.authService = authService;
     this.now = now;
+    this.aiToolRegistry = aiToolRegistry || createReadOnlyToolRegistry();
+    this.writeToolRegistry = writeToolRegistry || createWriteToolRegistry();
+    this.semanticService = semanticService || new AiSemanticService();
+    this.taskPlanner = taskPlanner || new AiTaskPlanner({ registry: this.aiToolRegistry });
+    this.taskService = taskService || new AiTaskService({ databaseStore, authService, now });
+    this.aiFileTaskService = aiFileTaskService;
     this.pendingAction = null;
     this.pendingOnlineAnalysis = null;
+    this.pendingMemory = null;
+  }
+
+  listReadOnlyTools(options = {}) {
+    return this.aiToolRegistry.list(options);
+  }
+
+  listWriteTools(options = {}) {
+    return this.writeToolRegistry.list(options);
+  }
+
+  async attachedFiles(conversationId, attachmentIds = []) {
+    if (!this.aiFileTaskService || !Array.isArray(attachmentIds) || !attachmentIds.length) return [];
+    const allowed = new Set(attachmentIds.map(text).filter(Boolean));
+    return (await this.aiFileTaskService.list({ conversationId, limit: 100 })).filter(file => allowed.has(text(file.id)));
+  }
+
+  fileRecognitionAnswer(files) {
+    if (!files.length) return null;
+    const lines = files.map((file, index) => {
+      const status = file.status === 'reviewed' ? '已经人工核对' : file.status === 'needs-review' ? '需要人工核对' : '已完成初步识别';
+      const fields = Array.isArray(file.fields) && file.fields.length ? `；字段：${file.fields.slice(0, 12).join('、')}` : '';
+      const recognizedFields = Array.isArray(file.documentFields) && file.documentFields.length ? file.documentFields : file.ocrFields;
+      const ocrFields = Array.isArray(recognizedFields) && recognizedFields.length
+        ? `；识别信息：${recognizedFields.slice(0, 8).map(field => `${field.label}=${field.value}${field.requiresReview ? '（待核对）' : ''}`).join('、')}` : '';
+      const classification = file.documentClassification?.name ? `；材料用途：${file.documentClassification.name}` : '';
+      const excerpt = Array.isArray(file.chunks) && file.chunks[0]?.text
+        ? `\n   文字摘录：${text(file.chunks[0].text).slice(0, 500)}` : '';
+      const warnings = Array.isArray(file.warnings) && file.warnings.length ? `；提示：${file.warnings.join('；')}` : '';
+      return `${index + 1}. ${file.fileName}：${file.summary}（${status}）${classification}${fields}${ocrFields}${warnings}${excerpt}`;
+    });
+    return {
+      content: `已保存并检查您附加的文件：\n${lines.join('\n')}\n\n目前只完成识别和导入前检查，尚未把任何内容写入业务台账。下一步会先让您核对字段、重复记录和金额差异，确认后才执行导入。`,
+      provider: 'system', handled: true,
+      data: { fileEntries: files },
+    };
+  }
+
+  async documentCategoryArchiveProposal(database, message, conversationId = '') {
+    if (!isDocumentCategoryArchiveRequest(message)) return null;
+    if (!this.aiFileTaskService?.list || !this.aiFileTaskService?.applyCategoryDecision) {
+      return {
+        content: '当前环境尚未启用档案分类执行服务。本次没有新建分类，文件仍保留在“待归档”中。',
+        provider: 'system', handled: true, needsConfirmation: false,
+      };
+    }
+    const categoryName = requestedDocumentCategory(message);
+    const files = await this.aiFileTaskService.list({ conversationId, limit: 100 });
+    const pendingFiles = files.filter(file => file.status !== 'deleted' && text(file.archiveState || 'pending') !== 'archived');
+    if (!pendingFiles.length) {
+      const alreadyArchived = files.find(file => normalizeCategoryName(file.finalCategory) === normalizeCategoryName(categoryName));
+      if (alreadyArchived) {
+        return {
+          content: `文件“${text(alreadyArchived.fileName)}”已经归档到“${text(alreadyArchived.finalCategory) || categoryName}”，无需重复操作。`,
+          provider: 'system', handled: true,
+          data: { fileEntry: alreadyArchived, documentCategoryChanged: false },
+        };
+      }
+      return {
+        content: `当前对话中没有找到待归档文件，因此没有新建“${categoryName}”分类。请先上传文件，再说明要归入的分类。`,
+        provider: 'system', handled: true, needsConfirmation: false,
+      };
+    }
+    const normalizedMessage = text(message).replace(/\.[^.]+$/u, '');
+    const explicitlyNamed = pendingFiles.filter(file => {
+      const fileName = text(file.fileName);
+      const baseName = fileName.replace(/\.[^.]+$/u, '');
+      return (fileName && normalizedMessage.includes(fileName)) || (baseName.length >= 2 && normalizedMessage.includes(baseName));
+    });
+    let selectedFile = explicitlyNamed.length === 1 ? explicitlyNamed[0] : null;
+    if (!selectedFile && pendingFiles.length === 1) selectedFile = pendingFiles[0];
+    if (!selectedFile && /(?:刚才|刚刚|这个|该)(?:上传的)?(?:文件|材料|图片|表格|证书)?/u.test(text(message))) selectedFile = pendingFiles[0];
+    if (!selectedFile) {
+      return {
+        content: `当前对话有 ${pendingFiles.length} 个待归档文件，我无法确定要处理哪一个。请说明文件名，例如“把${text(pendingFiles[0]?.fileName)}归档到${categoryName}”。\n待归档文件：${pendingFiles.slice(0, 8).map(file => text(file.fileName)).join('、')}`,
+        provider: 'system', handled: true, needsConfirmation: false,
+      };
+    }
+    const categories = availableCategories(database);
+    const existing = categories.find(item => normalizeCategoryName(item.name) === normalizeCategoryName(categoryName));
+    const finalCategory = text(existing?.name) || categoryName;
+    if (normalizeCategoryName(selectedFile.finalCategory) === normalizeCategoryName(finalCategory)
+      && text(selectedFile.archiveState) === 'archived') {
+      return {
+        content: `文件“${text(selectedFile.fileName)}”已经归档到“${finalCategory}”，无需重复操作。`,
+        provider: 'system', handled: true,
+        data: { fileEntry: selectedFile, documentCategoryChanged: false },
+      };
+    }
+    const type = existing ? 'document_category_assign' : 'document_category_create_and_archive';
+    const summary = existing
+      ? `将文件“${text(selectedFile.fileName)}”归档到现有分类“${finalCategory}”`
+      : `新建档案分类“${finalCategory}”，并将文件“${text(selectedFile.fileName)}”归档到该分类`;
+    const action = this.queueControlledAction({
+      type,
+      module: '电子档案柜',
+      object: { id: text(selectedFile.documentId || selectedFile.id), name: text(selectedFile.fileName) },
+      fileId: text(selectedFile.id),
+      documentId: text(selectedFile.documentId),
+      categoryName: finalCategory,
+      summary,
+      before: { archiveState: text(selectedFile.archiveState || 'pending'), category: text(selectedFile.finalCategory || '待归档') },
+      after: { archiveState: 'archived', category: finalCategory },
+      proposedAt: this.now().toISOString(),
+    });
+    return {
+      content: this.actionPreview(action),
+      provider: 'system', handled: true, needsConfirmation: true,
+      action: { type: 'confirm', riskLevel: action.riskLevel, confirmationsRequired: 1, before: action.before, after: action.after },
+      data: { fileEntry: selectedFile, requestedCategory: finalCategory, categoryExists: Boolean(existing) },
+    };
+  }
+
+  async runReadOnlyTool({ database, message, messages = [], conversation = [], plan = null, stage = 'post-plan' } = {}) {
+    return this.aiToolRegistry.executeFirst({
+      service: this,
+      database,
+      message: text(message),
+      messages,
+      conversation,
+      plan,
+      navigationTarget,
+    }, { stage });
+  }
+
+  async getConversation(value = {}) {
+    if (typeof this.authService?.request !== 'function') return { conversation: null };
+    const id = text(value.conversationId);
+    const response = await this.authService.request(`/unit/workspace/ai/conversation${id ? `?conversationId=${encodeURIComponent(id)}` : ''}`);
+    const conversationId = text(response?.conversation?.id || id);
+    const task = conversationId ? await this.taskService.latestActive(conversationId).catch(() => null) : null;
+    return { ...response, task };
+  }
+
+  async saveConversation(value = {}) {
+    if (typeof this.authService?.request !== 'function') return { conversation: null };
+    return this.authService.request('/unit/workspace/ai/conversation', { method: 'PUT', body: value });
+  }
+
+  async draftCertificateWithAi({ messages, templates } = {}) {
+    if (typeof this.aiRouter?.onlineChat !== 'function') throw new Error('在线 AI 尚未配置或当前不可用，请先在系统设置中完成测试');
+    const conversation = recentConversation(messages, 30);
+    if (!lastUserMessage(conversation)) throw new Error('请先说明需要开具的证明和基本情况');
+    const safeTemplates = (Array.isArray(templates) ? templates : []).slice(0, 80).map(item => ({
+      id: text(item?.id), name: text(item?.name), category: text(item?.category), title: text(item?.title),
+      content: String(item?.content || '').slice(0, 4000),
+      fields: (Array.isArray(item?.fields) ? item.fields : []).slice(0, 30).map(field => ({ label: text(field?.label), source: text(field?.source) })),
+    }));
+    try {
+      const response = await this.aiRouter.onlineChat([
+        {
+          role: 'system',
+          content: `你是村居证明起草助手。根据连续对话判断证明用途、居民姓名和需要补充的信息，并优先匹配给定模板。不得声称已经查询居民档案或已经正式开具证明。信息不足时必须追问，不能猜测。正文中的居民姓名、身份证号、地址等个人资料必须使用模板现有的中文占位符，不得编造号码。仅输出一个 JSON，不要输出 Markdown 或解释，结构为：{"reply":"给工作人员的中文说明或追问","needsMoreInfo":true或false,"questions":["需补充的问题"],"residentNames":["对话中明确出现的姓名"],"recommendedTemplateId":"只能填写给定模板ID，没有则为空","draftMode":"template或temporary","title":"证明标题","content":"证明正文草稿","manualValues":{"字段中文名称":"从对话中明确得到的值"},"changeSummary":"本轮修改说明"}。若工作人员要求局部修改，应保留未要求改动的正文；若要求重新生成，可以重写整篇。可用模板：${JSON.stringify(safeTemplates)}`,
+        },
+        ...conversation,
+      ], { maxTokens: 2400, temperature: 0.15, taskTier: 'deep', taskKind: 'certificate-draft' });
+      return { ...parseCertificateDraftResponse(response?.content, safeTemplates), provider: 'online', model: response?.model || '', usage: response?.usage || null,
+        routing: response?.routing || null };
+    } catch (error) {
+      if (/返回内容/u.test(text(error?.message))) throw error;
+      throw new Error(`AI 证明起草暂时不可用：${safeOnlineError(error)}。当前对话和草稿会保留。`);
+    }
+  }
+
+  async listMemories() {
+    if (typeof this.authService?.request !== 'function') return { memories: [] };
+    return this.authService.request('/unit/workspace/ai/memories');
+  }
+
+  async deleteMemory(value = {}) {
+    if (typeof this.authService?.request !== 'function') throw new Error('当前账号服务不支持长期记忆');
+    return this.authService.request(`/unit/workspace/ai/memories/${encodeURIComponent(text(value.memoryId))}`, { method: 'DELETE' });
+  }
+
+  async createMemory({ scope = 'personal', content } = {}) {
+    if (typeof this.authService?.request !== 'function') throw new Error('当前账号服务不支持长期记忆');
+    return this.authService.request('/unit/workspace/ai/memories', { method: 'POST', body: { scope, content } });
+  }
+
+  async memoryContextMessage() {
+    try {
+      const response = await this.listMemories();
+      const memories = Array.isArray(response?.memories) ? response.memories.slice(0, 30) : [];
+      if (!memories.length) return null;
+      const lines = memories.map(item => `- ${item.scope === 'organization' ? '单位规则' : '个人习惯'}：${text(item.content)}`);
+      return {
+        role: 'system',
+        content: `以下是操作员明确保存的长期记忆。用于理解称呼、偏好和业务习惯；不得把它当成居民或资金台账的实时事实：\n${lines.join('\n')}`.slice(0, 5000),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  semanticContext(database, message) {
+    const view = this.semanticService.buildView(database);
+    const resolution = this.semanticService.resolveResident(view, { query: message });
+    if (resolution.status !== 'resolved') return resolution.status === 'ambiguous' ? resolution : null;
+    const related = this.semanticService.relatedRecords(view, { personId: resolution.resident.id });
+    const counts = {};
+    for (const record of related.records || []) counts[record.collection] = (counts[record.collection] || 0) + 1;
+    return {
+      status: 'resolved',
+      resident: resolution.resident,
+      relatedRecordCounts: counts,
+      pendingLinkCount: related.pendingRecords?.length || 0,
+      pendingLinkReasons: [...new Set((related.pendingRecords || []).map(item => item.reason).filter(Boolean))],
+    };
+  }
+
+  clarificationFrom(result) {
+    if (!result?.needsConfirmation || result?.action?.type === 'confirm') return null;
+    const content = text(result.content);
+    if (!/(请|需要|确认|补充|哪一)/u.test(content)) return null;
+    return { question: content.slice(0, 500), field: /哪一年|年度/u.test(content) ? 'year' : /(?:村民|居民)组|哪一位|同名/u.test(content) ? 'resident' : 'details' };
+  }
+
+  taskProgressText(task) {
+    const steps = Array.isArray(task?.steps) ? task.steps : [];
+    const completed = steps.filter(step => ['completed', 'skipped', 'undone'].includes(step.status)).length;
+    const waiting = steps.find(step => ['waiting-input', 'waiting-confirmation'].includes(step.status));
+    return `任务进度：已完成 ${completed}/${steps.length} 步${waiting ? `，下一步“${waiting.title}”等待补充` : ''}`;
+  }
+
+  async executeTask(task, { database, messages, conversation, plan }) {
+    task.status = 'running';
+    task.clarification = null;
+    task = await this.taskService.save(task);
+    const answers = (task.steps || []).filter(step => step.status === 'completed' && step.resultSummary).map(step => ({
+      title: step.title,
+      result: { content: step.resultSummary, provider: 'system', handled: true },
+    }));
+    for (let stepIndex = 0; stepIndex < task.steps.length; stepIndex += 1) {
+      let step = task.steps[stepIndex];
+      if (step.status === 'completed' || step.status === 'skipped') continue;
+      step.status = 'running';
+      task = await this.taskService.save(task);
+      step = task.steps[stepIndex];
+      try {
+        const result = await this.aiToolRegistry.execute(step.toolId, {
+          service: this,
+          database,
+          message: task.clarifiedRequest,
+          messages,
+          conversation,
+          plan,
+          navigationTarget,
+        });
+        if (!result) {
+          step.status = 'skipped';
+          step.resultSummary = '当前条件未匹配到可核对结果';
+          continue;
+        }
+        if (result.routing) {
+          const routing = result.routing;
+          step.modelTier = routing.taskTier || '';
+          step.modelName = routing.model || result.model || '';
+          step.estimatedTokens = Math.max(0, Number(routing.estimatedTokens) || 0);
+          step.actualTokens = Math.max(0, Number(routing.actualTokens || result.usage?.total_tokens) || 0);
+          step.aiRequestId = text(routing.requestId);
+          task.modelTier = step.modelTier || task.modelTier;
+          task.modelName = step.modelName || task.modelName;
+          task.estimatedTokens = Math.max(0, Number(task.estimatedTokens) || 0) + step.estimatedTokens;
+          task.actualTokens = Math.max(0, Number(task.actualTokens) || 0) + step.actualTokens;
+          task.aiRequestId = step.aiRequestId || task.aiRequestId;
+          task.tokenStatus = 'settled';
+          task.quotaSnapshot = routing.remainingTokens === null || routing.remainingTokens === undefined
+            ? task.quotaSnapshot
+            : { remainingTokens: Number(routing.remainingTokens), observedAt: this.now().toISOString() };
+        }
+        const clarification = this.clarificationFrom(result);
+        if (clarification) {
+          step.status = 'waiting-input';
+          step.resultSummary = clarification.question;
+          task.status = 'waiting-input';
+          task.clarification = clarification;
+          task.summary = clarification.question;
+          task = await this.taskService.save(task);
+          const completedSections = answers.map(item => `【${item.title}】\n${item.result.content}`);
+          return { ...result, task, content: `${completedSections.length ? `${completedSections.join('\n\n')}\n\n` : ''}${result.content}\n\n${this.taskProgressText(task)}` };
+        }
+        step.status = 'completed';
+        step.resultSummary = text(result.content).slice(0, 1000);
+        answers.push({ title: step.title, result });
+      } catch (error) {
+        if (error?.code === 'AI_QUOTA_EXHAUSTED') {
+          step.status = 'waiting-input';
+          step.error = text(error?.message).slice(0, 500);
+          task.status = 'waiting-input';
+          task.tokenStatus = 'quota-exhausted';
+          task.estimatedTokens = Math.max(0, Number(error?.details?.requiredTokens) || 0);
+          task.quotaSnapshot = { remainingTokens: Math.max(0, Number(error?.details?.remainingTokens) || 0), observedAt: this.now().toISOString() };
+          task.clarification = { question: '本单位 AI 额度已用完。购买额度后回复“继续任务”，系统会从当前步骤继续。', field: 'ai-quota' };
+          task.summary = task.clarification.question;
+          task = await this.taskService.save(task);
+          return { content: `${task.summary}\n\n${this.taskProgressText(task)}`, provider: 'system', handled: true, needsConfirmation: true, task };
+        }
+        step.status = 'failed';
+        step.error = text(error?.message).slice(0, 500);
+        task.status = 'failed';
+        task.summary = `${step.title}失败：${step.error}`;
+        task = await this.taskService.save(task);
+        return { content: `${task.summary}\n\n${this.taskProgressText(task)}`, provider: 'system', handled: true, task };
+      }
+      task = await this.taskService.save(task);
+    }
+    task.status = 'completed';
+    task.summary = answers.map(item => `${item.title}：${text(item.result.content)}`).join('\n').slice(0, 2000);
+    task = await this.taskService.save(task);
+    const sections = answers.map(item => `【${item.title}】\n${item.result.content}`);
+    if (task.requestedExport) sections.push('查询和核对步骤已经完成；当前批次暂不自动生成导出文件，文件导出将在后续文件任务接入后执行。');
+    const lastEvidence = [...answers].reverse().find(item => item.result?.data?.queryEvidence)?.result?.data?.queryEvidence;
+    return {
+      content: `${sections.join('\n\n')}\n\n${this.taskProgressText(task)}`,
+      provider: answers.some(item => item.result.provider === 'online') ? 'online' : 'system',
+      handled: true,
+      data: lastEvidence ? { queryEvidence: lastEvidence } : undefined,
+      task,
+    };
+  }
+
+  async handleMemoryCommand(message) {
+    const requested = text(message);
+    if (this.pendingMemory) {
+      if (/(取消|算了|不保存)/u.test(requested)) {
+        this.pendingMemory = null;
+        return { content: '已取消，不会保存这条单位规则。', provider: 'system', handled: true };
+      }
+      if (!/(确认|保存)/u.test(requested)) {
+        return { content: `准备保存为全单位共享规则：“${this.pendingMemory.content}”。请回复“确认保存”，或回复“取消”。`, provider: 'system', handled: true, needsConfirmation: true };
+      }
+      const pending = this.pendingMemory;
+      this.pendingMemory = null;
+      await this.createMemory(pending);
+      return { content: `已保存单位规则：“${pending.content}”。本单位成员以后使用 AI 时都会参考它。`, provider: 'system', handled: true };
+    }
+    const unitMatch = requested.match(/^(?:请)?(?:记住|保存)?\s*单位规则[：:]\s*(.+)$/u);
+    if (unitMatch?.[1]) {
+      this.pendingMemory = { scope: 'organization', content: text(unitMatch[1]) };
+      return { content: `准备保存为全单位共享规则：“${this.pendingMemory.content}”。请回复“确认保存”，或回复“取消”。`, provider: 'system', handled: true, needsConfirmation: true };
+    }
+    const personalMatch = requested.match(/^(?:请)?记住[：:]?\s*(.+)$/u)
+      || requested.match(/^(我(?:通常|习惯|希望|喜欢).+)$/u)
+      || requested.match(/^((?:以后|今后)请?.+)$/u);
+    if (personalMatch?.[1]) {
+      const content = text(personalMatch[1]);
+      await this.createMemory({ scope: 'personal', content });
+      return { content: `好的，已记住您的个人习惯：“${content}”。您可以随时打开“记忆”查看或删除。`, provider: 'system', handled: true };
+    }
+    if (/(你记得什么|查看.{0,4}记忆|有哪些.{0,4}记忆)/u.test(requested)) {
+      const response = await this.listMemories();
+      const memories = Array.isArray(response?.memories) ? response.memories : [];
+      if (!memories.length) return { content: '目前还没有长期记忆。虚构示例：“记住：以后称呼我为陈主任”。', provider: 'system', handled: true };
+      return { content: `目前共有 ${memories.length} 条长期记忆：\n${memories.map((item, index) => `${index + 1}.【${item.scope === 'organization' ? '单位规则' : '个人'}】${item.content}`).join('\n')}`, provider: 'system', handled: true };
+    }
+    return null;
   }
 
   async understandConversation(messages) {
@@ -237,10 +704,10 @@ class AiAssistantService {
       const response = await this.aiRouter.onlineChat([
         {
           role: 'system',
-          content: '你是社区AI管理系统的对话理解器。根据完整对话把最后一个用户问题改写成脱离上下文也能执行的明确指令。仅输出 JSON：{"canonicalMessage":"明确指令","intent":"query|navigate|create|update|delete|chat","needsFacts":true或false,"dataScope":"related_records|full_database"}。不要声称已经查询系统，不要执行操作；姓名、年度、指代不明确时在 canonicalMessage 中保留需要追问的原意，不要编造。',
+          content: "你是村居AI管理系统的对话理解器。根据完整对话把最后一个用户问题改写成脱离上下文也能执行的明确指令。仅输出 JSON：{\"canonicalMessage\":\"明确指令\",\"intent\":\"query|navigate|create|update|delete|chat\",\"needsFacts\":true或false,\"dataScope\":\"related_records\"}。不要声称已经查询系统，不要执行操作；姓名、年度、指代不明确时在 canonicalMessage 中明确写出需要追问的内容，不要编造。系统只会在本机精确检索与当前事项有关的少量记录。",
         },
         ...recentConversation(messages),
-      ]);
+      ], { maxTokens: 300, temperature: 0, taskTier: 'basic', taskKind: 'conversation-understanding' });
       return parseOnlinePlan(response?.content);
     } catch {
       return null;
@@ -248,7 +715,6 @@ class AiAssistantService {
   }
 
   relevantFacts(database, plan, request) {
-    if (plan?.dataScope === 'full_database') return structuredClone(database || {});
     const requested = text(request);
     const personnel = Array.isArray(database?.personnel) ? database.personnel : [];
     const named = personnel.filter((person) => personName(person) && requested.includes(personName(person)));
@@ -262,13 +728,14 @@ class AiAssistantService {
       return [...identifiers].some((identifier) => raw.includes(identifier))
         || relatedPeople.some((person) => raw.includes(personName(person)));
     };
-    return {
-      personnel: structuredClone(relatedPeople),
-      landParcel: structuredClone((database?.landParcel || database?.lands || []).filter(recordIncludesPerson)),
-      disbursementBatches: structuredClone((database?.disbursementBatches || []).filter(recordIncludesPerson)),
-      contractFeeBatches: structuredClone((database?.contractFeeBatches || []).filter(recordIncludesPerson)),
-      financeRecords: structuredClone((database?.financeRecords || []).filter(recordIncludesPerson)),
+    const facts = {
+      personnel: relatedPeople.slice(0, 20),
+      landParcel: (database?.landParcel || database?.lands || []).filter(recordIncludesPerson).slice(0, 20),
+      disbursementBatches: (database?.disbursementBatches || []).filter(recordIncludesPerson).slice(0, 20),
+      contractFeeBatches: (database?.contractFeeBatches || []).filter(recordIncludesPerson).slice(0, 20),
+      financeRecords: (database?.financeRecords || database?.finances || []).filter(recordIncludesPerson).slice(0, 20),
     };
+    return sanitizeFactValue(facts);
   }
 
   async explainVerifiedFacts({ messages, request, database, plan, localAnswer }) {
@@ -278,11 +745,11 @@ class AiAssistantService {
       const response = await this.aiRouter.onlineChat([
         {
           role: 'system',
-          content: '你是社区AI管理系统的事实说明助手。只能根据“已核对本机资料”回答，不得补充、猜测或修改任何资料。若资料不足，明确说明无法确认。用简洁中文解释结论和依据。',
+          content: "你是村居AI管理系统的事实说明助手。只能根据“已核对本机资料”回答，不得补充、猜测或修改任何资料。若资料不足，明确说明无法确认。用简洁中文解释结论和依据。",
         },
         ...recentConversation(messages),
         { role: 'user', content: `已核对本机资料：\n${JSON.stringify(facts)}` },
-      ]);
+      ], { maxTokens: 800, temperature: 0.2, taskTier: 'basic', taskKind: 'verified-fact-explanation' });
       const content = text(response?.content);
       return content ? { ...localAnswer, content, provider: 'online', data: { ...(localAnswer.data || {}), facts } } : localAnswer;
     } catch {
@@ -298,14 +765,16 @@ class AiAssistantService {
       const response = await this.aiRouter.onlineChat([
         {
           role: 'system',
-          content: '你是社区AI管理系统的在线分析助手。用户已授权系统自动提交与当前事项有关的本机资料。只能依据随后提供的“已核对本机资料”分析，不得编造、不得声称执行过系统操作，也不得指示绕过本机确认规则。资料不足时直接说明需要补充什么。',
+          content: "你是村居AI管理系统的在线分析助手。用户已授权系统自动提交与当前事项有关的本机资料。只能依据随后提供的“已核对本机资料”分析，不得编造、不得声称执行过系统操作，也不得指示绕过本机确认规则。资料不足时直接说明需要补充什么。",
         },
         ...recentConversation(messages),
         { role: 'user', content: `当前明确请求：${request}\n已核对本机资料：\n${JSON.stringify(this.relevantFacts(database, plan || { dataScope: 'related_records' }, request))}` },
-      ]);
+      ], { maxTokens: 800, temperature: 0.2, taskTier: /(综合|跨模块|对比|核对)/u.test(request) ? 'deep' : 'basic', taskKind: 'fact-analysis' });
       return { ...response, provider: 'online', handled: true };
-    } catch {
-      return { content: '在线 AI 当前不可用，本次已回退为本机规则处理；请补充姓名、村民组、年度或具体事项后重试。', provider: 'system', handled: true, needsConfirmation: true };
+    } catch (error) {
+      const reason = safeOnlineError(error);
+      console.error('[AI assistant] online fact explanation failed:', reason);
+      return { content: `在线 AI 没有完成本次整理：${reason}。本机资料没有被修改。请补充姓名、居民组、年度或具体事项后重试。`, provider: 'system', handled: true, needsConfirmation: true };
     }
   }
 
@@ -341,9 +810,9 @@ class AiAssistantService {
       return { content: '在线 AI 尚未配置或当前不可用，因此本次内容没有发送。请先在系统设置中配置在线 AI。', provider: 'system', handled: true };
     }
     return this.aiRouter.onlineChat([
-      { role: 'system', content: '你是社区AI管理系统的在线分析助手。仅根据本次经管理员确认发送的文本进行分析；不得声称查询过系统数据库，不得索取或推测未提供的个人信息。' },
+      { role: 'system', content: "你是村居AI管理系统的在线分析助手。仅根据本次经管理员确认发送的文本进行分析；不得声称查询过系统数据库，不得索取或推测未提供的个人信息。" },
       { role: 'user', content: pending.payload },
-    ]);
+    ], { taskKind: 'confirmed-online-analysis' });
   }
 
   async memberDisableProposal(message) {
@@ -373,16 +842,106 @@ class AiAssistantService {
   }
 
   queueControlledAction(draft) {
-    const riskLevel = draft.riskLevel === 'high' ? 'high' : 'normal';
+    const tool = writeToolForAction(this.writeToolRegistry, draft.type);
+    if (!tool) throw new Error(`写操作“${text(draft.type)}”尚未登记到统一工具中心`);
+    const riskLevel = tool.riskLevel === 'R2' ? 'high' : 'normal';
     this.pendingAction = {
       id: draft.id || `ai-action-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       ...draft,
       riskLevel,
-      confirmationsRequired: riskLevel === 'high' ? 2 : 1,
+      riskCode: tool.riskLevel,
+      toolId: tool.id,
+      toolName: tool.name,
+      permission: tool.permission ? { ...tool.permission } : null,
+      confirmationsRequired: tool.confirmationCount,
       confirmationStep: 0,
+      confirmationHistory: [],
       proposedAt: draft.proposedAt || this.now().toISOString(),
     };
     return this.pendingAction;
+  }
+
+  async authorizeControlledAction(action) {
+    const tool = writeToolForAction(this.writeToolRegistry, action?.type);
+    if (!tool) return { allowed: false, reason: '该写操作尚未登记，系统已阻止执行', checkedAt: this.now().toISOString() };
+    const base = { toolId: tool.id, permission: tool.permission ? { ...tool.permission } : null, checkedAt: this.now().toISOString() };
+    if (typeof this.authService?.getStatus !== 'function') return { ...base, allowed: true, source: 'local-compatible' };
+    let status;
+    try { status = await this.authService.getStatus(); }
+    catch { return { ...base, allowed: false, reason: '暂时无法核对当前账号权限' }; }
+    const account = status?.account;
+    if (!status?.authenticated || !account) return { ...base, allowed: false, reason: '请先登录后再执行系统修改' };
+    if (account.isOwner === true || account.role !== 'member') return { ...base, allowed: true, source: 'administrator-role' };
+    const required = tool.permission;
+    const permissions = account.permissions && typeof account.permissions === 'object' ? account.permissions : {};
+    const allowed = [...(permissions[required?.module] || []), ...(permissions.workspace || [])];
+    if (required && allowed.includes(required.action)) return { ...base, allowed: true, source: 'member-permission' };
+    return { ...base, allowed: false, reason: `当前账号没有“${tool.name}”所需权限` };
+  }
+
+  actionTaskDraft(action, originalRequest = '') {
+    return {
+      id: action.taskId || `ai-write-task-${action.id}`,
+      conversationId: text(action.conversationId),
+      title: action.toolName || 'AI 修改任务',
+      originalRequest: text(originalRequest || action.originalRequest),
+      status: 'waiting-confirmation',
+      steps: [{
+        id: action.stepId || 'step-confirm-and-execute',
+        title: action.toolName || '核对并执行修改',
+        toolId: action.toolId || '',
+        status: 'waiting-confirmation',
+        resultSummary: action.confirmationsRequired === 2 ? '等待两次确认' : '等待确认',
+      }],
+      summary: action.summary || this.actionPreview(action),
+      pendingAction: structuredClone(action),
+      permissionDecision: structuredClone(action.permissionDecision || null),
+      operationId: '',
+      verification: null,
+    };
+  }
+
+  async saveActionTask(action, updates = {}) {
+    if (!text(action?.conversationId) || !text(action?.taskId)) return null;
+    const existing = await this.taskService.list({ conversationId: action.conversationId, limit: 30 })
+      .then(tasks => tasks.find(task => task.id === action.taskId)).catch(() => null);
+    const base = existing || this.actionTaskDraft(action, action.originalRequest);
+    const next = { ...base, ...structuredClone(updates) };
+    if (!Object.prototype.hasOwnProperty.call(updates, 'pendingAction')) next.pendingAction = structuredClone(action);
+    return this.taskService.save(next);
+  }
+
+  async finalizeControlledProposal(proposal, { conversationId = '', originalRequest = '' } = {}) {
+    const action = this.pendingAction;
+    if (!proposal || !action) return proposal;
+    const decision = await this.authorizeControlledAction(action);
+    action.permissionDecision = decision;
+    if (!decision.allowed) {
+      this.pendingAction = null;
+      return {
+        content: `未建立修改任务：${decision.reason || '当前账号无权执行该操作'}。系统数据没有变化。`,
+        provider: 'system', handled: true, needsConfirmation: false,
+        aiTool: publicToolMetadata(writeToolForAction(this.writeToolRegistry, action.type)),
+      };
+    }
+    action.conversationId = text(conversationId);
+    action.originalRequest = text(originalRequest);
+    action.taskId = action.conversationId ? `ai-write-task-${action.id}` : '';
+    action.stepId = 'step-confirm-and-execute';
+    let task = null;
+    if (action.conversationId) {
+      try { task = await this.taskService.save(this.actionTaskDraft(action, originalRequest)); }
+      catch (error) {
+        this.pendingAction = null;
+        return { content: `暂时无法保存待确认任务：${text(error.message) || '任务服务不可用'}。为避免重启后丢失确认状态，本次不会执行修改。`, provider: 'system', handled: true };
+      }
+    }
+    return {
+      ...proposal,
+      task,
+      aiTool: publicToolMetadata(writeToolForAction(this.writeToolRegistry, action.type)),
+      action: { ...(proposal.action || {}), toolId: action.toolId, riskCode: action.riskCode, permissionDecision: decision },
+    };
   }
 
   actionPreview(action) {
@@ -559,44 +1118,47 @@ class AiAssistantService {
     return matches.length === 1 ? matches[0] : null;
   }
 
-  formatAggregateAnswer({ year, records, subject, scope }) {
+  formatAggregateAnswer({ year, allYears = false, records, subject, scope }) {
+    const period = paymentPeriodLabel(year, allYears);
     const total = records.reduce((sum, record) => sum + record.amountCents, 0);
-    if (!records.length) return `${year} 年未查到${subject}已登记发放的资金记录。统计范围：${scope}，只统计状态为“已发放”的记录。`;
+    if (!records.length) return `${period}未查到${subject}已登记发放的资金记录。统计范围：${scope}，只统计状态为“已发放”的记录。`;
     const recipients = new Set(records.map((record) => record.personId || `${record.recipientName}|${record.groupName}`).filter(Boolean));
-    return `${year} 年${subject}已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔，涉及 ${recipients.size} 人。统计范围：${scope}，只统计状态为“已发放”的记录。`;
+    return `${period}${subject}已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔，涉及 ${recipients.size} 人。统计范围：${scope}，只统计状态为“已发放”的记录。`;
   }
 
-  formatHighestGroupAnswer(year, records) {
+  formatHighestGroupAnswer(year, records, { allYears = false } = {}) {
+    const period = paymentPeriodLabel(year, allYears);
     const totals = new Map();
     for (const record of records) {
       if (!record.groupName) continue;
       totals.set(record.groupName, (totals.get(record.groupName) || 0) + record.amountCents);
     }
-    if (!totals.size) return `${year} 年已发放记录中没有可识别的村民组，暂时无法比较哪个组发放最多。`;
+    if (!totals.size) return `${period}已发放记录中没有可识别的居民组，暂时无法比较哪个组发放最多。`;
     const sorted = [...totals.entries()].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0], 'zh-CN'));
     const [groupName, amount] = sorted[0];
-    return `${year} 年已登记发放金额最高的是${groupName}，共 ${formatMoney(amount)}。统计范围：通用发放批次和合同发放批次中状态为“已发放”的记录。`;
+    return `${period}已登记发放金额最高的是${groupName}，共 ${formatMoney(amount)}。统计范围：通用发放批次和合同发放批次中状态为“已发放”的记录。`;
   }
 
-  formatPendingFundingAnswer({ year, records, subject, scope }) {
+  formatPendingFundingAnswer({ year, allYears = false, records, subject, scope }) {
+    const period = paymentPeriodLabel(year, allYears);
     const total = records.reduce((sum, record) => sum + record.amountCents, 0);
     const labels = { pending: '待发放', failed: '发放失败', unpaid: '本次未发放' };
     const byStatus = new Map();
     for (const record of records) byStatus.set(record.status, (byStatus.get(record.status) || 0) + 1);
     const statusText = [...byStatus.entries()].map(([status, count]) => `${labels[status] || status}${count}笔`).join('、');
     const fixedScope = '仅统计状态为“待发放”“发放失败”“本次未发放”的明细，不包含未知状态或已发放记录';
-    if (!records.length) return `${year} 年未查到${subject}尚未登记为“已发放”的资金明细。统计范围：${scope}，${fixedScope}。`;
-    return `${year} 年${subject}尚未登记为“已发放”的资金共 ${formatMoney(total)}，共 ${records.length} 笔（${statusText}）。统计范围：${scope}，${fixedScope}。`;
+    if (!records.length) return `${period}未查到${subject}尚未登记为“已发放”的资金明细。统计范围：${scope}，${fixedScope}。`;
+    return `${period}${subject}尚未登记为“已发放”的资金共 ${formatMoney(total)}，共 ${records.length} 笔（${statusText}）。统计范围：${scope}，${fixedScope}。`;
   }
 
   answerModuleCount(database, message) {
     if (!isCountQuestion(message)) return null;
     const value = text(message);
     const counters = [
-      { pattern: /(村民|居民|人员)/u, label: '村民档案', items: database.personnel },
+      { pattern: /(村民|居民|人员)/u, label: "居民档案", items: database.personnel },
       { pattern: /党员/u, label: '党员档案', items: database.partyMembers },
       { pattern: /(民情|走访)/u, label: '民情记录', items: database.visitRecords },
-      { pattern: /值班/u, label: '值班排班日期', items: Object.keys(database.dutyFlexible?.schedule || {}) },
+      { pattern: /值班/u, label: '值班排班日期', items: Object.keys(dutySchedule(database)) },
       { pattern: /(财务|收支)/u, label: '财务收支记录', items: database.finances },
       { pattern: /(土地|地块|确权)/u, label: '土地确权记录', items: database.landParcel?.length ? database.landParcel : database.lands },
       { pattern: /合同/u, label: '资源合同', items: database.resourceContracts },
@@ -614,21 +1176,22 @@ class AiAssistantService {
   }
 
   subsidyLedgerNotice(database, recipient, year) {
-    const found = (database.farmlandSubsidyLedgers || []).some((ledger) => yearFrom(ledger.year) === year && (ledger.records || []).some((record) => (
+    const found = (database.farmlandSubsidyLedgers || []).some((ledger) => (!year || yearFrom(ledger.year) === year) && (ledger.records || []).some((record) => (
       recipient.id ? text(record.personId) === recipient.id : text(record.name) === recipient.name && text(record.groupName) === recipient.groupName
     )));
     return found ? '地力补贴台账目前没有“已发放”状态，因此未计入本次实发合计。' : '';
   }
 
-  formatAnnualAnswer({ recipient, records, year, subsidyNotice }) {
+  formatAnnualAnswer({ recipient, records, year, allYears = false, subsidyNotice }) {
+    const period = paymentPeriodLabel(year, allYears);
     const total = records.reduce((sum, record) => sum + record.amountCents, 0);
     if (!records.length) {
-      return `${year} 年未查到“${recipient.name}”已登记发放的资金记录。${subsidyNotice || '只统计状态为“已发放”的记录。'}`;
+      return `${period}未查到“${recipient.name}”已登记发放的资金记录。${subsidyNotice || '只统计状态为“已发放”的记录。'}`;
     }
     const categories = new Map();
     for (const record of records) categories.set(record.categoryName, (categories.get(record.categoryName) || 0) + 1);
     const sourceText = [...categories.entries()].map(([name, count]) => `${name}${count}笔`).join('、');
-    return `${year} 年“${recipient.name}”已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔（${sourceText}）。统计范围：通用发放批次和合同发放批次，按实际登记的发放日期计入。${subsidyNotice}`;
+    return `${period}“${recipient.name}”已登记发放共计 ${formatMoney(total)}，共 ${records.length} 笔（${sourceText}）。统计范围：通用发放批次和合同发放批次，按实际登记的发放日期计入。${subsidyNotice}`;
   }
 
   paymentStatusLabel(status) {
@@ -655,7 +1218,7 @@ class AiAssistantService {
     };
   }
 
-  buildPaymentEvidence({ year, subject, scope, paidRecords = [], pendingRecords = [] }) {
+  buildPaymentEvidence({ year, allYears = false, subject, scope, paidRecords = [], pendingRecords = [] }) {
     const byCategory = new Map();
     for (const record of paidRecords) {
       const current = byCategory.get(record.categoryName) || { name: record.categoryName, amountCents: 0, count: 0 };
@@ -680,8 +1243,9 @@ class AiAssistantService {
     }));
     return {
       kind: 'payment-evidence',
-      title: `${year} 年${subject}资金发放核对`,
+      title: `${paymentPeriodLabel(year, allYears)}${subject}资金发放核对`,
       year,
+      period: allYears ? 'all' : 'year',
       subject,
       scope,
       paidTotalCents,
@@ -732,7 +1296,7 @@ class AiAssistantService {
       const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
       return { content: `系统中有多位同名人员，请确认要修改哪一位：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
     }
-    if (resolved.kind !== 'resident') return { content: '我没有识别出要修改电话的居民。请补充姓名；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (resolved.kind !== 'resident') return { content: "我没有识别出要修改电话的居民。请补充姓名；如果有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     const person = (database.personnel || []).find((item) => personId(item) === resolved.recipient.id);
     const field = Object.prototype.hasOwnProperty.call(person || {}, 'phone') ? 'phone'
       : Object.prototype.hasOwnProperty.call(person || {}, 'mobile_phone') ? 'mobile_phone'
@@ -767,7 +1331,7 @@ class AiAssistantService {
       const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
       return { content: `系统中有多位同名人员，请确认要修改哪一位：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
     }
-    if (resolved.kind !== 'resident') return { content: '我没有识别出要修改住址的居民。请补充姓名；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (resolved.kind !== 'resident') return { content: "我没有识别出要修改住址的居民。请补充姓名；如果有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     const person = (database.personnel || []).find((item) => personId(item) === resolved.recipient.id);
     const field = ['address', 'residence_address', 'residenceAddress', 'current_address'].find((key) => Object.prototype.hasOwnProperty.call(person || {}, key)) || 'address';
     const previousAddress = text(person?.[field]);
@@ -781,7 +1345,7 @@ class AiAssistantService {
 
   groupUpdateProposal(database, message) {
     const requested = text(message);
-    const targetGroup = requested.match(/(?:村民小组|村民组|小组|组别).{0,12}?(?:改成|修改为|换成|更新为|调整为|设为)\s*([^，。；;\s]{1,30})/u)?.[1]
+    const targetGroup = requested.match(/(?:(?:村民|居民)小组|(?:村民|居民)组|小组|组别).{0,12}?(?:改成|修改为|换成|更新为|调整为|设为)\s*([^，。；;\s]{1,30})/u)?.[1]
       || requested.match(/(?:转到|调到|调整到)\s*([^，。；;\s]{1,30}组)/u)?.[1];
     if (!targetGroup) return null;
     const people = (database.personnel || []).map((person) => ({
@@ -790,20 +1354,20 @@ class AiAssistantService {
     const longestName = Math.max(0, ...people.map((item) => item.name.length));
     let candidates = people.filter((item) => item.name.length === longestName);
     const sourceGroup = requested.match(/从\s*([^，。；;\s转调]{1,30}组)\s*(?:转到|调到|调整到)/u)?.[1]
-      || requested.match(/原(?:来)?(?:村民小组|村民组|小组|组别)?[：:\s]*([^，。；;\s]{1,30}组)/u)?.[1];
+      || requested.match(/原(?:来)?(?:(?:村民|居民)小组|(?:村民|居民)组|小组|组别)?[：:\s]*([^，。；;\s]{1,30}组)/u)?.[1];
     if (sourceGroup) candidates = candidates.filter((item) => item.groupName === sourceGroup);
-    if (!candidates.length) return { content: sourceGroup ? `未找到“${sourceGroup}”中的目标居民。请核对姓名和原村民组后重新说明。` : '我没有识别出要调整村民组的居民。请补充姓名。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!candidates.length) return { content: sourceGroup ? `未找到“${sourceGroup}”中的目标居民。请核对姓名和原居民组后重新说明。` : "我没有识别出要调整居民组的居民。请补充姓名。", provider: 'system', handled: true, needsConfirmation: true };
     if (candidates.length > 1) {
       const choices = candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、');
-      return { content: `系统中有多位同名人员，请补充原村民组后再调整，例如“把张三从一组转到二组”。候选：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
+      return { content: `系统中有多位同名人员，请补充原居民组后再调整。示例：“把某位居民从一组转到二组”，请将姓名替换为档案中的真实姓名。候选：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
     }
     const person = candidates[0];
     const field = ['village_group', 'villageGroup', 'group', 'group_name'].find((key) => Object.prototype.hasOwnProperty.call(person.person, key)) || 'village_group';
     const previousGroup = text(person.person[field]);
     if (previousGroup === targetGroup) return { content: `${person.name}当前已经在“${targetGroup}”，无需调整。`, provider: 'system', handled: true };
     const action = this.queueControlledAction({
-      type: 'resident_group_update', riskLevel: 'normal', module: '村民一户一档', personId: person.id, personName: person.name, groupName: previousGroup,
-      field, fieldLabel: '村民组', valueKey: 'group', before: { group: previousGroup }, after: { group: targetGroup }, proposedAt: this.now().toISOString(),
+      type: 'resident_group_update', riskLevel: 'normal', module: '居民一户一档', personId: person.id, personName: person.name, groupName: previousGroup,
+      field, fieldLabel: "居民组", valueKey: 'group', before: { group: previousGroup }, after: { group: targetGroup }, proposedAt: this.now().toISOString(),
     });
     return { content: this.actionPreview(action), provider: 'system', handled: true, needsConfirmation: true, action: { type: 'confirm', riskLevel: 'normal', confirmationsRequired: action.confirmationsRequired, before: action.before, after: action.after } };
   }
@@ -822,7 +1386,7 @@ class AiAssistantService {
     const landType = fields.地块类型 || fields.类型 || '';
     const areaInput = fields.面积 || fields.面积亩 || fields.亩数 || '';
     const contractorName = fields.承包人 || fields.使用人 || '';
-    const groupName = fields.村民组 || fields.村民小组 || fields.组别 || '';
+    const groupName = fields.居民组 || fields.居民小组 || fields.村民组 || fields.村民小组 || fields.组别 || '';
     const area = Number(areaInput.replace(/[亩,，\s]/gu, ''));
     const missing = [];
     if (!name) missing.push('地块名称');
@@ -830,13 +1394,13 @@ class AiAssistantService {
     if (!areaInput) missing.push('面积');
     if (!contractorName) missing.push('承包人/使用人');
     if (areaInput && (!Number.isFinite(area) || area <= 0)) missing.push('规范面积（正数，单位亩）');
-    if (missing.length) return { content: `登记地块还缺少：${[...new Set(missing)].join('、')}。请按“新增地块：名称=东沟地；编号=DK-001；类型=水田；面积=12.5；承包人=张三；村民组=一组”补充，我不会自行补填。`, provider: 'system', handled: true, needsConfirmation: true };
+    if (missing.length) return { content: `登记地块还缺少：${[...new Set(missing)].join('、')}。虚构示例：“新增地块：名称=示例地块；编号=DK-001；类型=水田；面积=12.5；承包人=示例居民甲；居民组=一组”。请改用真实资料补充，我不会自行补填。`, provider: 'system', handled: true, needsConfirmation: true };
     if (code && (database.landParcel || []).some((item) => text(item.parcel_code || item.parcelCode || item.code) === code)) return { content: `地块编号“${code}”已存在。请核对后重新提交，避免重复建档。`, provider: 'system', handled: true, needsConfirmation: true };
     const people = (database.personnel || []).map((person) => ({ id: personId(person), name: personName(person), groupName: personGroup(person) }))
       .filter((person) => person.name === contractorName);
     const matchingPeople = groupName ? people.filter((person) => person.groupName === groupName) : people;
-    if (people.length && !matchingPeople.length) return { content: `未找到“${groupName}”中的承包人“${contractorName}”。请核对村民组；如该使用人不在居民档案中，请明确填写“承包人=集体”等名称。`, provider: 'system', handled: true, needsConfirmation: true };
-    if (matchingPeople.length > 1) return { content: `系统中有多位承包人“${contractorName}”，请补充村民组后重新说明，我不会按同名人员自行关联。`, provider: 'system', handled: true, needsConfirmation: true };
+    if (people.length && !matchingPeople.length) return { content: `未找到“${groupName}”中的承包人“${contractorName}”。请核对居民组；如该使用人不在居民档案中，请明确填写“承包人=集体”等名称。`, provider: 'system', handled: true, needsConfirmation: true };
+    if (matchingPeople.length > 1) return { content: `系统中有多位承包人“${contractorName}”，请补充居民组后重新说明，我不会按同名人员自行关联。`, provider: 'system', handled: true, needsConfirmation: true };
     const contractor = matchingPeople[0] || null;
     const createdAt = this.now().toISOString();
     const record = {
@@ -873,16 +1437,16 @@ class AiAssistantService {
     const requested = text(message);
     if (!/(安排|新增|添加|排班).{0,20}值班|值班.{0,20}(安排|新增|添加|排班)/u.test(requested)) return null;
     const date = this.resolveDutyDate(requested);
-    if (!date) return { content: '请明确值班日期，例如“安排张三在 2026-09-02 值班”或“安排张三今天值班”。日期不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!date) return { content: '请明确值班日期。虚构示例：“安排示例居民甲在 2026-09-02 值班”，请替换为真实人员和日期。日期不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
     const resolved = this.resolveRecipient(database, requested);
     if (resolved.kind === 'ambiguous') {
       const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
       return { content: `系统中有多位同名人员，请确认要安排哪一位值班：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
     }
-    if (resolved.kind !== 'resident') return { content: '我没有识别出要安排值班的人员。请补充系统中已登记的姓名；如有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (resolved.kind !== 'resident') return { content: "我没有识别出要安排值班的人员。请补充系统中已登记的姓名；如有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     const schedule = database.dutyFlexible?.schedule;
     const beforeNames = Array.isArray(schedule?.[date]) ? [...schedule[date]] : [];
-    if (beforeNames.includes(resolved.recipient.name)) return { content: `${resolved.recipient.name}已经在 ${date} 的值班安排中，无需重复添加。`, provider: 'system', handled: true };
+    if ((dutySchedule(database)[date] || []).includes(resolved.recipient.name)) return { content: `${resolved.recipient.name}已经在 ${date} 的值班安排中，无需重复添加。`, provider: 'system', handled: true };
     const afterNames = [...beforeNames, resolved.recipient.name];
     const action = this.queueControlledAction({
       type: 'duty_schedule_add', riskLevel: 'normal', module: '村里值班', object: { id: `${date}:${resolved.recipient.id}`, name: resolved.recipient.name, groupName: resolved.recipient.groupName },
@@ -1022,7 +1586,7 @@ class AiAssistantService {
     const candidates = members.filter((item) => item.name.length === longestName);
     const groupMatches = candidates.filter((item) => item.groupName && requested.includes(item.groupName));
     const matched = groupMatches.length ? groupMatches : candidates;
-    if (!matched.length) return { content: '我没有识别出要调整党员阶段的姓名。请补充姓名；如有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!matched.length) return { content: "我没有识别出要调整党员阶段的姓名。请补充姓名；如有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     if (matched.length > 1) return { content: `系统中有多位同名党员，请确认要调整哪一位：${matched.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
     const member = matched[0];
     const field = ['stage', 'party_stage', 'partyStage', 'developmentStage', 'development_stage'].find((key) => Object.prototype.hasOwnProperty.call(member.item, key)) || 'stage';
@@ -1130,7 +1694,7 @@ class AiAssistantService {
     const amountCents = yuanToCents(amount);
     if (amount && amountCents === null) missing.push('规范金额（元，最多两位小数）');
     if (date && !/^\d{4}-\d{2}-\d{2}$/u.test(date)) missing.push('规范日期（YYYY-MM-DD）');
-    if (missing.length) return { content: `登记财务收支还缺少：${[...new Set(missing)].join('、')}。请按“新增财务收支：类型=收入；分类=集体经营收入；摘要=场地租赁；金额=1200.50；日期=2026-09-01；经办人=张三；凭证号=P-001”补充，我不会自行补填。`, provider: 'system', handled: true, needsConfirmation: true };
+    if (missing.length) return { content: `登记财务收支还缺少：${[...new Set(missing)].join('、')}。虚构示例：“新增财务收支：类型=收入；分类=集体经营收入；摘要=示例场地租金；金额=1200.50；日期=2026-09-01；经办人=示例居民甲；凭证号=P-001”。请改用真实资料补充，我不会自行补填。`, provider: 'system', handled: true, needsConfirmation: true };
     const createdAt = this.now().toISOString();
     const record = {
       id: `ai-finance-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -1215,14 +1779,14 @@ class AiAssistantService {
   }
 
   villageNameUpdateProposal(database, message) {
-    const requestedName = text(message).match(/(?:社区名称|村名|村庄名称).{0,12}?(?:改成|修改为|设置为|换成)\s*(.+)$/u)?.[1]?.replace(/[。！!]+$/u, '').trim();
+    const requestedName = text(message).match(/(?:(?:社区|村居)名称|村名|村庄名称).{0,12}?(?:改成|修改为|设置为|换成)\s*(.+)$/u)?.[1]?.replace(/[。！!]+$/u, '').trim();
     if (!requestedName) return null;
-    if (requestedName.length > 60) return { content: '社区名称不能超过 60 个字符。请精简后重新说明。', provider: 'system', handled: true, needsConfirmation: true };
+    if (requestedName.length > 60) return { content: "村居名称不能超过 60 个字符。请精简后重新说明。", provider: 'system', handled: true, needsConfirmation: true };
     const previousName = text(database.settings?.villageName);
-    if (previousName === requestedName) return { content: `社区名称已经是“${requestedName}”，无需修改。`, provider: 'system', handled: true };
+    if (previousName === requestedName) return { content: `村居名称已经是“${requestedName}”，无需修改。`, provider: 'system', handled: true };
     const action = this.queueControlledAction({
-      type: 'settings_village_name_update', riskLevel: 'normal', module: '系统设置', object: { id: 'settings:villageName', name: '社区名称' },
-      field: 'villageName', fieldLabel: '社区名称', valueKey: 'villageName', before: { villageName: previousName }, after: { villageName: requestedName }, proposedAt: this.now().toISOString(),
+      type: 'settings_village_name_update', riskLevel: 'normal', module: '系统设置', object: { id: 'settings:villageName', name: "村居名称" },
+      field: 'villageName', fieldLabel: "村居名称", valueKey: 'villageName', before: { villageName: previousName }, after: { villageName: requestedName }, proposedAt: this.now().toISOString(),
     });
     return { content: this.actionPreview(action), provider: 'system', handled: true, needsConfirmation: true, action: { type: 'confirm', riskLevel: 'normal', confirmationsRequired: action.confirmationsRequired, before: action.before, after: action.after } };
   }
@@ -1284,7 +1848,7 @@ class AiAssistantService {
     if (/(安排|新增|添加|排班).{0,20}值班|值班.{0,20}(安排|新增|添加|排班)/u.test(requested)) return null;
     const date = this.resolveDutyDate(requested);
     if (!date) return { content: '请明确要查询哪一天的值班安排，例如“今天谁值班？”或“2026-09-02 谁值班？”。日期不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
-    const names = database.dutyFlexible?.schedule?.[date];
+    const names = dutySchedule(database)[date];
     const dutyNames = Array.isArray(names) ? names : [];
     const evidence = this.buildRecordEvidence({
       title: `${date} 值班安排核对`, scope: '村里值班页面中该日期的当日排班台账',
@@ -1349,7 +1913,7 @@ class AiAssistantService {
     });
     const longestMatch = Math.max(0, ...contracts.map((item) => Math.max(text(item.name).length, text(item.contractorName).length)));
     const candidates = contracts.filter((item) => Math.max(text(item.name).length, text(item.contractorName).length) === longestMatch);
-    if (!candidates.length) return { content: '请补充要查询的合同名称或承包人名称，例如“鱼塘承包合同是否到账？”。对象不明确时，我不会自行匹配。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!candidates.length) return { content: '请补充要查询的真实合同名称或承包人名称。虚构示例：“示例鱼塘承包合同是否到账？”。对象不明确时，我不会自行匹配。', provider: 'system', handled: true, needsConfirmation: true };
     if (candidates.length > 1) return { content: `查到多份可能的合同，请补充合同名称：${candidates.map((item) => `“${text(item.name) || '未命名合同'}”`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
     const contract = candidates[0];
     const receipt = (database.contractFeeReceipts || []).find((item) => text(item.contractId) === text(contract.id));
@@ -1381,21 +1945,63 @@ class AiAssistantService {
     const candidates = members.filter((item) => item.name.length === longest);
     const groupMatches = candidates.filter((item) => item.groupName && requested.includes(item.groupName));
     const matched = groupMatches.length ? groupMatches : candidates;
-    if (!matched.length) return { content: '我没有识别出要查询的党员姓名。请补充姓名；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!matched.length) return { content: "我没有识别出要查询的党员姓名。请补充姓名；如果有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     if (matched.length > 1) return { content: `系统中有多位同名党员，请确认要查询哪一位：${matched.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
     const member = matched[0];
     const details = [member.stage && `党员阶段：${member.stage}`, member.duty && `党内职务：${member.duty}`].filter(Boolean);
     const evidence = this.buildRecordEvidence({
-      title: `“${member.name}”党员档案核对`, scope: '党员管理台账中与该姓名和村民小组匹配的党员记录',
+      title: `“${member.name}”党员档案核对`, scope: "党员管理台账中与该姓名和居民小组匹配的党员记录",
       metricLabel: '党员档案状态', metricValue: member.stage || '阶段未登记',
-      summary: [{ name: '党内职务', value: member.duty || '未登记' }, { name: '村民小组', value: member.groupName || '未登记' }],
+      summary: [{ name: '党内职务', value: member.duty || '未登记' }, { name: "居民小组", value: member.groupName || '未登记' }],
       records: [this.navigationEvidenceRecord({
-        title: member.name, meta: member.groupName || '村民小组未登记', value: member.stage || '党员阶段未登记',
+        title: member.name, meta: member.groupName || "居民小组未登记", value: member.stage || '党员阶段未登记',
         target: 'tab-party', label: '党员管理', source: '党员管理台账', filters: { query: member.name },
       })],
       emptyMessage: `党员管理台账中未查到“${member.name}”的记录。`,
     });
     return { content: `“${member.name}”已登记在党员档案中。${details.length ? details.join('；') : '党员阶段和党内职务暂未填写。'} 查询范围：党员管理台账。`, provider: 'system', handled: true, data: { member, queryEvidence: evidence } };
+  }
+
+  answerResidentOverview(database, message) {
+    const requested = text(message);
+    if (!isResidentOverviewRequest(requested)) return null;
+    const resolved = this.resolveRecipient(database, requested);
+    if (resolved.kind === 'ambiguous') {
+      const choices = resolved.candidates.map(candidate => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
+      return { content: `系统中有多位同名居民，请补充居民小组后再查询：${choices}。`, provider: 'system', handled: true, needsConfirmation: true };
+    }
+    if (resolved.kind !== 'resident') {
+      return { content: "请告诉我要查询哪位居民；如果有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
+    }
+    const person = (database.personnel || []).find(item => personId(item) === resolved.recipient.id)
+      || (database.personnel || []).find(item => personName(item) === resolved.recipient.name && personGroup(item) === resolved.recipient.groupName);
+    const fields = [
+      ['姓名', personName(person)],
+      ["居民小组", personGroup(person)],
+      ['户号', personHouseholdId(person)],
+      ['与户主关系', personRelationToHead(person)],
+      ['性别', text(person?.gender || person?.sex)],
+      ['出生日期', text(person?.birth_date || person?.birthDate || person?.birthday)],
+      ['户籍状态', text(person?.household_status || person?.householdStatus || person?.status)],
+    ].filter(([, value]) => value);
+    const label = `${resolved.recipient.name}${resolved.recipient.groupName ? `（${resolved.recipient.groupName}）` : ''}`;
+    const evidence = this.buildRecordEvidence({
+      title: `${label}居民基本情况`,
+      scope: '本机居民一户一档中的当前登记资料',
+      metricLabel: '档案状态',
+      metricValue: '已找到 1 条',
+      summary: fields.slice(1).map(([name, value]) => ({ name, value })),
+      records: [this.navigationEvidenceRecord({
+        title: resolved.recipient.name,
+        meta: [personGroup(person), personHouseholdId(person) && `户号：${personHouseholdId(person)}`].filter(Boolean).join(' · '),
+        value: personRelationToHead(person) ? `与户主关系：${personRelationToHead(person)}` : '与户主关系未登记',
+        target: 'tab-personnel', label: '居民一户一档', source: '居民档案', filters: { query: resolved.recipient.name },
+      })],
+    });
+    return {
+      content: `已在本机居民档案中找到“${label}”：${fields.map(([name, value]) => `${name}：${value}`).join('；')}。`,
+      provider: 'system', handled: true, data: { resident: sanitizeFactValue(person), queryEvidence: evidence },
+    };
   }
 
   answerIdentityCardQuestion(database, message) {
@@ -1404,27 +2010,27 @@ class AiAssistantService {
     const resolved = this.resolveRecipient(database, requested);
     if (resolved.kind === 'ambiguous') {
       const choices = resolved.candidates.map((candidate) => `${candidate.name}${candidate.groupName ? `（${candidate.groupName}）` : ''}`).join('、');
-      return { content: `系统中有多位同名居民，请补充村民小组后再查询身份证号码：${choices}。我不会自行猜测。`, provider: 'system', handled: true, needsConfirmation: true };
+      return { content: `系统中有多位同名居民，请补充居民小组后再查询身份证号码：${choices}。我不会自行猜测。`, provider: 'system', handled: true, needsConfirmation: true };
     }
     if (resolved.kind !== 'resident') {
-      return { content: '请提供要查询的居民姓名；如有同名人员，请同时说明村民小组。我会仅在本机村民档案中核对，不会交给在线 AI。', provider: 'system', handled: true, needsConfirmation: true };
+      return { content: "请提供要查询的居民姓名；如有同名人员，请同时说明居民小组。我会仅在本机居民档案中核对，不会交给在线 AI。", provider: 'system', handled: true, needsConfirmation: true };
     }
     const person = (database.personnel || []).find((item) => personId(item) === resolved.recipient.id)
       || (database.personnel || []).find((item) => personName(item) === resolved.recipient.name && personGroup(item) === resolved.recipient.groupName);
     const identityCard = personIdentityCard(person);
     const personLabel = `“${resolved.recipient.name}”${resolved.recipient.groupName ? `（${resolved.recipient.groupName}）` : ''}`;
     const evidence = this.buildRecordEvidence({
-      title: `${personLabel}居民档案核对`, scope: '本机村民一户一档中与该居民精确匹配的档案记录',
+      title: `${personLabel}居民档案核对`, scope: '本机居民一户一档中与该居民精确匹配的档案记录',
       metricLabel: '身份证号码', metricValue: identityCard || '未登记',
-      summary: [{ name: '村民小组', value: resolved.recipient.groupName || '未登记' }],
+      summary: [{ name: "居民小组", value: resolved.recipient.groupName || '未登记' }],
       records: [this.navigationEvidenceRecord({
-        title: resolved.recipient.name, meta: resolved.recipient.groupName || '村民小组未登记', value: identityCard || '身份证号码未登记',
-        target: 'tab-personnel', label: '村民一户一档', source: '居民档案', filters: { query: resolved.recipient.name },
+        title: resolved.recipient.name, meta: resolved.recipient.groupName || "居民小组未登记", value: identityCard || '身份证号码未登记',
+        target: 'tab-personnel', label: '居民一户一档', source: '居民档案', filters: { query: resolved.recipient.name },
       })],
-      emptyMessage: `${personLabel}的村民档案尚未登记身份证号码。`,
+      emptyMessage: `${personLabel}的居民档案尚未登记身份证号码。`,
     });
-    if (!identityCard) return { content: `${personLabel}的村民档案尚未登记身份证号码。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard: '', queryEvidence: evidence } };
-    return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard, queryEvidence: evidence } };
+    if (!identityCard) return { content: `${personLabel}的居民档案尚未登记身份证号码。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard: '', queryEvidence: evidence } };
+    return { content: `${personLabel}的身份证号码是：${identityCard}。查询范围：本机居民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { person: resolved.recipient, identityCard, queryEvidence: evidence } };
   }
 
   answerResidentRelationshipQuestion(database, message) {
@@ -1436,7 +2042,7 @@ class AiAssistantService {
     })).filter((item) => item.name);
     const names = [...new Set(residents.filter((item) => requested.includes(item.name)).map((item) => item.name))]
       .sort((left, right) => right.length - left.length);
-    if (!names.length) return { content: '请同时说明要核对的居民姓名，例如“薛锋和薛伯齐是什么关系？”。我会只按本机村民档案中的户号和户主关系核对，不会猜测。', provider: 'system', handled: true, needsConfirmation: true };
+    if (!names.length) return { content: "请同时说明要核对的居民姓名。虚构示例：“示例居民甲和示例居民乙是什么关系？”，实际查询时请换成档案中的真实姓名。我会只按本机居民档案中的户号和户主关系核对，不会猜测。", provider: 'system', handled: true, needsConfirmation: true };
 
     const resolveNamedResident = (name) => {
       const candidates = residents.filter((item) => item.name === name);
@@ -1447,11 +2053,11 @@ class AiAssistantService {
 
     if (names.length === 1) {
       const result = resolveNamedResident(names[0]);
-      if (result.kind === 'ambiguous') return { content: `系统中有多位“${names[0]}”，请补充村民组后再查询户主关系：${result.candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
+      if (result.kind === 'ambiguous') return { content: `系统中有多位“${names[0]}”，请补充居民组后再查询户主关系：${result.candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、')}。`, provider: 'system', handled: true, needsConfirmation: true };
       const resident = result.resident;
-      if (!/(户主关系|与户主|家庭成员|同户)/u.test(requested)) return { content: `请再说明另一位居民姓名，例如“${resident.name}和李四是什么关系？”。我会根据本机户号和与户主关系核对，不会推测。`, provider: 'system', handled: true, needsConfirmation: true };
-      if (!resident.relationToHead) return { content: `“${resident.name}”的村民档案尚未登记“与户主关系”，暂时无法核实家庭关系。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { resident } };
-      return { content: `“${resident.name}”${resident.groupName ? `（${resident.groupName}）` : ''}在居民档案中的与户主关系为“${resident.relationToHead}”。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { resident } };
+      if (!/(户主关系|与户主|家庭成员|同户)/u.test(requested)) return { content: `请再说明另一位居民的真实姓名，例如“${resident.name}和另一位居民是什么关系？”。我会根据本机户号和与户主关系核对，不会推测。`, provider: 'system', handled: true, needsConfirmation: true };
+      if (!resident.relationToHead) return { content: `“${resident.name}”的居民档案尚未登记“与户主关系”，暂时无法核实家庭关系。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { resident } };
+      return { content: `“${resident.name}”${resident.groupName ? `（${resident.groupName}）` : ''}在居民档案中的与户主关系为“${resident.relationToHead}”。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { resident } };
     }
 
     const [firstName, secondName] = names.slice(0, 2);
@@ -1460,14 +2066,14 @@ class AiAssistantService {
     const ambiguous = [first, second].find((item) => item.kind === 'ambiguous');
     if (ambiguous) {
       const candidateNames = ambiguous.candidates.map((item) => `${item.name}${item.groupName ? `（${item.groupName}）` : ''}`).join('、');
-      return { content: `关系查询中存在同名居民，请补充村民组后再核对：${candidateNames}。我不会自行选择同名人员。`, provider: 'system', handled: true, needsConfirmation: true };
+      return { content: `关系查询中存在同名居民，请补充居民组后再核对：${candidateNames}。我不会自行选择同名人员。`, provider: 'system', handled: true, needsConfirmation: true };
     }
     const left = first.resident;
     const right = second.resident;
     const labels = `“${left.name}”${left.groupName ? `（${left.groupName}）` : ''}、“${right.name}”${right.groupName ? `（${right.groupName}）` : ''}`;
     const relationshipEvidence = (conclusion, summary = []) => this.buildRecordEvidence({
       title: '居民家庭关系核对',
-      scope: '本机村民一户一档中两位居民的户号与户主关系字段',
+      scope: '本机居民一户一档中两位居民的户号与户主关系字段',
       metricLabel: '档案关系结论',
       metricValue: conclusion,
       summary,
@@ -1475,16 +2081,16 @@ class AiAssistantService {
         title: resident.name,
         meta: [resident.groupName, resident.householdId ? `户号：${resident.householdId}` : '户号未登记'].filter(Boolean).join(' · '),
         value: resident.relationToHead ? `与户主关系：${resident.relationToHead}` : '与户主关系未登记',
-        target: 'tab-personnel', label: '村民一户一档', source: '居民档案', filters: { query: resident.name },
+        target: 'tab-personnel', label: '居民一户一档', source: '居民档案', filters: { query: resident.name },
       })),
     });
     if (!left.householdId || !right.householdId) {
       const evidence = relationshipEvidence('无法确认', [{ name: '户号核对', value: '至少一人未登记' }]);
-      return { content: `${labels}的居民档案至少有一人未登记户号，无法依据台账确认两人的家庭关系。我不会按姓名、年龄或常识猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
+      return { content: `${labels}的居民档案至少有一人未登记户号，无法依据台账确认两人的家庭关系。我不会按姓名、年龄或常识猜测。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
     }
     if (left.householdId !== right.householdId) {
       const evidence = relationshipEvidence('无法确认', [{ name: '户号核对', value: '不同户号' }]);
-      return { content: `${labels}登记在不同户号下，当前居民档案不能确认二人存在直接家庭关系。我不会推测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
+      return { content: `${labels}登记在不同户号下，当前居民档案不能确认二人存在直接家庭关系。我不会推测。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
     }
     const shared = `两人登记为同一户（户号：${left.householdId}）`;
     const sameHouseholdSummary = [{ name: '户号核对', value: '同一户' }];
@@ -1493,12 +2099,12 @@ class AiAssistantService {
     if (leftHead && right.relationToHead) {
       const relationship = relationDescription(right.relationToHead);
       const evidence = relationshipEvidence(`${right.name}是${left.name}的${relationship}`, sameHouseholdSummary);
-      return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationship}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
+      return { content: `${shared}。档案标注：${left.name}为户主；${right.name}与户主关系为“${right.relationToHead}”。因此可直接确认：${right.name}是${left.name}的${relationship}。查询范围：本机居民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
     }
     if (rightHead && left.relationToHead) {
       const relationship = relationDescription(left.relationToHead);
       const evidence = relationshipEvidence(`${left.name}是${right.name}的${relationship}`, sameHouseholdSummary);
-      return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationship}。查询范围：本机村民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
+      return { content: `${shared}。档案标注：${right.name}为户主；${left.name}与户主关系为“${left.relationToHead}”。因此可直接确认：${left.name}是${right.name}的${relationship}。查询范围：本机居民一户一档，未发送给在线 AI。`, provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence } };
     }
     const leftGender = relationChildGender(left.relationToHead);
     const rightGender = relationChildGender(right.relationToHead);
@@ -1507,14 +2113,14 @@ class AiAssistantService {
         : leftGender === 'female' && rightGender === 'female' ? '姐妹' : '兄妹或姐弟';
       const evidence = relationshipEvidence(relationship, sameHouseholdSummary);
       return {
-        content: `${shared}。档案标注：${left.name}与户主关系为“${left.relationToHead}”，${right.name}与户主关系为“${right.relationToHead}”。二人均为同一户主的子女，因此可确认二人是${relationship}关系。查询依据：本机村民一户一档。`,
+        content: `${shared}。档案标注：${left.name}与户主关系为“${left.relationToHead}”，${right.name}与户主关系为“${right.relationToHead}”。二人均为同一户主的子女，因此可确认二人是${relationship}关系。查询依据：本机居民一户一档。`,
         provider: 'system', handled: true, data: { left, right, relationship, queryEvidence: evidence },
       };
     }
     const leftDetail = left.relationToHead ? `${left.name}与户主关系为“${left.relationToHead}”` : `${left.name}未填写与户主关系`;
     const rightDetail = right.relationToHead ? `${right.name}与户主关系为“${right.relationToHead}”` : `${right.name}未填写与户主关系`;
     const evidence = relationshipEvidence('无法确认', sameHouseholdSummary);
-    return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机村民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
+    return { content: `${shared}；${leftDetail}，${rightDetail}。档案没有登记二人之间的直接关系，无法仅依据这些字段确认亲属称谓，我不会猜测。查询范围：本机居民一户一档。`, provider: 'system', handled: true, data: { left, right, queryEvidence: evidence } };
   }
 
   answerLandAreaQuestion(database, message) {
@@ -1555,7 +2161,7 @@ class AiAssistantService {
     if (resolved.kind !== 'resident') return null;
     const person = (database.personnel || []).find((item) => personId(item) === resolved.recipient.id);
     const identifiers = new Set([text(person?.id_card), text(person?.idCard), text(person?.identityCard), text(person?.id)].filter(Boolean));
-    if (!identifiers.size) return { content: `“${resolved.recipient.name}”的村民档案未登记可用于土地关联的身份证号，暂时无法核对其承包地块。`, provider: 'system', handled: true, needsConfirmation: true };
+    if (!identifiers.size) return { content: `“${resolved.recipient.name}”的居民档案未登记可用于土地关联的身份证号，暂时无法核对其承包地块。`, provider: 'system', handled: true, needsConfirmation: true };
     const parcels = database.landParcel?.length ? database.landParcel : (database.lands || []);
     const matches = parcels.filter((parcel) => {
       const contractorIds = Array.isArray(parcel?.contractorIds) ? parcel.contractorIds : (parcel?.contractorId ? [parcel.contractorId] : []);
@@ -1728,13 +2334,180 @@ class AiAssistantService {
   }
 
   async recordOperation(draft, database) {
+    const account = await this.authService?.getStatus?.().then(status => status?.account).catch(() => null);
     if (!Array.isArray(database.aiAssistantOperations)) database.aiAssistantOperations = [];
     database.aiAssistantOperations.push({
       id: draft.id || `ai-operation-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       source: 'ai_assistant',
       ...draft,
+      operator: draft.operator || (account ? { name: account.name || '', phone: account.phone || '' } : null),
       createdAt: draft.createdAt || this.now().toISOString(),
     });
+  }
+
+  async recordActionConfirmation(action, label) {
+    const account = await this.authService?.getStatus?.().then(status => status?.account).catch(() => null);
+    action.confirmationHistory ||= [];
+    action.confirmationHistory.push({
+      step: action.confirmationStep,
+      label,
+      confirmedAt: this.now().toISOString(),
+      operator: account ? { id: text(account.id), name: text(account.name), phone: text(account.phone) } : null,
+    });
+    return this.saveActionTask(action, {
+      status: 'waiting-confirmation',
+      pendingAction: structuredClone(action),
+      permissionDecision: structuredClone(action.permissionDecision || null),
+      confirmationHistory: structuredClone(action.confirmationHistory),
+      steps: [{
+        id: action.stepId || 'step-confirm-and-execute', title: action.toolName || '核对并执行修改', toolId: action.toolId || '',
+        status: 'waiting-confirmation',
+        resultSummary: action.confirmationsRequired === 2 && action.confirmationStep === 1 ? '第一次确认已记录，等待最终确认' : '确认已记录，准备执行',
+      }],
+    });
+  }
+
+  async finishActionTask(action, { status, summary, verification = null, operationId = '' } = {}) {
+    const stepStatus = status === 'completed' ? 'completed' : status === 'cancelled' ? 'skipped' : 'failed';
+    return this.saveActionTask(action, {
+      status,
+      pendingAction: null,
+      confirmationHistory: structuredClone(action.confirmationHistory || []),
+      operationId: text(operationId || action.id),
+      verification: verification ? structuredClone(verification) : null,
+      summary: text(summary),
+      steps: [{
+        id: action.stepId || 'step-confirm-and-execute', title: action.toolName || '核对并执行修改', toolId: action.toolId || '',
+        status: stepStatus, resultSummary: text(summary), error: status === 'failed' ? text(summary) : '',
+      }],
+    }).catch(() => null);
+  }
+
+  async updateOperationVerification(action, verification) {
+    try {
+      await this.databaseStore.update((database) => {
+        const operation = (database.aiAssistantOperations || []).find(item => text(item.id) === text(action.id));
+        if (!operation) return null;
+        operation.toolId = action.toolId || '';
+        operation.taskId = action.taskId || '';
+        operation.stepId = action.stepId || '';
+        operation.conversationId = action.conversationId || '';
+        operation.permissionDecision = structuredClone(action.permissionDecision || null);
+        operation.confirmationHistory = structuredClone(action.confirmationHistory || []);
+        operation.verification = structuredClone(verification || null);
+        return operation;
+      });
+    } catch { /* The user-facing result still reports if verification metadata could not be saved. */ }
+  }
+
+  verifyDatabaseAction(action, database) {
+    const passed = (message) => ({ status: 'passed', passed: true, message, checkedAt: this.now().toISOString() });
+    const failed = (message) => ({ status: 'failed', passed: false, message, checkedAt: this.now().toISOString() });
+    const equal = (left, right) => JSON.stringify(left) === JSON.stringify(right);
+    if (['document_category_assign', 'document_category_create_and_archive'].includes(action.type)) {
+      const file = (database.aiFileIndexEntries || []).find(item => text(item.id) === text(action.fileId));
+      const documentId = text(action.documentId || file?.documentId || action.object?.id);
+      const document = (database.documents || []).find(item => text(item.id) === documentId);
+      const expected = normalizeCategoryName(action.categoryName);
+      const documentMatches = document && normalizeCategoryName(document.category || document.file_category) === expected;
+      const fileMatches = file && text(file.archiveState) === 'archived' && normalizeCategoryName(file.finalCategory) === expected;
+      const categoryExists = availableCategories(database).some(item => normalizeCategoryName(item.name) === expected);
+      return documentMatches && fileMatches && categoryExists
+        ? passed(`已重新读取电子档案柜，分类“${text(action.categoryName)}”和文件归档状态一致`)
+        : failed('重新读取电子档案柜后，分类、档案记录或文件状态至少有一项不一致');
+    }
+    if (['resident_phone_update', 'resident_address_update', 'resident_group_update'].includes(action.type)) {
+      const person = (database.personnel || []).find(item => personId(item) === text(action.personId));
+      return person && text(person[action.field]) === text(action.after?.[action.valueKey || 'phone'])
+        ? passed(`已重新读取居民档案，${action.fieldLabel || '目标字段'}与确认内容一致`)
+        : failed(`重新读取居民档案后，${action.fieldLabel || '目标字段'}与确认内容不一致`);
+    }
+    const createdChecks = {
+      land_parcel_create: ['landParcel', 'record'], visit_record_create: ['visitRecords', 'record'],
+      work_item_create: ['workItems', 'record'], resource_contract_create: ['resourceContracts', 'record'],
+      contract_receipt_create: ['contractFeeReceipts', 'receipt'], finance_record_create: ['finances', 'record'],
+    };
+    if (createdChecks[action.type]) {
+      const [collection, key] = createdChecks[action.type];
+      const expected = action.after?.[key];
+      const current = (database[collection] || []).find(item => text(item.id) === text(expected?.id));
+      return current && equal(current, expected) ? passed('已重新读取台账，新记录与确认内容一致') : failed('重新读取台账后，未找到完全一致的新记录');
+    }
+    if (action.type === 'duty_schedule_add') {
+      const current = database.dutyFlexible?.schedule?.[action.after?.date] || [];
+      return equal(current, action.after?.names || []) ? passed('已重新读取值班表，安排结果一致') : failed('重新读取值班表后，安排结果不一致');
+    }
+    if (action.type === 'work_item_status_update') {
+      const current = (database.workItems || []).find(item => text(item.id) === text(action.object?.id));
+      return current && text(current.status) === text(action.after?.status) && text(current.updatedAt) === text(action.after?.updatedAt)
+        ? passed('已重新读取工作事项，状态修改一致') : failed('重新读取工作事项后，状态与确认内容不一致');
+    }
+    if (action.type === 'certificate_record_delete') {
+      const exists = (database.certificates || []).some(item => certificateCode(item) === certificateCode(action.before?.record));
+      return exists ? failed('重新读取证明台账后，该记录仍然存在') : passed('已重新读取证明台账，目标记录已移除');
+    }
+    if (action.type === 'document_draft_archive') {
+      const current = (database.documentDrafts || []).find(item => text(item.id) === text(action.object?.id));
+      return current && text(current.archivedAt) === text(action.after?.archivedAt) && text(current.updatedAt) === text(action.after?.updatedAt)
+        ? passed('已重新读取公文草稿，归档状态一致') : failed('重新读取公文草稿后，归档状态不一致');
+    }
+    if (action.type === 'party_member_stage_update') {
+      const current = (database.partyMembers || []).find(item => text(item.id || item.personId || item.person_id || item.idCard || item.id_card) === text(action.object?.id));
+      return current && text(current[action.field]) === text(action.after?.stage) ? passed('已重新读取党员档案，阶段修改一致') : failed('重新读取党员档案后，阶段不一致');
+    }
+    if (action.type === 'finance_record_update') {
+      const expected = action.after?.record;
+      const current = (database.finances || []).find(item => financeVoucherNumber(item) === financeVoucherNumber(expected));
+      return current && equal(current, expected) ? passed('已重新读取财务台账，修改内容一致') : failed('重新读取财务台账后，修改内容不一致');
+    }
+    if (action.type === 'finance_records_clear') return (database.finances || []).length === 0 ? passed('已重新读取财务台账，当前记录为 0 笔') : failed('重新读取财务台账后，仍存在记录');
+    if (action.type === 'settings_village_name_update') return text(database.settings?.villageName) === text(action.after?.villageName) ? passed("已重新读取系统设置，村居名称一致") : failed("重新读取系统设置后，村居名称不一致");
+    if (action.type === 'work_item_soft_delete') {
+      const expected = action.after?.record;
+      const current = (database.workItems || []).find(item => text(item.id) === text(expected?.id));
+      return current && equal(current, expected) ? passed('已重新读取工作事项，已进入可恢复区') : failed('重新读取工作事项后，删除状态不一致');
+    }
+    if (action.type === 'work_items_soft_delete_batch') {
+      const currentById = new Map((database.workItems || []).map(item => [text(item.id), item]));
+      const matches = (action.after?.records || []).every(item => equal(currentById.get(text(item.id)), item));
+      return matches ? passed('已重新读取全部工作事项，批量删除结果一致') : failed('重新读取工作事项后，至少一项结果不一致');
+    }
+    return failed('该操作暂时没有可用的自动复核规则');
+  }
+
+  async verifyCompletedAction(action) {
+    try {
+      if (action.type === 'unit_member_disable') {
+        const members = await this.authService.listUnitMembers();
+        const current = (Array.isArray(members) ? members : []).find(item => text(item.id) === text(action.object?.id));
+        return current?.isActive === false
+          ? { status: 'passed', passed: true, message: '已重新读取成员状态，账号已停用', checkedAt: this.now().toISOString() }
+          : { status: 'failed', passed: false, message: '重新读取成员状态后，停用结果不一致', checkedAt: this.now().toISOString() };
+      }
+      const database = await this.databaseStore.read();
+      if (action.type === 'database_backup_restore') {
+        return databaseFingerprint(database) === text(action.after?.restoredFingerprint)
+          ? { status: 'passed', passed: true, message: '已重新读取恢复后的数据，内容与目标备份一致', checkedAt: this.now().toISOString() }
+          : { status: 'failed', passed: false, message: '重新读取恢复后的数据后，内容与目标备份不一致', checkedAt: this.now().toISOString() };
+      }
+      return this.verifyDatabaseAction(action, database);
+    } catch (error) {
+      return { status: 'failed', passed: false, message: `自动复核未完成：${text(error.message) || '无法重新读取数据'}`, checkedAt: this.now().toISOString() };
+    }
+  }
+
+  async markOperationTaskUndone(operation, message) {
+    if (!text(operation?.taskId) || !text(operation?.conversationId)) return null;
+    const tasks = await this.taskService.list({ conversationId: operation.conversationId, limit: 100 }).catch(() => []);
+    const task = tasks.find(item => item.id === operation.taskId);
+    if (!task) return null;
+    return this.taskService.save({
+      ...task,
+      status: 'undone',
+      pendingAction: null,
+      summary: text(message) || '原操作已安全撤销',
+      steps: (task.steps || []).map(step => ({ ...step, status: 'undone', resultSummary: '原操作已安全撤销', error: '' })),
+    }).catch(() => null);
   }
 
   async backupRestoreProposal(database, message) {
@@ -1782,24 +2555,39 @@ class AiAssistantService {
       await this.databaseStore.restoreBackup({ name: action.after?.backupName }, {
         transform: async (restoredDatabase) => {
           restoredFingerprint = databaseFingerprint(restoredDatabase);
+          action.after = { ...action.after, restoredFingerprint };
           await this.recordOperation({
             id: action.id, type: action.type, module: action.module, object: action.object, riskLevel: 'high', status: 'completed',
-            before: action.before, after: { ...action.after, restoredFingerprint }, recoverable: true, completedAt,
+            before: action.before, after: action.after, recoverable: true, completedAt,
           }, restoredDatabase);
         },
       });
+      const verification = await this.verifyCompletedAction(action);
+      await this.updateOperationVerification(action, verification);
+      const task = await this.finishActionTask(action, {
+        status: verification.passed ? 'completed' : 'failed', operationId: action.id, verification,
+        summary: verification.passed ? `已恢复备份并完成自动复核：${verification.message}` : `备份已恢复，但${verification.message}`,
+      });
       this.pendingAction = null;
-      return { content: `已恢复备份“${text(action.after?.backupName)}”，并已自动保存恢复前状态“${text(safeguard.name)}”。需要恢复到本次操作之前时，请到“AI 助理记录”中手动撤销。`, provider: 'system', handled: true };
+      return {
+        content: verification.passed
+          ? `已恢复备份“${text(action.after?.backupName)}”，并已自动保存恢复前状态“${text(safeguard.name)}”。自动复核已通过。需要恢复到本次操作之前时，请到“AI 助理记录”中手动撤销。`
+          : `备份恢复操作已经执行，但${verification.message}。请先人工核对，不要继续依赖该结果。`,
+        provider: 'system', handled: true, task, verification,
+      };
     } catch (error) {
       this.pendingAction = null;
       try {
         await this.databaseStore.update(async (database) => this.recordOperation({
           id: action.id, type: action.type, module: action.module || '系统备份', object: action.object || { name: text(action.after?.backupName) || '未指定备份' },
           riskLevel: 'high', status: 'failed', before: action.before, after: action.after, recoverable: false,
+          toolId: action.toolId || '', taskId: action.taskId || '', stepId: action.stepId || '', conversationId: action.conversationId || '',
+          permissionDecision: action.permissionDecision || null, confirmationHistory: action.confirmationHistory || [],
           error: text(error.message), completedAt: this.now().toISOString(),
         }, database));
       } catch { /* The restore action remains failed even if the log cannot be written. */ }
-      return { content: `未执行本次恢复：${text(error.message) || '系统暂时无法安全恢复备份'}。当前数据没有按本次指令被覆盖。`, provider: 'system', handled: true };
+      const task = await this.finishActionTask(action, { status: 'failed', operationId: action.id, summary: text(error.message) || '系统暂时无法安全恢复备份' });
+      return { content: `未执行本次恢复：${text(error.message) || '系统暂时无法安全恢复备份'}。当前数据没有按本次指令被覆盖。`, provider: 'system', handled: true, task };
     }
   }
 
@@ -1820,25 +2608,118 @@ class AiAssistantService {
         try { await this.authService.updateMemberStatus({ memberId: action.object.id, isActive: true }); } catch { /* The original authority service remains authoritative if rollback also fails. */ }
         throw new Error(`停用后的审计记录无法保存，已请求恢复账号：${text(auditError.message) || '审计存储失败'}`);
       }
+      const verification = await this.verifyCompletedAction(action);
+      await this.updateOperationVerification(action, verification);
+      const task = await this.finishActionTask(action, {
+        status: verification.passed ? 'completed' : 'failed', operationId: action.id, verification,
+        summary: verification.passed ? `成员已停用并完成自动复核：${verification.message}` : `成员停用已请求执行，但${verification.message}`,
+      });
       this.pendingAction = null;
-      return { content: `已停用成员“${text(action.object?.name) || text(action.object?.phone)}”的登录权限，账号和历史数据均未删除，并已写入 AI 助理记录。需要恢复时，请到“AI 助理记录”中手动撤销。`, provider: 'system', handled: true };
+      return {
+        content: verification.passed
+          ? `已停用成员“${text(action.object?.name) || text(action.object?.phone)}”的登录权限，账号和历史数据均未删除。自动复核已通过，并已写入 AI 助理记录。需要恢复时，请到“AI 助理记录”中手动撤销。`
+          : `成员停用操作已经执行，但${verification.message}。请进入成员管理人工核对。`,
+        provider: 'system', handled: true, task, verification,
+      };
     } catch (error) {
       this.pendingAction = null;
       try {
         await this.databaseStore.update(async (database) => this.recordOperation({
           id: action.id, type: action.type, module: action.module || '账号权限', object: action.object || { name: '未指定成员' }, riskLevel: 'high', status: 'failed',
           before: action.before, after: action.after, recoverable: false, error: text(error.message), completedAt: this.now().toISOString(),
+          toolId: action.toolId || '', taskId: action.taskId || '', stepId: action.stepId || '', conversationId: action.conversationId || '',
+          permissionDecision: action.permissionDecision || null, confirmationHistory: action.confirmationHistory || [],
         }, database));
       } catch { /* Do not claim the external account action succeeded when auditing is unavailable. */ }
-      return { content: `未停用该成员：${text(error.message) || '账号服务暂时无法安全处理'}。系统不会把本次操作标记为已完成。`, provider: 'system', handled: true };
+      const task = await this.finishActionTask(action, { status: 'failed', operationId: action.id, summary: text(error.message) || '账号服务暂时无法安全处理' });
+      return { content: `未停用该成员：${text(error.message) || '账号服务暂时无法安全处理'}。系统不会把本次操作标记为已完成。`, provider: 'system', handled: true, task };
+    }
+  }
+
+  async executeDocumentCategoryAction(action) {
+    try {
+      if (!this.aiFileTaskService?.applyCategoryDecision) throw new Error('档案分类执行服务未启用');
+      const decision = await this.aiFileTaskService.applyCategoryDecision({
+        fileId: action.fileId,
+        action: action.type === 'document_category_create_and_archive' ? 'create-and-archive' : 'archive-existing',
+        categoryName: action.categoryName,
+      });
+      const database = await this.databaseStore.read();
+      const verification = this.verifyDatabaseAction(action, database);
+      const operationId = text(decision?.file?.categoryDecision?.operationId);
+      if (operationId) {
+        await this.databaseStore.update((draft) => {
+          const operation = (draft.aiAssistantOperations || []).find(item => text(item.id) === operationId);
+          if (!operation) return null;
+          operation.taskId = action.taskId || '';
+          operation.stepId = action.stepId || '';
+          operation.conversationId = action.conversationId || '';
+          operation.permissionDecision = structuredClone(action.permissionDecision || null);
+          operation.confirmationHistory = structuredClone(action.confirmationHistory || []);
+          operation.verification = structuredClone(verification);
+          return operation;
+        });
+      }
+      const task = await this.finishActionTask(action, {
+        status: verification.passed ? 'completed' : 'failed',
+        operationId: operationId || action.id,
+        verification,
+        summary: verification.passed
+          ? `${text(decision.message) || '档案归档完成'}；${verification.message}`
+          : `归档服务已返回，但${verification.message}`,
+      });
+      this.pendingAction = null;
+      return {
+        content: verification.passed
+          ? `${text(decision.message) || '档案归档完成'}系统已重新读取电子档案柜，确认分类和文件都已保存。`
+          : `归档服务返回后未通过自动复核：${verification.message}。系统不会把本次操作标记为已完成，请刷新电子档案柜后核对。`,
+        provider: 'system', handled: true, task, verification,
+        data: { fileEntry: decision?.file || null, documentCategoryChanged: verification.passed, categoryName: action.categoryName },
+        action: verification.passed ? { type: 'navigate', target: 'tab-documents', label: '电子档案柜' } : undefined,
+      };
+    } catch (error) {
+      this.pendingAction = null;
+      const reason = text(error.message) || '档案分类服务暂时无法安全处理';
+      try {
+        await this.databaseStore.update(async (database) => this.recordOperation({
+          id: action.id,
+          type: action.type,
+          module: action.module || '电子档案柜',
+          object: action.object,
+          riskLevel: action.riskLevel,
+          status: 'failed',
+          before: action.before,
+          after: action.after,
+          recoverable: false,
+          sourceFileId: action.fileId,
+          toolId: action.toolId || '', taskId: action.taskId || '', stepId: action.stepId || '', conversationId: action.conversationId || '',
+          permissionDecision: action.permissionDecision || null, confirmationHistory: action.confirmationHistory || [],
+          error: reason,
+          completedAt: this.now().toISOString(),
+        }, database));
+      } catch { /* 审计保存失败时仍不能误报归档成功。 */ }
+      const task = await this.finishActionTask(action, { status: 'failed', operationId: action.id, summary: reason });
+      return {
+        content: `未完成本次归档：${reason}。系统没有把该文件标记为已归档，原文件仍保留，不会丢失。`,
+        provider: 'system', handled: true, task,
+        data: { documentCategoryChanged: false, categoryName: action.categoryName },
+      };
     }
   }
 
   async executePendingAction() {
     const action = this.pendingAction;
     if (!action) return null;
+    const permissionDecision = await this.authorizeControlledAction(action);
+    action.permissionDecision = permissionDecision;
+    if (!permissionDecision.allowed) {
+      this.pendingAction = null;
+      const task = await this.finishActionTask(action, { status: 'failed', summary: permissionDecision.reason || '执行前权限复核未通过', operationId: '' });
+      return { content: `未执行本次操作：${permissionDecision.reason || '执行前权限复核未通过'}。系统数据没有变化。`, provider: 'system', handled: true, task };
+    }
     if (action.type === 'database_backup_restore') return this.executeBackupRestoreAction(action);
     if (action.type === 'unit_member_disable') return this.executeMemberDisableAction(action);
+    if (['document_category_assign', 'document_category_create_and_archive'].includes(action.type)) return this.executeDocumentCategoryAction(action);
     if (!['resident_phone_update', 'resident_address_update', 'resident_group_update', 'land_parcel_create', 'visit_record_create', 'duty_schedule_add', 'work_item_create', 'work_item_status_update', 'certificate_record_delete', 'document_draft_archive', 'party_member_stage_update', 'resource_contract_create', 'contract_receipt_create', 'finance_record_create', 'finance_record_update', 'finance_records_clear', 'settings_village_name_update', 'work_item_soft_delete', 'work_items_soft_delete_batch'].includes(action.type)) throw new Error('暂不支持该 AI 操作类型');
     try {
       const outcome = await this.databaseStore.update(async (database) => {
@@ -1853,7 +2734,7 @@ class AiAssistantService {
           person[action.field] = action.after[valueKey];
           person.updated_at = this.now().toISOString();
           result = { description: `修改${action.personName}的${action.fieldLabel || '档案字段'}` };
-          operation = { module: '村民一户一档', object: { id: action.personId, name: action.personName, groupName: action.groupName }, field: action.field, fieldLabel: action.fieldLabel, valueKey: action.valueKey };
+          operation = { module: '居民一户一档', object: { id: action.personId, name: action.personName, groupName: action.groupName }, field: action.field, fieldLabel: action.fieldLabel, valueKey: action.valueKey };
         } else if (action.type === 'land_parcel_create') {
           if (!Array.isArray(database.landParcel)) database.landParcel = [];
           const record = structuredClone(action.after.record);
@@ -1875,6 +2756,7 @@ class AiAssistantService {
           const date = action.after.date;
           const currentNames = Array.isArray(database.dutyFlexible.schedule[date]) ? database.dutyFlexible.schedule[date] : [];
           if (JSON.stringify(currentNames) !== JSON.stringify(action.before.names)) throw new Error('该日期的值班安排已被其他操作修改，请重新查询后再确认');
+          if ((dutySchedule(database)[date] || []).includes(action.object?.name)) throw new Error('该人员已被其他操作安排值班，请重新查询后再确认');
           database.dutyFlexible.schedule[date] = [...action.after.names];
           result = { description: `安排${action.object?.name || '该人员'}值班` };
           operation = { module: action.module, object: action.object };
@@ -1962,9 +2844,9 @@ class AiAssistantService {
           operation = { module: action.module, object: action.object };
         } else if (action.type === 'settings_village_name_update') {
           if (!database.settings || typeof database.settings !== 'object') database.settings = {};
-          if (text(database.settings.villageName) !== text(action.before?.villageName)) throw new Error('社区名称已被其他操作修改，请重新查询后再确认');
+          if (text(database.settings.villageName) !== text(action.before?.villageName)) throw new Error("村居名称已被其他操作修改，请重新查询后再确认");
           database.settings.villageName = action.after.villageName;
-          result = { description: '修改社区名称' };
+          result = { description: "修改村居名称" };
           operation = { module: action.module, object: action.object, field: action.field, fieldLabel: action.fieldLabel, valueKey: action.valueKey };
         } else if (action.type === 'work_item_soft_delete') {
           const beforeRecord = action.before?.record;
@@ -2009,15 +2891,26 @@ class AiAssistantService {
         }, database);
         return result;
       });
+      const verification = await this.verifyCompletedAction(action);
+      await this.updateOperationVerification(action, verification);
+      const task = await this.finishActionTask(action, {
+        status: verification.passed ? 'completed' : 'failed', operationId: action.id, verification,
+        summary: verification.passed ? `${outcome.result.description}；${verification.message}` : `${outcome.result.description}，但${verification.message}`,
+      });
       this.pendingAction = null;
-      return { content: `已${outcome.result.description}，并已写入 AI 助理记录。需要恢复时，请到“AI 助理记录”中手动撤销。`, provider: 'system', handled: true };
+      return {
+        content: verification.passed
+          ? `已${outcome.result.description}，自动复核已通过，并已写入 AI 助理记录。需要恢复时，请到“AI 助理记录”中手动撤销。`
+          : `已执行“${outcome.result.description}”，但${verification.message}。请先人工核对，不要继续依赖该结果。`,
+        provider: 'system', handled: true, task, verification,
+      };
     } catch (error) {
       this.pendingAction = null;
       try {
         await this.databaseStore.update(async (database) => this.recordOperation({
           id: action.id,
           type: action.type,
-          module: action.module || '村民一户一档',
+          module: action.module || '居民一户一档',
           object: action.object || { id: action.personId, name: action.personName, groupName: action.groupName },
           riskLevel: action.riskLevel,
           status: 'failed',
@@ -2027,11 +2920,14 @@ class AiAssistantService {
           before: action.before,
           after: action.after,
           recoverable: false,
+          toolId: action.toolId || '', taskId: action.taskId || '', stepId: action.stepId || '', conversationId: action.conversationId || '',
+          permissionDecision: action.permissionDecision || null, confirmationHistory: action.confirmationHistory || [],
           error: text(error.message),
           completedAt: this.now().toISOString(),
         }, database));
       } catch { /* A storage outage may also prevent auditing; do not pretend the action succeeded. */ }
-      return { content: `未执行本次操作：${text(error.message) || '系统暂时无法保存本次操作'}。系统数据没有按本次指令继续修改。`, provider: 'system', handled: true };
+      const task = await this.finishActionTask(action, { status: 'failed', operationId: action.id, summary: text(error.message) || '系统暂时无法保存本次操作' });
+      return { content: `未执行本次操作：${text(error.message) || '系统暂时无法保存本次操作'}。系统数据没有按本次指令继续修改。`, provider: 'system', handled: true, task };
     }
   }
 
@@ -2043,29 +2939,42 @@ class AiAssistantService {
     if (action.confirmationsRequired === 2) {
       if (action.confirmationStep === 0 && /^(继续执行|继续|确认|同意|好的|可以)$/u.test(value)) {
         action.confirmationStep = 1;
+        const task = await this.recordActionConfirmation(action, '第一次确认');
         return {
           content: `已记录第一次确认。请再次核对：${this.actionPreview({ ...action, confirmationsRequired: 1 })} 这次请回复“确认执行”才会真正执行。`,
           provider: 'system', handled: true, needsConfirmation: true,
+          task,
           action: { type: 'confirm', riskLevel: 'high', confirmationsRequired: 2, confirmationStep: 1, before: action.before, after: action.after },
         };
       }
-      if (action.confirmationStep === 1 && /^(确认执行|确认)$/u.test(value)) return this.executePendingAction();
+      if (action.confirmationStep === 1 && /^(确认执行|确认)$/u.test(value)) {
+        action.confirmationStep = 2;
+        await this.recordActionConfirmation(action, '最终确认');
+        return this.executePendingAction();
+      }
       return { content: '这是高风险操作。请回复“继续执行”进行第一次确认，或回复“取消”放弃本次操作。', provider: 'system', handled: true, needsConfirmation: true };
     }
-    if (/^(确认|同意|执行|好的|可以)$/u.test(value)) return this.executePendingAction();
+    if (/^(确认|同意|执行|好的|可以)$/u.test(value)) {
+      action.confirmationStep = 1;
+      await this.recordActionConfirmation(action, '执行确认');
+      return this.executePendingAction();
+    }
     return { content: '请回复“确认”执行，或回复“取消”放弃本次操作。', provider: 'system', handled: true, needsConfirmation: true };
   }
 
   async cancelPendingAction() {
     if (!this.pendingAction) return null;
     const action = this.pendingAction;
-    this.pendingAction = null;
     if (action.riskLevel === 'high') {
       await this.databaseStore.update(async (database) => this.recordOperation({
         id: action.id, type: action.type, module: action.module || 'AI 助理', object: action.object || { name: action.personName || '未指定对象' }, riskLevel: 'high', status: 'cancelled', before: action.before, after: action.after, recoverable: false,
+        toolId: action.toolId || '', taskId: action.taskId || '', stepId: action.stepId || '', permissionDecision: action.permissionDecision || null,
+        confirmationHistory: action.confirmationHistory || [],
       }, database));
     }
-    return { content: '已取消，本次操作没有修改系统数据。', provider: 'system', handled: true };
+    const task = await this.finishActionTask(action, { status: 'cancelled', summary: '用户取消，未修改系统数据', operationId: action.riskLevel === 'high' ? action.id : '' });
+    this.pendingAction = null;
+    return { content: '已取消，本次操作没有修改系统数据。', provider: 'system', handled: true, task };
   }
 
   async listOperations({ limit = 100 } = {}) {
@@ -2134,8 +3043,28 @@ class AiAssistantService {
     if (!id) throw new Error('请选择需要撤销的操作记录');
     const current = await this.databaseStore.read();
     const restoreOperation = (current.aiAssistantOperations || []).find((item) => item.id === id);
-    if (restoreOperation?.type === 'database_backup_restore') return this.undoBackupRestoreOperation(id);
-    if (restoreOperation?.type === 'unit_member_disable') return this.undoMemberDisableOperation(id);
+    if (restoreOperation?.type === 'database_backup_restore') {
+      const result = await this.undoBackupRestoreOperation(id);
+      result.task = await this.markOperationTaskUndone(restoreOperation, result.message);
+      return result;
+    }
+    if (restoreOperation?.type === 'unit_member_disable') {
+      const result = await this.undoMemberDisableOperation(id);
+      result.task = await this.markOperationTaskUndone(restoreOperation, result.message);
+      return result;
+    }
+    if (['document_category_assign', 'document_category_create_and_archive'].includes(restoreOperation?.type)) {
+      if (!this.aiFileTaskService?.undoCategoryDecision) throw new Error('当前文件任务服务不支持撤销档案分类');
+      const result = await this.aiFileTaskService.undoCategoryDecision({ fileId: restoreOperation.sourceFileId });
+      result.task = await this.markOperationTaskUndone(restoreOperation, result.message);
+      return result;
+    }
+    if (restoreOperation?.type === 'certificate_template_draft_create') {
+      if (!this.aiFileTaskService?.undoCertificateTemplateDecision) throw new Error('当前文件任务服务不支持撤销模板草稿');
+      const result = await this.aiFileTaskService.undoCertificateTemplateDecision({ operationId: id });
+      result.task = await this.markOperationTaskUndone(restoreOperation, result.message);
+      return result;
+    }
     const outcome = await this.databaseStore.update(async (database) => {
       const operation = (database.aiAssistantOperations || []).find((item) => item.id === id);
       if (!operation) throw new Error('未找到该 AI 操作记录');
@@ -2320,14 +3249,14 @@ class AiAssistantService {
       }
       if (operation.type === 'settings_village_name_update') {
         if (!database.settings || typeof database.settings !== 'object') throw new Error('系统设置不存在，不能自动撤销');
-        if (text(database.settings.villageName) !== text(operation.after?.villageName)) throw new Error('社区名称后来已被修改，不能自动撤销，请人工核对');
+        if (text(database.settings.villageName) !== text(operation.after?.villageName)) throw new Error("村居名称后来已被修改，不能自动撤销，请人工核对");
         database.settings.villageName = text(operation.before?.villageName);
         operation.status = 'undone'; operation.undoneAt = this.now().toISOString(); operation.undoable = false;
         await this.recordOperation({
           type: 'undo', module: operation.module, object: operation.object, riskLevel: 'normal', status: 'completed',
           before: operation.after, after: operation.before, recoverable: false, completedAt: this.now().toISOString(), undoneOperationId: operation.id,
         }, database);
-        return { name: '社区名称' };
+        return { name: "村居名称" };
       }
       if (operation.type === 'work_item_soft_delete') {
         const beforeRecord = operation.before?.record;
@@ -2376,22 +3305,25 @@ class AiAssistantService {
       }, database);
       return { name: text(operation.object?.name) };
     });
-    return { ok: true, message: `已撤销${outcome.result.name || '该操作'}。` };
+    const message = `已撤销${outcome.result.name || '该操作'}。`;
+    const task = await this.markOperationTaskUndone(restoreOperation, message);
+    return { ok: true, message, task };
   }
 
   async answerDirectQuestion(database, message) {
     if (!isPaymentQuestion(message)) return null;
     const year = this.resolveYear(message);
-    if (!year) return { content: '请告诉我需要查询哪一年，例如“张三 2026 年共计发了多少钱？”或“2026 年哪个组发放最多？”。我会只统计该年度已登记发放的记录。', provider: 'system', handled: true };
+    const allYears = !year && isAllYearsPaymentRequest(message);
+    if (!year && !allYears) return { content: '请告诉我需要查询哪一年；如果要查询全部年份，可以说“历年某位居民共计发了多少钱？”，并填入档案中的真实姓名。查询范围不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
     const paidRecords = this.collectPaidPayments(database, { year });
-    if (/(哪个|哪一个).{0,12}(组|村民组).{0,12}(发放|实发|已发).{0,12}(最多|最高)|(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|村民组)/u.test(text(message))) {
+    if (/(哪个|哪一个).{0,12}(组|(?:村民|居民)组).{0,12}(发放|实发|已发).{0,12}(最多|最高)|(发放|实发|已发).{0,12}(最多|最高).{0,12}(组|(?:村民|居民)组)/u.test(text(message))) {
       const pendingRecords = this.collectUnpaidPayments(database, { year });
       return {
-        content: this.formatHighestGroupAnswer(year, paidRecords), provider: 'system', handled: true,
+        content: this.formatHighestGroupAnswer(year, paidRecords, { allYears }), provider: 'system', handled: true,
         data: {
-          year,
+          year, allYears,
           records: paidRecords,
-          queryEvidence: this.buildPaymentEvidence({ year, subject: '各村民组', scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords, pendingRecords }),
+          queryEvidence: this.buildPaymentEvidence({ year, allYears, subject: "各居民组", scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords, pendingRecords }),
         },
       };
     }
@@ -2407,10 +3339,10 @@ class AiAssistantService {
       const pendingRecords = this.collectUnpaidPayments(database, { year, groupName, categoryName });
       const qualifier = categoryName ? `${groupName}${categoryName}` : groupName;
       return {
-        content: this.formatAggregateAnswer({ year, records, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
+        content: this.formatAggregateAnswer({ year, allYears, records, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
         data: {
-          year, groupName, categoryName, records,
-          queryEvidence: this.buildPaymentEvidence({ year, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
+          year, allYears, groupName, categoryName, records,
+          queryEvidence: this.buildPaymentEvidence({ year, allYears, subject: `“${qualifier}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
         },
       };
     }
@@ -2418,14 +3350,14 @@ class AiAssistantService {
       const records = this.collectPaidPayments(database, { year, categoryName });
       const pendingRecords = this.collectUnpaidPayments(database, { year, categoryName });
       return {
-        content: this.formatAggregateAnswer({ year, records, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
+        content: this.formatAggregateAnswer({ year, allYears, records, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次' }), provider: 'system', handled: true,
         data: {
-          year, categoryName, records,
-          queryEvidence: this.buildPaymentEvidence({ year, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
+          year, allYears, categoryName, records,
+          queryEvidence: this.buildPaymentEvidence({ year, allYears, subject: `“${categoryName}”`, scope: '通用发放批次和合同发放批次；实发合计仅统计已发放记录', paidRecords: records, pendingRecords }),
         },
       };
     }
-    if (resolved.kind === 'missing') return { content: '我没有识别出要查询的人员、村民组或资金类别。请补充其中一个对象；如果有同名人员，请同时说明村民小组。', provider: 'system', handled: true, needsConfirmation: true };
+    if (resolved.kind === 'missing') return { content: "我没有识别出要查询的人员、居民组或资金类别。请补充其中一个对象；如果有同名人员，请同时说明居民小组。", provider: 'system', handled: true, needsConfirmation: true };
     const records = this.collectPaidPayments(database, { recipient: resolved.recipient, year, categoryName });
     const pendingRecords = this.collectUnpaidPayments(database, { recipient: resolved.recipient, year, categoryName });
     return {
@@ -2433,14 +3365,16 @@ class AiAssistantService {
         recipient: resolved.recipient,
         records,
         year,
+        allYears,
         subsidyNotice: this.subsidyLedgerNotice(database, resolved.recipient, year),
       }),
       provider: 'system',
       handled: true,
       data: {
-        year, recipient: resolved.recipient, records,
+        year, allYears, recipient: resolved.recipient, records,
         queryEvidence: this.buildPaymentEvidence({
           year,
+          allYears,
           subject: `“${resolved.recipient.name}”`,
           scope: '通用发放批次和合同发放批次，按实际登记的发放日期计入；实发合计仅统计已发放记录',
           paidRecords: records,
@@ -2455,7 +3389,8 @@ class AiAssistantService {
     if (!/(待发(?:放)?|尚未发放|未发放|未登记发放)/u.test(requested)) return null;
     if (!/(资金|发放|承包费|工资|补贴|款)/u.test(requested) || !/(多少|几笔|金额|合计|总额)/u.test(requested)) return null;
     const year = this.resolveYear(requested);
-    if (!year) return { content: '请告诉我需要查询哪一年，例如“2026 年还有多少待发资金？”。年度不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
+    const allYears = !year && isAllYearsPaymentRequest(requested);
+    if (!year && !allYears) return { content: '请告诉我需要查询哪一年；如果要查询全部年份，可以说“历年还有多少待发资金？”。查询范围不明确时，我不会自行猜测。', provider: 'system', handled: true, needsConfirmation: true };
     const groupName = this.specifiedGroup(database, requested);
     const categoryName = this.specifiedCategory(database, requested);
     const resolved = this.resolveRecipient(database, requested);
@@ -2470,12 +3405,13 @@ class AiAssistantService {
         : groupName ? `“${groupName}”`
           : categoryName ? `“${categoryName}”` : '全部';
     return {
-      content: this.formatPendingFundingAnswer({ year, records, subject, scope: '资金发放中心的通用发放批次和合同发放批次' }),
+      content: this.formatPendingFundingAnswer({ year, allYears, records, subject, scope: '资金发放中心的通用发放批次和合同发放批次' }),
       provider: 'system', handled: true,
       data: {
-        year, recipient, groupName, categoryName, records,
+        year, allYears, recipient, groupName, categoryName, records,
         queryEvidence: this.buildPaymentEvidence({
           year,
+          allYears,
           subject,
           scope: '资金发放中心的通用发放批次和合同发放批次；本卡仅显示尚未登记为已发放的记录',
           pendingRecords: records,
@@ -2484,14 +3420,76 @@ class AiAssistantService {
     };
   }
 
-  async converse({ messages } = {}) {
+  async converse({ messages, conversationId = '', conversationSummary = '', attachmentIds = [] } = {}) {
     let userMessage = lastUserMessage(messages);
     if (!userMessage) throw new Error('请先输入需要办理或查询的事项');
+    const attachedFiles = await this.attachedFiles(conversationId, attachmentIds).catch(() => []);
+    if (attachedFiles.length) {
+      const fileAnswer = this.fileRecognitionAnswer(attachedFiles);
+      const latestFileTask = await this.taskService.list({ conversationId, limit: 20 })
+        .then(tasks => tasks.find(task => task.taskKind === 'file-recognition' && (task.artifactIds || []).some(id => attachmentIds.includes(id))))
+        .catch(() => null);
+      if (latestFileTask) fileAnswer.task = latestFileTask;
+      return fileAnswer;
+    }
+    const memoryResult = await this.handleMemoryCommand(userMessage.content);
+    if (memoryResult) return memoryResult;
     if (this.pendingOnlineAnalysis) return this.confirmOnlineAnalysis(userMessage.content);
+    if (this.pendingAction && text(this.pendingAction.conversationId) && text(conversationId)
+      && text(this.pendingAction.conversationId) !== text(conversationId)) this.pendingAction = null;
+    let activeTask = text(conversationId) ? await this.taskService.latestActive(conversationId).catch(() => null) : null;
+    if (!this.pendingAction && activeTask?.status === 'waiting-confirmation' && activeTask.pendingAction) {
+      this.pendingAction = structuredClone(activeTask.pendingAction);
+    }
     if (this.pendingAction) return this.confirmPendingAction(userMessage.content);
-    const conversation = recentConversation(messages);
+    if (activeTask?.status === 'waiting-confirmation') {
+      return {
+        content: '找到了一个等待确认的任务，但其中缺少可安全恢复的操作内容。为避免误操作，本次不会执行；请取消该任务后重新说明要办理的事项。',
+        provider: 'system', handled: true, needsConfirmation: true, task: activeTask,
+      };
+    }
+    if (!activeTask && isDocumentCategoryArchiveRequest(userMessage.content)) {
+      try {
+        const localDatabase = await this.databaseStore.read();
+        const proposal = await this.documentCategoryArchiveProposal(localDatabase, userMessage.content, conversationId);
+        if (proposal) return this.finalizeControlledProposal(proposal, { conversationId, originalRequest: userMessage.content });
+      } catch (error) {
+        return {
+          content: `暂时无法准备档案归档操作：${text(error.message) || '本机档案服务不可用'}。本次没有新建分类，文件仍保留在待归档区。`,
+          provider: 'system', handled: true, needsConfirmation: false,
+        };
+      }
+    }
+    const preliminaryTaskPlan = activeTask ? null : this.taskPlanner.plan(userMessage.content);
+
+    // Explicit resident profile requests can be answered accurately from the
+    // local archive without spending tokens or asking the online planner to
+    // choose a database scope.
+    if (!activeTask && !preliminaryTaskPlan && isResidentOverviewRequest(userMessage.content)) {
+      try {
+        const localDatabase = await this.databaseStore.read();
+        const overview = await this.runReadOnlyTool({ database: localDatabase, message: userMessage.content, messages, stage: 'pre-plan' });
+        if (overview) return overview;
+      } catch {
+        return { content: '暂时无法读取本机居民档案，请稍后重试。系统没有修改任何资料。', provider: 'system', handled: true, needsConfirmation: true };
+      }
+    }
+    const memoryContext = await this.memoryContextMessage();
+    const summaryContext = text(conversationSummary) ? { role: 'system', content: `此前对话摘要（仅用于承接上下文）：\n${text(conversationSummary).slice(0, 2400)}` } : null;
+    const conversation = recentConversation([...(memoryContext ? [memoryContext] : []), ...(summaryContext ? [summaryContext] : []), ...(messages || [])]);
+    if (activeTask && /^(取消任务|放弃任务|不要继续)$/u.test(text(userMessage.content))) {
+      activeTask.status = 'cancelled'; activeTask.summary = '用户取消了任务';
+      activeTask = await this.taskService.save(activeTask);
+      return { content: '已取消当前任务，系统数据没有发生变化。', provider: 'system', handled: true, task: activeTask };
+    }
+    if (activeTask?.status === 'waiting-input') {
+      activeTask.clarifiedRequest = `${activeTask.originalRequest}\n补充信息：${text(userMessage.content)}`;
+      activeTask.status = 'pending'; activeTask.clarification = null;
+      for (const step of activeTask.steps || []) if (step.status === 'waiting-input') step.status = 'pending';
+      userMessage = { ...userMessage, content: activeTask.clarifiedRequest };
+    }
     const onlinePlan = await this.understandConversation(conversation);
-    if (onlinePlan?.canonicalMessage) userMessage = { ...userMessage, content: onlinePlan.canonicalMessage };
+    if (!activeTask && onlinePlan?.canonicalMessage) userMessage = { ...userMessage, content: onlinePlan.canonicalMessage };
     let database;
     try {
       database = await this.databaseStore.read();
@@ -2506,93 +3504,61 @@ class AiAssistantService {
     if (onlineAnalysisRequested(userMessage.content)) {
       return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
     }
-    const pendingFunding = this.answerPendingFundingQuestion(database, userMessage.content);
-    if (pendingFunding) return pendingFunding;
-    const direct = await this.answerDirectQuestion(database, userMessage.content);
-    if (direct) return direct;
-    const dutyAnswer = this.answerDutyQuestion(database, userMessage.content);
-    if (dutyAnswer) return dutyAnswer;
-    const contractExpiry = this.answerContractExpiryQuestion(database, userMessage.content);
-    if (contractExpiry) return contractExpiry;
-    const contractReceipt = this.answerContractReceiptQuestion(database, userMessage.content);
-    if (contractReceipt) return typeof contractReceipt === 'string' ? { content: contractReceipt, provider: 'system', handled: true } : contractReceipt;
-    const partyAnswer = this.answerPartyMemberQuestion(database, userMessage.content);
-    if (partyAnswer) return partyAnswer;
-    const identityCardAnswer = this.answerIdentityCardQuestion(database, userMessage.content);
-    if (identityCardAnswer) return identityCardAnswer;
-    const relationshipAnswer = this.answerResidentRelationshipQuestion(database, userMessage.content);
-    if (relationshipAnswer) return this.explainVerifiedFacts({ messages: conversation, request: userMessage.content, database, plan: onlinePlan, localAnswer: relationshipAnswer });
-    const landAreaAnswer = this.answerLandAreaQuestion(database, userMessage.content);
-    if (landAreaAnswer) return landAreaAnswer;
-    const landContractorAnswer = this.answerLandContractorQuestion(database, userMessage.content);
-    if (landContractorAnswer) return landContractorAnswer;
-    const workStatusAnswer = this.answerWorkStatusQuestion(database, userMessage.content);
-    if (workStatusAnswer) return workStatusAnswer;
-    const finalDocumentAnswer = this.answerFinalDocumentQuestion(database, userMessage.content);
-    if (finalDocumentAnswer) return finalDocumentAnswer;
-    const certificateAnswer = this.answerCertificateQuestion(database, userMessage.content);
-    if (certificateAnswer) return certificateAnswer;
-    const financeSummaryAnswer = this.answerFinanceSummaryQuestion(database, userMessage.content);
-    if (financeSummaryAnswer) return financeSummaryAnswer;
-    const moduleCount = this.answerModuleCount(database, userMessage.content);
-    if (moduleCount) return moduleCount;
-    const phoneProposal = this.phoneUpdateProposal(database, userMessage.content);
-    if (phoneProposal) return phoneProposal;
-    const addressProposal = this.addressUpdateProposal(database, userMessage.content);
-    if (addressProposal) return addressProposal;
-    const groupProposal = this.groupUpdateProposal(database, userMessage.content);
-    if (groupProposal) return groupProposal;
-    const landParcelProposal = this.landParcelCreateProposal(database, userMessage.content);
-    if (landParcelProposal) return landParcelProposal;
-    const visitProposal = this.visitCreateProposal(userMessage.content);
-    if (visitProposal) return visitProposal;
-    const dutyProposal = this.dutyScheduleProposal(database, userMessage.content);
-    if (dutyProposal) return dutyProposal;
-    const workProposal = this.workCreateProposal(userMessage.content);
-    if (workProposal) return workProposal;
-    const workStatusProposal = this.workStatusUpdateProposal(database, userMessage.content);
-    if (workStatusProposal) return workStatusProposal;
-    const certificateRecordDeleteProposal = this.certificateRecordDeleteProposal(database, userMessage.content);
-    if (certificateRecordDeleteProposal) return certificateRecordDeleteProposal;
-    const draftArchiveProposal = this.draftArchiveProposal(database, userMessage.content);
-    if (draftArchiveProposal) return draftArchiveProposal;
-    const partyStageProposal = this.partyStageUpdateProposal(database, userMessage.content);
-    if (partyStageProposal) return partyStageProposal;
-    const contractProposal = this.contractCreateProposal(database, userMessage.content);
-    if (contractProposal) return contractProposal;
-    const contractReceiptProposal = this.contractReceiptCreateProposal(database, userMessage.content);
-    if (contractReceiptProposal) return contractReceiptProposal;
-    const financeRecordProposal = this.financeRecordCreateProposal(userMessage.content);
-    if (financeRecordProposal) return financeRecordProposal;
-    const financeRecordUpdateProposal = this.financeRecordUpdateProposal(database, userMessage.content);
-    if (financeRecordUpdateProposal) return financeRecordUpdateProposal;
-    const financeRecordsClearProposal = this.financeRecordsClearProposal(database, userMessage.content);
-    if (financeRecordsClearProposal) return financeRecordsClearProposal;
-    const villageNameProposal = this.villageNameUpdateProposal(database, userMessage.content);
-    if (villageNameProposal) return villageNameProposal;
-    const memberDisableProposal = await this.memberDisableProposal(userMessage.content);
-    if (memberDisableProposal) return memberDisableProposal;
-    const backupRestoreProposal = await this.backupRestoreProposal(database, userMessage.content);
-    if (backupRestoreProposal) return backupRestoreProposal;
-    const workBatchDeleteProposal = this.workBatchDeleteProposal(database, userMessage.content);
-    if (workBatchDeleteProposal) return workBatchDeleteProposal;
-    const workDeleteProposal = this.workDeleteProposal(database, userMessage.content);
-    if (workDeleteProposal) return workDeleteProposal;
-    const navigation = navigationTarget(userMessage.content);
-    if (navigation) {
-      return {
-        content: `已为您打开${navigation.label}。`,
-        provider: 'system',
-        handled: true,
-        action: { type: 'navigate', ...navigation },
-      };
+    const semanticContext = this.semanticContext(database, userMessage.content);
+    if (!activeTask) {
+      const proposedTask = preliminaryTaskPlan || this.taskPlanner.plan(userMessage.content);
+      if (proposedTask) activeTask = await this.taskService.save({ ...proposedTask, conversationId: text(conversationId) });
+    }
+    if (activeTask) {
+      const taskResult = await this.executeTask(activeTask, { database, messages, conversation, plan: onlinePlan });
+      if (semanticContext) taskResult.data = { ...(taskResult.data || {}), semanticContext };
+      return taskResult;
+    }
+    const readOnlyResult = await this.runReadOnlyTool({
+      database,
+      message: userMessage.content,
+      messages,
+      conversation,
+      plan: onlinePlan,
+      stage: 'post-plan',
+    });
+    if (readOnlyResult) {
+      if (semanticContext) readOnlyResult.data = { ...(readOnlyResult.data || {}), semanticContext };
+      return readOnlyResult;
+    }
+    const proposalFactories = [
+      () => this.phoneUpdateProposal(database, userMessage.content),
+      () => this.addressUpdateProposal(database, userMessage.content),
+      () => this.groupUpdateProposal(database, userMessage.content),
+      () => this.landParcelCreateProposal(database, userMessage.content),
+      () => this.visitCreateProposal(userMessage.content),
+      () => this.dutyScheduleProposal(database, userMessage.content),
+      () => this.workCreateProposal(userMessage.content),
+      () => this.workStatusUpdateProposal(database, userMessage.content),
+      () => this.certificateRecordDeleteProposal(database, userMessage.content),
+      () => this.draftArchiveProposal(database, userMessage.content),
+      () => this.partyStageUpdateProposal(database, userMessage.content),
+      () => this.contractCreateProposal(database, userMessage.content),
+      () => this.contractReceiptCreateProposal(database, userMessage.content),
+      () => this.financeRecordCreateProposal(userMessage.content),
+      () => this.financeRecordUpdateProposal(database, userMessage.content),
+      () => this.financeRecordsClearProposal(database, userMessage.content),
+      () => this.villageNameUpdateProposal(database, userMessage.content),
+      () => this.memberDisableProposal(userMessage.content),
+      () => this.backupRestoreProposal(database, userMessage.content),
+      () => this.workBatchDeleteProposal(database, userMessage.content),
+      () => this.workDeleteProposal(database, userMessage.content),
+    ];
+    for (const createProposal of proposalFactories) {
+      const proposal = await createProposal();
+      if (proposal) return this.finalizeControlledProposal(proposal, { conversationId, originalRequest: userMessage.content });
     }
     if (onlinePlan?.needsFacts && onlinePlan.intent === 'query') {
       return this.answerAutomaticOnlineAnalysis({ messages: conversation, request: userMessage.content, database, plan: onlinePlan });
     }
     if (isSystemDataRequest(userMessage.content)) {
       return {
-        content: '为避免误查或误操作，我还需要您说明具体对象和要办理的事项。例如“查询一组张三 2026 年的发放明细”或“打开资金发放中心”。信息不明确时，我不会自行猜测。',
+        content: '为避免误查或误操作，我还需要您说明具体对象和要办理的事项。虚构示例：“查询一组示例居民甲 2026 年的发放明细”；实际查询时请换成档案中的真实姓名。也可以说“打开资金发放中心”。信息不明确时，我不会自行猜测。',
         provider: 'system',
         handled: true,
         needsConfirmation: true,
@@ -2608,11 +3574,12 @@ class AiAssistantService {
     if (!this.aiRouter?.chat) return { content: 'AI 对话服务暂不可用，请稍后重试。', provider: 'system', handled: true };
     return this.aiRouter.chat({
       messages: [
-        { role: 'system', content: '你是社区AI管理系统的 AI 助理。不得编造、猜测或声称已查询系统数据；对任何不清楚的系统操作或数据请求，必须先请操作员补充对象、范围或年度。' },
-        { role: 'user', content: userMessage.content },
+        { role: 'system', content: "你是村居AI管理系统的 AI 助理。不得编造、猜测或声称已查询系统数据；对任何不清楚的系统操作或数据请求，必须先请操作员补充对象、范围或年度。" },
+        ...conversation,
       ],
+      task: { taskKind: 'assistant-conversation' },
     });
   }
 }
 
-module.exports = { AiAssistantService, formatMoney, isAnnualAmountQuestion, isSystemDataRequest, paymentYear };
+module.exports = { AiAssistantService, formatMoney, isAnnualAmountQuestion, isSystemDataRequest, paymentYear, parseCertificateDraftResponse };

@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const { parsePersonnelExcelGrid } = require('../../src/shared/personnel-excel-parser');
+const { parsePersonnelExcelGrid, parseDisbursementRosterExcelGrid } = require('../../src/shared/personnel-excel-parser');
 
 test('recognizes a personnel header after title rows and excludes invalid footer rows', () => {
   const result = parsePersonnelExcelGrid([
@@ -46,4 +46,26 @@ test('rejects a recognized header that has no valid personnel rows', () => {
     ['合计', '2 人'],
     ['填表人', '王主任'],
   ]), /没有可导入的有效人员数据/u);
+});
+
+test('accepts a payment roster without identity cards and skips totals and signers', () => {
+  const result = parseDisbursementRosterExcelGrid([
+    ['2026年第一季度农村公共服务运行维护人员报酬发放表'],
+    ['单位：陆庄社区', '', '2026年4月5日', '', '单位：元'],
+    ['序号', '姓 名', '负责区域', '账 号', '金额', '备注'],
+    [1, '张德侠', '东二组庄台', '3213020321010000046471', '2100', ''],
+    [2, '王美华', '东三组庄台', '3213023601109003224697', '2100', ''],
+    ['合 计', '', '合计', '', '4200', ''],
+    ['审批人：', '', '', '制表人：', '', ''],
+  ]);
+  assert.equal(result.headerRowNumber, 3);
+  assert.equal(result.total, 2);
+  assert.equal(result.ignoredRows, 2);
+  assert.equal(result.rows[0]['姓 名'], '张德侠');
+  assert.equal(result.rows[0]['账 号'], '3213020321010000046471');
+  assert.equal(result.rows[1]['金额'], '2100');
+  assert.throws(() => parsePersonnelExcelGrid([
+    ['姓名', '负责区域', '账号', '金额'],
+    ['张德侠', '东二组庄台', '3213020321010000046471', '2100'],
+  ]), /身份证号/u);
 });

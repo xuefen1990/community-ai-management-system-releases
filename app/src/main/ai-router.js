@@ -1,27 +1,155 @@
 'use strict';
 
+const crypto = require('node:crypto');
+const { AsyncLocalStorage } = require('node:async_hooks');
+const { classifyAiTask } = require('./ai-model-routing');
+
+function checkTextIntegrity(response) {
+  if (String(response?.content || '').includes('\uFFFD')) {
+    throw new Error('AI 返回的文字含有损坏字符，请重新生成；原有内容已保留');
+  }
+  return response;
+}
+
+function applyTokenReminderPolicy(estimate = {}, mode = 'high_cost_only') {
+  const normalizedMode = ['high_cost_only', 'always', 'insufficient_only'].includes(mode) ? mode : 'high_cost_only';
+  const insufficient = estimate.sufficient === false;
+  const highCost = estimate.highCost === true || Number(estimate.estimatedTokens || 0) >= 4000;
+  const requiresConfirmation = estimate.billingUnit === 'credits' ? (insufficient || estimate.estimatedCredits > 3) : insufficient || normalizedMode === 'always' || (normalizedMode === 'high_cost_only' && highCost);
+  return { ...estimate, highCost, reminderMode: normalizedMode, requiresConfirmation,
+    reminderReason: insufficient ? '额度不足' : normalizedMode === 'always' ? '已设置为每次提醒' : highCost ? (estimate.reminderReason || '预计用量较高') : '' };
+}
+
 class AiRouter {
-  constructor({ settingsStore, localRuntime, onlineClient }) {
+  constructor({ settingsStore, localRuntime, onlineClient, authService = null, confirmCredits = null }) {
+    this.billingContext = new AsyncLocalStorage();
+    this.confirmCredits = confirmCredits;
     this.settingsStore = settingsStore;
     this.localRuntime = localRuntime;
     this.onlineClient = onlineClient;
+    this.authService = authService;
   }
 
-  async chat({ messages }) {
+  async assertAiAccess() {
+    if (!this.authService?.request) return;
+    if (!this.authService.session) {
+      if ('session' in this.authService) throw new Error("请先登录村居账号");
+      return;
+    }
+    const { user } = await this.authService.request('/auth/profile');
+    this.authService.session.user = user;
+    if (user.role === 'member' && user.aiAccessEnabled === false) throw new Error('单位管理员未授权当前账号使用 AI');
+  }
+
+  async chat({ messages, task = {} }) {
+    await this.assertAiAccess();
+    const taskTier = classifyAiTask({ messages, taskKind: task.taskKind, requestedTier: task.taskTier });
     const settings = await this.settingsStore.readRaw();
-    if (settings.mode === 'local') return this.localRuntime.chat(messages);
-    if (settings.mode === 'online') return this.onlineChat(messages);
+    if (settings.mode === 'local') return { ...checkTextIntegrity(await this.localRuntime.chat(messages)), routing: { taskTier, provider: 'local' } };
+    if (settings.mode === 'online') return this.onlineChat(messages, { ...task, taskTier });
     if (this.localRuntime.getStatus().running) {
       try {
-        return await this.localRuntime.chat(messages);
+        return { ...checkTextIntegrity(await this.localRuntime.chat(messages)), routing: { taskTier, provider: 'local' } };
       } catch (error) {
-        if (!(await this.settingsStore.getOnlineCredentials()).apiKey) throw error;
+        if (!this.authService && !(await this.settingsStore.getOnlineCredentials()).apiKey) throw error;
       }
     }
-    return this.onlineChat(messages);
+    return this.onlineChat(messages, { ...task, taskTier });
   }
 
-  async onlineChat(messages) {
+  async estimateOnline(messages, options = {}) {
+    const taskTier = classifyAiTask({ messages, taskKind: options.taskKind, requestedTier: options.taskTier });
+    if (this.authService) {
+      return this.authService.request('/ai/estimate', {
+        method: 'POST',
+        body: { messages, maxTokens: options.maxTokens, taskTier, taskKind: options.taskKind || '', taskId: options.taskId || '', attachmentCount: Number(options.attachmentCount || 0) },
+      });
+    }
+    const promptTokens = Math.ceil(Buffer.byteLength(JSON.stringify(messages || []), 'utf8') / 3);
+    const outputTokens = Math.min(8192, Math.max(16, Number(options.maxTokens) || (taskTier === 'deep' ? 4096 : 1200)));
+    const estimatedTokens = promptTokens + outputTokens;
+    const highCost = estimatedTokens >= 4000 || options.taskKind === 'vision-document-review' || Number(options.attachmentCount || 0) >= 3;
+    return { taskTier, estimatedTokens, remainingTokens: null, sufficient: true, highCost, requiresConfirmation: highCost };
+  }
+
+  async estimate({ messages = [], options = {} } = {}) {
+    await this.assertAiAccess();
+    const taskTier = classifyAiTask({ messages, taskKind: options.taskKind, requestedTier: options.taskTier });
+    const settings = await this.settingsStore.readRaw();
+    if (settings.mode === 'local' || (settings.mode === 'auto' && this.localRuntime.getStatus().running)) {
+      return { provider: 'local', taskTier, estimatedTokens: 0, remainingTokens: null, sufficient: true, requiresConfirmation: false };
+    }
+    return applyTokenReminderPolicy(await this.estimateOnline(messages, { ...options, taskTier }), settings.tokenReminderMode);
+  }
+
+  async withBillingTask(input, work) {
+    if (this.billingContext.getStore() || !this.authService) return work();
+    const settings = await this.settingsStore.readRaw();
+    if (settings.mode === 'local' || settings.mode === 'auto' && this.localRuntime.getStatus().running) return work();
+    const estimate = await this.authService.request('/ai/credit-tasks/estimate', {method:'POST',body:input}).catch(error => {
+      if(error?.statusCode===404 || /路由不存在/.test(error.message)) return {billingUnit:'tokens'};
+      throw error;
+    });
+    if (estimate.billingUnit !== 'credits') return this.billingContext.run({legacy:true},work);
+    const approvedMaxCredits = estimate.estimatedCredits>3 ? estimate.estimatedCredits : Math.max(estimate.minimumCredits||1,Math.min(3,Math.floor(estimate.remainingCredits ?? 3)));
+    if(approvedMaxCredits>3 && !(await this.confirmCredits?.({...estimate,approvedMaxCredits}))) throw new Error('已取消 AI 操作，未扣除积分');
+    const task = await this.authService.request('/ai/credit-tasks',{method:'POST',body:{...input,approvedMaxCredits,usageConfirmed:true}});
+    let result,error;
+    try { result = await this.billingContext.run({taskId:task.id},work); } catch(e) {error=e;}
+    let billing;
+    try {billing = await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(task.id)}/finish`,{method:'POST',body:{}});} catch(e) {
+      // A repeated finish is safe when its response was lost.
+      billing = await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(task.id)}/finish`,{method:'POST',body:{}}).catch(()=>null);
+      if(!billing && !error) error = new Error('AI 已完成，积分结算结果暂不可用，请刷新余额；后台将自动结算');
+    }
+    if(error) throw error;
+    return result && typeof result==='object' ? {...result,routing:{...(result.routing||{}),...billing,billingUnit:'credits'}} : result;
+  }
+
+  async getOnlineCapabilities() {
+    if (this.authService) {
+      const response = await this.authService.request('/ai/models', { method: 'GET' });
+      const data = response?.data || response || {};
+      return { supportsVision: data.supportsVision === true, visionModel: data.visionModel || '', models: data.models || [] };
+    }
+    return { supportsVision: false, visionModel: '', models: [] };
+  }
+
+  async onlineChat(messages, { maxTokens, temperature = 0.2, taskTier = '', taskKind = '', taskId = '', requestId = '' } = {}) {
+    await this.assertAiAccess();
+    const resolvedTier = classifyAiTask({ messages, taskKind, requestedTier: taskTier });
+    const resolvedMaxTokens = Math.min(8192, Math.max(16, Number(maxTokens) || (resolvedTier === 'deep' ? 4096 : 1200)));
+    const resolvedRequestId = requestId || `ai-request-${crypto.randomUUID()}`;
+    if (this.authService) {
+      const active = this.billingContext.getStore();
+      if(!active && !this.legacyBillingCall) return this.withBillingTask({messages,maxTokens:resolvedMaxTokens,taskTier:resolvedTier,taskKind},()=>this.onlineChat(messages,{maxTokens,temperature,taskTier,taskKind,taskId,requestId:resolvedRequestId}));
+      let response;
+      const send = () => this.authService.request('/ai/chat', {
+        method: 'POST',
+        body: { messages, maxTokens: resolvedMaxTokens, temperature, taskTier: resolvedTier, taskKind, taskId, requestId: resolvedRequestId, billingTaskId:active?.taskId },
+      });
+      try { response = await send(); } catch(error) {
+        if(error.code!=='AI_CREDIT_CAP_REACHED' || !active?.taskId) throw error;
+        const cap=error.details?.estimatedCredits;
+        if(!Number.isSafeInteger(cap) || !(await this.confirmCredits?.({...error.details,approvedMaxCredits:cap}))) throw new Error('已停止后续 AI 调用，仅结算此前成功步骤');
+        await this.authService.request(`/ai/credit-tasks/${encodeURIComponent(active.taskId)}/extend`,{method:'POST',body:{approvedMaxCredits:cap,usageConfirmed:true}});
+        response=await send();
+      }
+      const data = response?.data || response || {};
+      const choice = Array.isArray(data.choices) ? data.choices[0] : null;
+      const content = choice?.message?.content ?? choice?.text ?? response?.content ?? '';
+      checkTextIntegrity({ content });
+      try { await this.settingsStore.clearLegacyOnlineSettings?.(); } catch { /* legacy cleanup must not block a successful request */ }
+      return {
+        content: String(content || ''),
+        provider: 'online',
+        model: data.model || response?.model || '',
+        usage: data.usage || response?.usage || null,
+        routing: data.communityAi || response?.communityAi || { requestId: resolvedRequestId, taskTier: resolvedTier },
+        data,
+      };
+    }
+
     const credentials = await this.settingsStore.getOnlineCredentials();
     if (!credentials.apiKey && credentials.credentialStatus === 'secure-storage-unavailable') {
       throw new Error('macOS 安全存储不可用。请在“系统设置 → AI 配置”重新输入 API 密钥；密钥只在本次打开软件期间有效，关闭软件后会自动清除。');
@@ -29,9 +157,11 @@ class AiRouter {
     const response = await this.onlineClient.chat({
       ...credentials,
       messages,
+      maxTokens: resolvedMaxTokens,
+      temperature,
     });
-    return { ...response, provider: 'online' };
+    return { ...checkTextIntegrity(response), provider: 'online', routing: { requestId: resolvedRequestId, taskTier: resolvedTier, model: response?.model || credentials.model || '' } };
   }
 }
 
-module.exports = { AiRouter };
+module.exports = { AiRouter, applyTokenReminderPolicy };

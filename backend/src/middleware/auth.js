@@ -22,8 +22,14 @@ function authRequired(req, res, next) {
   try {
     const decoded = verifyToken(token);
     const user = db.findOne('users', u => u.id === decoded.userId);
+    if (!user || Number(decoded.sessionVersion || 0) !== Number(user.session_version || 0)) {
+      return res.status(401).json({ error: '登录已失效，请重新登录' });
+    }
     const access = authService.getAccessStatus(user);
     if (!access.valid) return res.status(401).json({ error: access.reason || '用户不存在或已被禁用' });
+    if (user.must_change_password && !['/api/auth/password', '/api/auth/profile', '/api/auth/entitlement'].includes(req.originalUrl.split('?')[0])) {
+      return res.status(403).json({ error: '首次登录请先修改初始密码', code: 'PASSWORD_CHANGE_REQUIRED' });
+    }
     req.user = user;
     next();
   } catch (err) {

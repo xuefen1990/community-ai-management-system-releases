@@ -34,7 +34,7 @@ test('keeps existing contract fee collections from a remote workspace', () => {
   assert.deepEqual(database.contractFeeAdvances, [{ id: 'a-1' }]);
 });
 
-test('uses the local ledger for a signed-in legacy account that has no shared unit workspace', async () => {
+test('rejects a signed-in account without main-account scope instead of showing local data', async () => {
   const localData = { version: 4, contractFeeLedgers: [{ id: 'legacy-ledger' }] };
   let remoteRequests = 0;
   const store = new RemoteDatabaseStore({
@@ -49,16 +49,16 @@ test('uses the local ledger for a signed-in legacy account that has no shared un
     },
   });
 
-  const data = await store.read();
-  assert.deepEqual(data.contractFeeLedgers, localData.contractFeeLedgers);
+  await assert.rejects(() => store.read(), /缺少主账号归属/u);
   assert.equal(remoteRequests, 0);
 });
 
-test('uses the shared workspace only for an account assigned to a unit', async () => {
+test('uses the shared workspace for an account assigned to a main account', async () => {
   let subscribed = 0;
   const store = new RemoteDatabaseStore({
     authService: {
-      getStatus: async () => ({ authenticated: true, account: { phone: '18888190901', organizationId: 'unit-1' } }),
+      getStatus: async () => ({ authenticated: true, account: { phone: '18888190901', mainAccountId: 'owner-1' } }),
+      getWorkspaceBaseUrl: async () => 'http://192.168.1.10:3000',
       subscribeWorkspaceChanges: async () => { subscribed += 1; return () => {}; },
       request: async () => ({ version: 3, data: { contractFeeLedgers: [{ id: 'shared-ledger' }] } }),
     },
@@ -75,7 +75,8 @@ test('reuses a defensive shared-workspace snapshot and refreshes it after a work
   let notifyChanged = null;
   const store = new RemoteDatabaseStore({
     authService: {
-      getStatus: async () => ({ authenticated: true, account: { id: 'account-1', organizationId: 'unit-1' } }),
+      getStatus: async () => ({ authenticated: true, account: { id: 'account-1', mainAccountId: 'owner-1' } }),
+      getWorkspaceBaseUrl: async () => 'http://192.168.1.10:3000',
       subscribeWorkspaceChanges: async (callback) => { notifyChanged = callback; return () => {}; },
       request: async () => {
         requestCount += 1;
@@ -97,11 +98,43 @@ test('reuses a defensive shared-workspace snapshot and refreshes it after a work
   assert.equal(refreshed.personnel[0].id, 'resident-2');
 });
 
+test('does not read cloud or local business data when signed in without a main-computer connection', async () => {
+  let requests = 0;
+  const store = new RemoteDatabaseStore({
+    authService: {
+      getStatus: async () => ({ authenticated: true, account: { id: 'member-1', mainAccountId: 'owner-1' } }),
+      getWorkspaceBaseUrl: async () => { throw new Error('尚未连接局域网主电脑'); },
+      request: async () => { requests += 1; return { data: { personnel: [{ id: 'cloud' }] } }; },
+    },
+    localStore: { dataDirectory: '/tmp/community-local-store', read: async () => { throw new Error('不应读取本机数据'); } },
+  });
+  await assert.rejects(() => store.read(), /尚未连接局域网主电脑/u);
+  assert.equal(requests, 0);
+});
+
+test('主账号在当前电脑读取本地工作区，不要求连接其他主电脑', async () => {
+  let checks = 0;
+  const store = new RemoteDatabaseStore({
+    authService: {
+      getStatus: async () => ({ authenticated: true, account: { id: 'owner-1', mainAccountId: 'owner-1', role: 'main_account' } }),
+      getWorkspaceBaseUrl: async () => 'http://127.0.0.1:3000',
+      subscribeWorkspaceChanges: async () => () => {},
+      checkLanWorkspace: async () => { checks += 1; throw new Error('主账号不应扫描局域网'); },
+      request: async () => ({ version: 1, data: { personnel: [] } }),
+    },
+    localStore: { dataDirectory: '/tmp/local-owner', read: async () => { throw new Error('不能读取未隔离的旧本机库'); } },
+  });
+  assert.deepEqual((await store.read()).personnel, []);
+  assert.deepEqual((await store.read()).personnel, []);
+  assert.equal(checks, 0);
+  assert.equal(await store.isRemoteChild(), false);
+});
+
 test('reuses a local snapshot and replaces it after a local write', async () => {
   let readCount = 0;
   let saved = null;
   const store = new RemoteDatabaseStore({
-    authService: { getStatus: async () => ({ authenticated: true, account: { phone: '17505270901', organizationId: null } }) },
+    authService: { getStatus: async () => ({ authenticated: false, account: null }) },
     localStore: {
       dataDirectory: '/tmp/community-local-store',
       read: async () => { readCount += 1; return { personnel: [{ id: 'old' }] }; },
@@ -116,4 +149,23 @@ test('reuses a local snapshot and replaces it after a local write', async () => 
   assert.equal(saved.personnel[0].id, 'new');
   assert.equal((await store.read()).personnel[0].id, 'new');
   assert.equal(readCount, 1);
+});
+
+test('子电脑不能把新生成的本机附件路径写进主电脑业务记录', async () => {
+  let writes = 0;
+  const store = new RemoteDatabaseStore({
+    authService: {
+      getStatus: async () => ({ authenticated: true, account: { id: 'member-1', mainAccountId: 'owner-1' } }),
+      getWorkspaceBaseUrl: async () => 'http://192.168.2.10:3000',
+      subscribeWorkspaceChanges: async () => () => {},
+      request: async (_path, options) => {
+        if (options?.method === 'PUT') { writes += 1; return { version: 2 }; }
+        return { version: 1, data: { documents: [] } };
+      },
+    },
+    localStore: { dataDirectory: '/tmp/child-data', read: async () => { throw new Error('不能使用本机数据'); } },
+  });
+  await store.read();
+  await assert.rejects(store.write({ documents: [{ id: 'doc-1', file_path: '/tmp/child-data/private.pdf' }] }), /附件必须保存到主电脑/);
+  assert.equal(writes, 0);
 });

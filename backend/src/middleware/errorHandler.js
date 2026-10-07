@@ -16,14 +16,14 @@ function notFoundHandler(req, res) {
 function errorHandler(err, req, res, next) {
   if (res.headersSent) return next(err);
 
-  const statusCode = err.statusCode || 500;
-  const message = err.statusCode ? err.message : '服务器内部错误';
+  const statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : (err.statusCode || 500);
+  const message = err.code === 'LIMIT_FILE_SIZE' ? '更新包超过 500 MB 上限' : err.statusCode ? err.message : '服务器内部错误';
 
   if (statusCode >= 500) {
     logger.error('未捕获错误', { error: err.message, stack: err.stack, path: req.path });
   }
 
-  res.status(statusCode).json({ error: message });
+  res.status(statusCode).json({ error: message, ...(err.code ? { code: err.code } : {}), ...(err.details ? { details: err.details } : {}) });
 }
 
 module.exports = { ApiError, notFoundHandler, errorHandler };

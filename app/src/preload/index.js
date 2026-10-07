@@ -1,7 +1,7 @@
 'use strict';
 
 const { contextBridge, ipcRenderer } = require('electron');
-const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../shared/ipc-contract');
+const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS, FOUNDATION_CHANNELS } = require('../shared/ipc-contract');
 
 function invoke(methodName, ...argumentsList) {
   return ipcRenderer.invoke(INVOKE_CHANNELS[methodName], ...argumentsList);
@@ -10,8 +10,9 @@ function invoke(methodName, ...argumentsList) {
 function subscribe(methodName, callback) {
   if (typeof callback !== 'function') throw new TypeError(`${methodName} requires a callback`);
   const channel = EVENT_CHANNELS[methodName];
-  ipcRenderer.removeAllListeners(channel);
-  ipcRenderer.on(channel, (_event, payload) => callback(payload));
+  const listener = (_event, payload) => callback(payload);
+  ipcRenderer.on(channel, listener);
+  return () => ipcRenderer.removeListener(channel, listener);
 }
 
 const api = {
@@ -38,8 +39,11 @@ const api = {
   selectAndReadContractFeeExcel: () => invoke('selectAndReadContractFeeExcel'),
   selectAndReadDisbursementExcel: () => invoke('selectAndReadDisbursementExcel'),
   exportTemplateDisbursementWorkbook: (value) => invoke('exportTemplateDisbursementWorkbook', value),
+  listDisbursementPrinters: () => invoke('listDisbursementPrinters'),
+  printDisbursementPages: (value) => invoke('printDisbursementPages', value),
   importContractFeeAttachments: () => invoke('importContractFeeAttachments'),
   exportContractFeeGroupFiles: (value) => invoke('exportContractFeeGroupFiles', value),
+  exportContractFeeProjectWorkbook: (value) => invoke('exportContractFeeProjectWorkbook', value),
   selectAndReadFarmlandSubsidyExcel: () => invoke('selectAndReadFarmlandSubsidyExcel'),
   exportFarmlandSubsidyWorkbook: (value) => invoke('exportFarmlandSubsidyWorkbook', value),
   getDbDir: () => invoke('getDbDir'),
@@ -51,6 +55,8 @@ const api = {
   getVersion: () => invoke('getVersion'),
   getLanShareInfo: () => invoke('getLanShareInfo'),
   updateLanShareConfig: (value) => invoke('updateLanShareConfig', value),
+  getAccountPreferences: () => invoke('getAccountPreferences'),
+  saveAccountPreferences: (value) => invoke('saveAccountPreferences', value),
   setLanShareAuthState: (value) => invoke('setLanShareAuthState', value),
   writeOperationLog: (value) => invoke('writeOperationLog', value),
   getMobileUploadInfo: () => invoke('getMobileUploadInfo'),
@@ -66,18 +72,18 @@ const api = {
   exportAiLog: (value) => invoke('exportAiLog', value),
   registerLocalAccount: (value) => invoke('registerLocalAccount', value),
   submitUnitAdminApplication: (value) => invoke('submitUnitAdminApplication', value),
-  submitMemberApplication: (value) => invoke('submitMemberApplication', value),
   listUnitMemberApplications: () => invoke('listUnitMemberApplications'),
   reviewUnitMemberApplication: (value) => invoke('reviewUnitMemberApplication', value),
   listUnitMembers: () => invoke('listUnitMembers'),
+  getUnitPermissionCatalog: () => invoke('getUnitPermissionCatalog'),
+  createUnitMember: (value) => invoke('createUnitMember', value),
+  resetUnitMemberPassword: (value) => invoke('resetUnitMemberPassword', value),
   updateUnitMemberPermissions: (value) => invoke('updateUnitMemberPermissions', value),
   updateUnitMemberStatus: (value) => invoke('updateUnitMemberStatus', value),
-  listUnitInvites: () => invoke('listUnitInvites'),
-  createUnitInvite: (value) => invoke('createUnitInvite', value),
-  deactivateUnitInvite: (value) => invoke('deactivateUnitInvite', value),
   importLocalDataToUnit: () => invoke('importLocalDataToUnit'),
   onUnitWorkspaceChanged: (callback) => subscribe('onUnitWorkspaceChanged', callback),
   loginLocalAccount: (value) => invoke('loginLocalAccount', value),
+  changeLocalAccountPassword: (value) => invoke('changeLocalAccountPassword', value),
   logoutLocalAccount: () => invoke('logoutLocalAccount'),
   getLocalAuthStatus: () => invoke('getLocalAuthStatus'),
   getStartupEntitlement: () => invoke('getStartupEntitlement'),
@@ -99,10 +105,39 @@ const api = {
   getAiSettings: () => invoke('getAiSettings'),
   saveAiSettings: (value) => invoke('saveAiSettings', value),
   testOnlineAi: () => invoke('testOnlineAi'),
+  getAiQuota: () => invoke('getAiQuota'),
+  getAiUsageDetail: (value) => invoke('getAiUsageDetail', value || {}),
+  getAiQuotaLedger: (value) => invoke('getAiQuotaLedger', value || {}),
+  getAiModels: () => invoke('getAiModels'),
+  estimateAiUsage: (value) => invoke('estimateAiUsage', value || {}),
   chatWithAi: (messages) => invoke('chatWithAi', { messages }),
-  converseWithAiAssistant: (messages) => invoke('converseWithAiAssistant', { messages }),
+  converseWithAiAssistant: (value) => invoke('converseWithAiAssistant', Array.isArray(value) ? { messages: value } : value),
   listAiAssistantOperations: (value) => invoke('listAiAssistantOperations', value || {}),
   undoAiAssistantOperation: (value) => invoke('undoAiAssistantOperation', value),
+  getAiAssistantConversation: (value) => invoke('getAiAssistantConversation', value || {}),
+  saveAiAssistantConversation: (value) => invoke('saveAiAssistantConversation', value || {}),
+  listAiAssistantMemories: () => invoke('listAiAssistantMemories'),
+  deleteAiAssistantMemory: (value) => invoke('deleteAiAssistantMemory', value || {}),
+  selectAiAssistantFiles: (value) => invoke('selectAiAssistantFiles', value || {}),
+  listAiAssistantFiles: (value) => invoke('listAiAssistantFiles', value || {}),
+  previewAiFileImport: (value) => invoke('previewAiFileImport', value || {}),
+  confirmAiFileImport: (value) => invoke('confirmAiFileImport', value || {}),
+  prepareAiBusinessFile: (value) => invoke('prepareAiBusinessFile', value || {}),
+  reviewAiFileOcr: (value) => invoke('reviewAiFileOcr', value || {}),
+  confirmAiFileOcrReview: (value) => invoke('confirmAiFileOcrReview', value || {}),
+  prepareAiDocumentHandoff: (value) => invoke('prepareAiDocumentHandoff', value || {}),
+  applyAiFileCategory: (value) => invoke('applyAiFileCategory', value || {}),
+  undoAiFileCategory: (value) => invoke('undoAiFileCategory', value || {}),
+  previewAiCertificateTemplate: (value) => invoke('previewAiCertificateTemplate', value || {}),
+  applyAiCertificateTemplate: (value) => invoke('applyAiCertificateTemplate', value || {}),
+  describeAiImage: (value) => invoke('describeAiImage', value || {}),
+  getAiStorageOverview: () => invoke('getAiStorageOverview'),
+  cleanAiTemporaryCache: () => invoke('cleanAiTemporaryCache'),
+  rebuildAiFileIndex: () => invoke('rebuildAiFileIndex'),
+  scanAiAnomalies: () => invoke('scanAiAnomalies'),
+  listAiAnomalyFindings: (value) => invoke('listAiAnomalyFindings', value || {}),
+  updateAiAnomalyFinding: (value) => invoke('updateAiAnomalyFinding', value || {}),
+  draftCertificateWithAi: (value) => invoke('draftCertificateWithAi', value || {}),
   listDocumentTemplates: (documentKind) => invoke('listDocumentTemplates', { documentKind }),
   getDraftLayoutDefaults: (value) => invoke('getDraftLayoutDefaults', value || {}),
   listDraftDocuments: (filters) => invoke('listDraftDocuments', filters || {}),
@@ -124,7 +159,12 @@ const api = {
   resetWritingProfile: () => invoke('resetWritingProfile'),
   exportDraftDocument: (value) => invoke('exportDraftDocument', value),
   printDraftDocument: (value) => invoke('printDraftDocument', value),
+  selectCertificateWordTemplate: (value) => invoke('selectCertificateWordTemplate', value),
+  inspectCertificateWordTemplate: (value) => invoke('inspectCertificateWordTemplate', value),
+  exportCertificateDocument: (value) => invoke('exportCertificateDocument', value),
+  printCertificateDocument: (value) => invoke('printCertificateDocument', value),
   importWorkAttachments: () => invoke('importWorkAttachments'),
 };
 
+for (const [name, channel] of Object.entries(FOUNDATION_CHANNELS)) api[name] = value => ipcRenderer.invoke(channel, value);
 contextBridge.exposeInMainWorld('api', Object.freeze(api));

@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createUpdateBlockmap } from './update-blockmap.mjs';
 
 import crypto from 'node:crypto';
 import { chmod, cp, lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
@@ -9,12 +10,12 @@ import { spawnSync } from 'node:child_process';
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const appProject = path.join(projectRoot, 'app');
 const templateApp = '/Applications/村务通管理系统.app';
-const runtimeApp = path.join(appProject, '.runtime', '社区AI管理系统.app');
+const runtimeApp = path.join(appProject, '.runtime', '村居AI管理系统.app');
 const releaseDirectory = path.join(appProject, 'release');
 const stagingDirectory = path.join(appProject, '.dmg-root');
 const packageManifest = JSON.parse(await readFile(path.join(appProject, 'package.json'), 'utf8'));
 const version = packageManifest.version;
-const installerArtifactName = `社区AI管理系统-${version}-arm64.dmg`;
+const installerArtifactName = `村居AI管理系统-${version}-arm64.dmg`;
 const outputPath = path.join(releaseDirectory, installerArtifactName);
 const updateArtifactName = `community-ai-management-system-${version}-arm64.zip`;
 const zipOutputPath = path.join(releaseDirectory, updateArtifactName);
@@ -24,9 +25,8 @@ const updateSigningRequirement = 'designated => identifier "com.community.ai.man
 const updateVerificationRequirement = 'identifier "com.community.ai.management"';
 const embeddedUpdaterConfigPath = path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml');
 const embeddedUpdaterConfig = [
-  'provider: github',
-  'owner: xuefen1990',
-  'repo: community-ai-management-system-releases',
+  'provider: generic',
+  'url: https://xuefeng0901.cn/api/update/electron/',
   'updaterCacheDirName: community-ai-management-system-updater',
   '',
 ].join('\n');
@@ -97,6 +97,9 @@ await requirePath(path.join(projectRoot, 'source-original', 'app-asar', 'node_mo
 run(process.execPath, [path.join(projectRoot, 'scripts', 'prepare-local-runtime.mjs'), templateApp, appProject]);
 await verifyBundledBackend(runtimeApp);
 await writeFile(embeddedUpdaterConfigPath, embeddedUpdaterConfig, 'utf8');
+if (!(await readFile(embeddedUpdaterConfigPath, 'utf8')).includes('https://xuefeng0901.cn/api/update/electron/')) {
+  throw new Error('Mac 更新源未指向生产后端');
+}
 run('xattr', ['-cr', runtimeApp]);
 run('codesign', ['--force', '--deep', '--sign', '-', runtimeApp]);
 // Ad-hoc signatures normally use the build-specific CD hash as their
@@ -123,13 +126,14 @@ await symlink('/Applications', path.join(stagingDirectory, 'Applications'));
 run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', stagedApplicationPath]);
 run('codesign', ['--verify', `-R=${updateVerificationRequirement}`, stagedApplicationPath]);
 try {
-  run('hdiutil', ['create', '-volname', '社区AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
+  run('hdiutil', ['create', '-volname', '村居AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
 } finally {
   await rm(stagingDirectory, { recursive: true, force: true });
 }
 
 run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', runtimeApp, zipOutputPath]);
 verifyUpdateArchive(zipOutputPath);
+await createUpdateBlockmap(zipOutputPath);
 
 const installerDigest = crypto.createHash('sha256').update(await readFile(outputPath)).digest('hex');
 const zipBuffer = await readFile(zipOutputPath);

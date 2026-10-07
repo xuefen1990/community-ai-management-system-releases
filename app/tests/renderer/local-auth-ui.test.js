@@ -8,12 +8,11 @@ const vm = require('node:vm');
 
 const appRoot = path.resolve(__dirname, '..', '..');
 
-test('renderer loads local authentication after the compatibility renderer', async () => {
-  const html = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'index.html'), 'utf8');
-  const rendererIndex = html.indexOf('<script src="renderer.js"></script>');
-  const localAuthIndex = html.indexOf('<script src="js/local-auth-ui.js"></script>');
-  assert.ok(rendererIndex >= 0);
-  assert.ok(localAuthIndex > rendererIndex);
+test('foundation loads the account gate before the application shell', async () => {
+  const bootstrap = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'bootstrap.mjs'), 'utf8');
+  const gate = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'account-gate.mjs'), 'utf8');
+  assert.match(bootstrap, /installCommunityAccountGate/u);
+  assert.match(gate, /loginLocalAccount|auth\.login/u);
 });
 
 test('local authentication UI uses only the preload bridge', async () => {
@@ -35,107 +34,6 @@ test('local authentication UI uses only the preload bridge', async () => {
   assert.match(source, /installShortLivedTrialRemoval/u);
   assert.match(source, /update-ui\.js/u);
   assert.doesNotMatch(source, /require\(|ipcRenderer|node:/u);
-});
-
-test('unit application panel separates scrollable fields from fixed actions', async () => {
-  const [source, style] = await Promise.all([
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
-  ]);
-  assert.match(source, /unit-application-panel/u);
-  assert.match(source, /unit-application-scroll/u);
-  assert.match(source, /unit-application-actions/u);
-  assert.match(source, /unit-application-passwords/u);
-  assert.match(style, /\.unit-application-panel\s*\{/u);
-  assert.match(style, /\.unit-application-scroll\s*\{/u);
-  assert.match(style, /\.unit-application-actions\s*\{/u);
-  assert.match(style, /@media\s*\(max-width:\s*640px\)/u);
-});
-
-test('login layout keeps the logo reachable and scrolls short viewports instead of clipping the form', async () => {
-  const [source, style] = await Promise.all([
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
-  ]);
-  assert.match(style, /\.login-container\s*\{[^}]*max-height:\s*calc\(100(?:dvh|vh)\s*-\s*\d+px\)/su);
-  assert.match(style, /\.login-form-section\s*\{[^}]*overflow-y:\s*auto/su);
-  assert.match(style, /@media\s*\(max-height:\s*\d+px\)[\s\S]*?\.login-form-section\s*\{[^}]*align-items:\s*flex-start/su);
-  assert.match(source, /getLocalBackendStatus/u);
-  assert.match(source, /retryLocalBackend/u);
-  assert.match(source, /账号服务启动中|账号服务已就绪/u);
-});
-
-test('apple glass theme supplies readable light and dark surfaces with a non-glass fallback', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /Apple glass theme/u);
-  assert.match(style, /body\.light-theme\s*\{[\s\S]*?--glass-surface:\s*rgba\(255,\s*255,\s*255/u);
-  assert.match(style, /:root\s*\{[\s\S]*?--glass-surface:\s*rgba\(16,\s*28,\s*48/u);
-  assert.match(style, /--app-aurora:/u);
-  assert.match(style, /backdrop-filter:\s*var\(--glass-blur\)/u);
-  assert.match(style, /@supports not \(\(-webkit-backdrop-filter: blur\(1px\)\) or \(backdrop-filter: blur\(1px\)\)\)/u);
-  assert.match(style, /prefers-reduced-motion/u);
-});
-
-test('light glass controls keep primary and disabled labels readable and never expose login artwork edges', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /Glass theme readability repair/u);
-  assert.match(style, /body\.light-theme \.btn-primary\s*,[\s\S]*?color:\s*#fff\s*!important/u);
-  assert.match(style, /body\.light-theme \.btn-primary:disabled[\s\S]*?color:\s*#4d615d\s*!important/u);
-  assert.match(style, /Never expose the legacy illustration edges/u);
-  assert.match(style, /background-size:\s*100% 100%\s*!important/u);
-  assert.match(style, /#tab-personnel \.header-actions \.btn\.btn-primary:disabled/u);
-  assert.match(style, /background:\s*#c8d9d5\s*!important/u);
-  assert.match(style, /A visible full-window canvas/u);
-});
-
-test('disabled workspace primary actions use the familiar green background with gray labels', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /Restore the familiar green disabled action state/u);
-  assert.match(style, /button\.btn\.btn-primary:disabled/u);
-  assert.match(style, /color:\s*#596560\s*!important/u);
-  assert.match(style, /#c8eadb/u);
-  assert.match(style, /button\.btn\.btn-primary:disabled svg/u);
-});
-
-test('light theme protects every disabled action from white text on a pale background', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /One last light-theme guard for every disabled action/u);
-  assert.match(style, /body\.light-theme button:disabled/u);
-  assert.match(style, /input\[type="submit"\]:disabled/u);
-  assert.match(style, /\[role="button"\]\[aria-disabled="true"\]/u);
-  assert.match(style, /button\.disabled/u);
-  assert.match(style, /fill:\s*currentColor/u);
-});
-
-test('light theme gives every workspace primary action a green surface after the generic glass button rule', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  const genericButtonSurface = style.indexOf('body.light-theme .btn,');
-  const workspacePrimarySurface = style.indexOf('Give\n * every main-workspace primary action');
-  assert.ok(genericButtonSurface >= 0);
-  assert.ok(workspacePrimarySurface > genericButtonSurface);
-  assert.match(style, /body\.light-theme \.app-main \.btn\.btn-primary/u);
-  assert.match(style, /#tab-personnel \.header-actions \.btn\.btn-primary \{/u);
-  assert.match(style, /color:\s*#4d5b56\s*!important/u);
-  assert.match(style, /#afe0c8/u);
-});
-
-test('duty scheduler actions keep gray labels on pale green surfaces', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /flexible duty scheduler still carries older, page-local button colors/u);
-  assert.match(style, /body\.light-theme #tab-duty button\s*\{/u);
-  assert.match(style, /body\.light-theme #tab-duty button:disabled/u);
-  assert.match(style, /color:\s*#4d5b56\s*!important/u);
-  assert.match(style, /#bae2cc/u);
-  assert.match(style, /body\.light-theme #tab-duty button svg/u);
-});
-
-test('AI assistant controls keep green surfaces after glass-theme overrides', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /\.ai-records-link\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, #d9f1e4/u);
-  assert.match(style, /\.ai-chip\s*\{[\s\S]*?color:\s*#42534d/u);
-  assert.match(style, /\.ai-confirmation-cancel\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, #d9f1e4/u);
-  assert.match(style, /\.ai-query-evidence-source\s*\{[\s\S]*?color:\s*#42534d/u);
-  assert.match(style, /body\.light-theme \.ai-operation-center \.btn\.btn-outline/u);
 });
 
 test('login startup checks the previous account entitlement before showing a reminder', async () => {
@@ -327,30 +225,6 @@ test('household membership uses the complete household number as its only associ
   );
 });
 
-test('startup remains on the login screen with compact manual login actions', async () => {
-  const [source, style] = await Promise.all([
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8'),
-    fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8'),
-  ]);
-  assert.match(source, /function showLoginScreen\(\)/u);
-  assert.match(source, /function configureLoginActions\(\)/u);
-  assert.match(source, /function installStartupLoginGuard\(\)/u);
-  assert.match(source, /function keepStartupOnLoginScreen\(\)/u);
-  assert.match(source, /let loginSubmission = null/u);
-  assert.match(source, /登录进入工作台/u);
-  assert.match(source, /切换账号/u);
-  assert.match(source, /forceLoginPanel\(\)/u);
-  assert.doesNotMatch(source, /window\.showPanel/u);
-  assert.doesNotMatch(source, /attributeFilter:\s*\['class', 'style'\]/u);
-  assert.doesNotMatch(source, /if \(currentStatus\.authenticated\) await enterDashboard\(currentStatus\)/u);
-  assert.match(source, /if \(loginSubmission\) return loginSubmission/u);
-  assert.match(source, /installStartupLoginGuard\(\);/u);
-  assert.match(style, /\.login-action-row\s*\{/u);
-  assert.match(style, /grid-template-columns:\s*minmax\(108px, 0\.8fr\) minmax\(0, 1\.35fr\)/u);
-  assert.match(style, /\.remote-server-entry\s*\{/u);
-  assert.match(style, /body\.auth-login-required #dashboardView\{display:none!important\}/u);
-});
-
 test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'local-auth-ui.js'), 'utf8');
   assert.match(source, /getElementById\('loginView'\)\?\.classList\.add\('hidden'\)/u);
@@ -360,10 +234,4 @@ test('post-login uses the v0.1.3 compatibility dashboard flow', async () => {
   assert.match(source, /removeLegacyTrialArtifacts\(\);/u);
   assert.match(source, /title\.parentElement\?\.parentElement\?\.parentElement/u);
   assert.doesNotMatch(source, /function setAppViewVisibility\(id, visible\)/u);
-});
-
-test('dashboard shell keeps the v0.1.3 sidebar dimensions', async () => {
-  const style = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'style.css'), 'utf8');
-  assert.match(style, /\.app-sidebar\s*\{[^}]*width:\s*250px/su);
-  assert.match(style, /\.sidebar-footer\s*\{[^}]*background-color:\s*var\(--bg-sidebar-footer\)/su);
 });

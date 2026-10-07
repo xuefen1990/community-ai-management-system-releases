@@ -10,12 +10,12 @@ const projectRoot = path.resolve(import.meta.dirname, '..');
 const generatorRoot = path.join(projectRoot, 'license-generator');
 const templateApp = '/Applications/村务通管理系统.app';
 const runtimeRoot = path.join(generatorRoot, '.runtime');
-const runtimeApp = path.join(runtimeRoot, '社区AI授权工具.app');
+const runtimeApp = path.join(runtimeRoot, '村居AI授权工具.app');
 const resourcesDirectory = path.join(runtimeApp, 'Contents', 'Resources');
 const runtimeSource = path.join(resourcesDirectory, 'app');
 const releaseDirectory = path.join(generatorRoot, 'release');
 const stagingDirectory = path.join(releaseDirectory, 'dmg-root');
-const outputPath = path.join(releaseDirectory, '社区AI授权工具-0.1.0-arm64.dmg');
+const outputPath = path.join(releaseDirectory, '村居AI授权工具-0.1.0-arm64.dmg');
 
 async function makeTreeWritable(targetPath) {
   let stats;
@@ -60,7 +60,7 @@ const helperVariants = [
 ];
 for (const { suffix, identifierSuffix } of helperVariants) {
   const originalHelperName = `村务通管理系统 Helper${suffix}`;
-  const runtimeHelperName = `社区AI授权工具 Helper${suffix}`;
+  const runtimeHelperName = `村居AI授权工具 Helper${suffix}`;
   const originalHelperApp = path.join(frameworksDirectory, `${originalHelperName}.app`);
   const runtimeHelperApp = path.join(frameworksDirectory, `${runtimeHelperName}.app`);
   await rename(originalHelperApp, runtimeHelperApp);
@@ -78,16 +78,16 @@ for (const { suffix, identifierSuffix } of helperVariants) {
 
 const infoPlistPath = path.join(runtimeApp, 'Contents', 'Info.plist');
 const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
-const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI授权工具');
+const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村居AI授权工具');
 await rename(originalExecutable, runtimeExecutable);
 let infoPlist = await readFile(infoPlistPath, 'utf8');
 infoPlist = infoPlist
   .replace(/\s*<key>ElectronAsarIntegrity<\/key>\s*<dict>\s*<key>Resources\/app\.asar<\/key>\s*<dict>[\s\S]*?<\/dict>\s*<\/dict>/u, '')
-  .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI授权工具</string>')
-  .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI授权工具</string>')
+  .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>村居AI授权工具</string>')
+  .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>村居AI授权工具</string>')
   .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.license-generator</string>')
-  .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI授权工具</string>')
-  .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI授权工具</string>');
+  .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>村居AI授权工具</string>')
+  .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 村居AI授权工具</string>');
 await writeFile(infoPlistPath, infoPlist, 'utf8');
 
 await makeTreeWritable(runtimeApp);
@@ -98,14 +98,14 @@ run('codesign', ['--verify', '--deep', '--strict', '--verbose=2', runtimeApp]);
 await makeTreeWritable(stagingDirectory);
 await rm(stagingDirectory, { recursive: true, force: true });
 await mkdir(stagingDirectory, { recursive: true });
-await cp(runtimeApp, path.join(stagingDirectory, '社区AI授权工具.app'), {
+await cp(runtimeApp, path.join(stagingDirectory, '村居AI授权工具.app'), {
   recursive: true,
   preserveTimestamps: true,
   verbatimSymlinks: true,
 });
 await symlink('/Applications', path.join(stagingDirectory, 'Applications'));
 await rm(outputPath, { force: true });
-run('hdiutil', ['create', '-volname', '社区AI授权工具', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
+run('hdiutil', ['create', '-volname', '村居AI授权工具', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', outputPath]);
 await makeTreeWritable(stagingDirectory);
 await rm(stagingDirectory, { recursive: true, force: true });
 

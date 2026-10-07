@@ -3,37 +3,31 @@
 const express = require('express');
 const router = express.Router();
 const authService = require('../services/authService');
+const permissionPolicy = require('../services/permissionPolicy');
 const licenseService = require('../services/licenseService');
 const { authRequired, adminRequired, unitAdminRequired } = require('../middleware/auth');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { ApiError } = require('../middleware/errorHandler');
+const userPreferences = require('../services/userPreferenceService');
 
 function getClientIp(req) {
   return req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
 }
 
-// 旧版直接注册不再绕过单位审核流程。
-router.post('/register', authLimiter, (_req, _res, next) => {
-  next(new ApiError(410, '请通过“申请成为单位管理员”或“申请加入单位”完成注册'));
+router.post('/register', authLimiter, (req, res, next) => {
+  try {
+    const { phone, password, confirmPassword, machineId } = req.body || {};
+    if (password !== confirmPassword) throw new ApiError(400, '两次输入的密码不一致');
+    const result = authService.registerMainAccount({ phone, password, machineId });
+    res.status(201).json(result);
+  } catch (error) { next(error); }
 });
 
 // ===== 申请成为单位管理员（公开） =====
-router.post('/unit-admin-applications', authLimiter, async (req, res, next) => {
-  try {
-    const { phone, password, name, organizationName, region, machineId } = req.body;
-    const result = authService.submitUnitAdminApplication({ phone, password, name, organizationName, region, machineId });
-    res.status(201).json(result);
-  } catch (err) { next(err); }
-});
+router.post('/unit-admin-applications', authLimiter, (_req, _res, next) => next(new ApiError(410, '请使用手机号直接注册主账号')));
 
 // ===== 申请加入单位（公开） =====
-router.post('/member-applications', authLimiter, async (req, res, next) => {
-  try {
-    const { inviteCode, phone, password, name, machineId } = req.body;
-    const result = authService.submitMemberApplication({ inviteCode, phone, password, name, machineId });
-    res.status(201).json(result);
-  } catch (err) { next(err); }
-});
+router.post('/member-applications', authLimiter, (_req, _res, next) => next(new ApiError(410, '请联系单位管理员直接开通成员账号')));
 
 // ===== 登录 =====
 router.post('/login', authLimiter, async (req, res, next) => {
@@ -48,6 +42,12 @@ router.post('/login', authLimiter, async (req, res, next) => {
 // ===== 获取当前用户信息 =====
 router.get('/profile', authRequired, (req, res) => {
   res.json({ user: authService.getUserById(req.user.id) });
+});
+
+router.get('/preferences', authRequired, (req, res) => { res.json(userPreferences.get(req.user)); });
+router.put('/preferences', authRequired, (req, res, next) => {
+  try { res.json(userPreferences.save(req.user, req.body || {})); }
+  catch (error) { next(error); }
 });
 
 // ===== 更新个人资料 =====
@@ -83,6 +83,20 @@ router.get('/entitlement', authRequired, (req, res) => {
 });
 
 // ===== 单位管理员接口 =====
+router.get('/unit/permissions/catalog', authRequired, unitAdminRequired, (_req, res) => {
+  res.json(permissionPolicy.catalog());
+});
+
+router.post('/unit/members', authRequired, unitAdminRequired, (req, res, next) => {
+  try { res.status(201).json(authService.createMember(req.user, req.body || {})); }
+  catch (error) { next(error); }
+});
+
+router.post('/unit/members/:memberId/reset-password', authRequired, unitAdminRequired, (req, res, next) => {
+  try { res.json(authService.resetMemberPassword(req.user, req.params.memberId)); }
+  catch (error) { next(error); }
+});
+
 router.get('/unit/member-applications', authRequired, unitAdminRequired, (req, res) => {
   res.json({ applications: authService.listMemberApplications(req.user, { status: req.query.status }) });
 });
@@ -100,7 +114,7 @@ router.get('/unit/members', authRequired, unitAdminRequired, (req, res) => {
 
 router.put('/unit/members/:memberId/permissions', authRequired, unitAdminRequired, (req, res, next) => {
   try {
-    const user = authService.updateMemberPermissions(req.user, req.params.memberId, req.body.permissions);
+    const user = authService.updateMemberPermissions(req.user, req.params.memberId, req.body.permissions, req.body.aiAccessEnabled);
     res.json({ user });
   } catch (err) { next(err); }
 });
@@ -116,18 +130,7 @@ router.get('/unit/invites', authRequired, unitAdminRequired, (req, res) => {
   res.json({ invites: authService.listInvites(req.user) });
 });
 
-router.post('/unit/invites', authRequired, unitAdminRequired, (req, res, next) => {
-  try {
-    const result = authService.createInvite(req.user, req.body);
-    res.status(201).json(result);
-  } catch (err) { next(err); }
-});
-
-router.delete('/unit/invites/:inviteId', authRequired, unitAdminRequired, (req, res, next) => {
-  try {
-    res.json({ invite: authService.deactivateInvite(req.user, req.params.inviteId) });
-  } catch (err) { next(err); }
-});
+router.post('/unit/invites', authRequired, unitAdminRequired, (_req, _res, next) => next(new ApiError(410, '邀请码已停用，请直接新增成员')));
 
 // ===== 激活许可证 =====
 router.post('/activate-license', authRequired, async (req, res, next) => {
@@ -177,6 +180,19 @@ router.post('/users/:userId/reset-password', authRequired, adminRequired, async 
     const user = authService.resetPassword(req.params.userId, newPassword);
     authService.writeAuditLog(req.user.id, 'reset_password', req.params.userId, '', getClientIp(req));
     res.json({ user });
+  } catch (err) { next(err); }
+});
+
+router.post('/users/:userId/unlock-login', authRequired, adminRequired, (req, res, next) => {
+  try { res.json({ user: authService.unlockLogin(req.user, req.params.userId) }); }
+  catch (error) { next(error); }
+});
+
+router.delete('/users/:userId', authRequired, adminRequired, async (req, res, next) => {
+  try {
+    const result = authService.deleteUser(req.user, req.params.userId);
+    authService.writeAuditLog(req.user.id, 'delete_user', req.params.userId, JSON.stringify({ releasedPhone: result.releasedPhone, deactivatedOrganizationId: result.deactivatedOrganizationId }), getClientIp(req));
+    res.json({ result });
   } catch (err) { next(err); }
 });
 

@@ -27,9 +27,17 @@ async function availableFilePath(directory, fileName) {
 }
 
 class ContractFeeFileService {
-  constructor({ userDataPath, dialog }) {
+  constructor({ userDataPath, dialog, store = null }) {
     this.dialog = dialog;
-    this.attachmentsDirectory = path.join(userDataPath, 'contract-fee', 'attachments');
+    this.userDataPath = userDataPath;
+    this.store = store;
+  }
+
+  get attachmentsDirectory() {
+    const directory = this.store?.dataDirectory;
+    return directory && directory !== path.join(this.userDataPath, 'data')
+      ? path.join(directory, 'contract-fee', 'attachments')
+      : path.join(this.userDataPath, 'contract-fee', 'attachments');
   }
 
   async selectAndReadExcel() {
@@ -39,16 +47,35 @@ class ContractFeeFileService {
     return { ok: true, data: this.readExcel(selected.filePaths[0]) };
   }
 
-  readExcel(value) {
+  readExcel(value, options = {}) {
     const filePath = requestedPath(value);
     if (!filePath) throw new TypeError('未指定 Excel 文件');
     const extension = path.extname(filePath).toLowerCase();
     if (!['.xlsx', '.xls', '.csv'].includes(extension)) throw new Error('请选择 .xlsx、.xls 或 .csv 表格文件');
-    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) throw new Error('表格中没有可读取的工作表');
-    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
-    return { ...parseContractFeeExcelGrid(grid), fileName: path.basename(filePath), sheetName };
+    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false, cellStyles: true });
+    if (!workbook.SheetNames.length) throw new Error('表格中没有可读取的工作表');
+    const fileName = path.basename(filePath);
+    const readSheet = (sheetName) => {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) throw new Error(`没有找到工作表“${sheetName}”`);
+      const grid = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '', raw: false });
+      const parsed = parseContractFeeExcelGrid(grid);
+      const widths = Array.isArray(worksheet['!cols']) ? worksheet['!cols'].map((column) => Number(column?.wch || column?.width || 0) || null) : [];
+      if (Array.isArray(parsed.outputColumns)) parsed.outputColumns = parsed.outputColumns.map((column, index) => ({ ...column, width: widths[index] || null }));
+      return { ...parsed, fileName, sheetName };
+    };
+    const selectedSheetName = String(options.sheetName || '').trim();
+    if (selectedSheetName) return readSheet(selectedSheetName);
+    if (workbook.SheetNames.length === 1) return readSheet(workbook.SheetNames[0]);
+    return {
+      requiresSheetSelection: true,
+      fileName,
+      sheetNames: workbook.SheetNames.slice(),
+      sheets: workbook.SheetNames.map((sheetName) => {
+        try { return readSheet(sheetName); }
+        catch (error) { return { fileName, sheetName, error: error.message, requiresMapping: true, rawGrid: [] }; }
+      }),
+    };
   }
 
   async selectAndReadDisbursementExcel() {
@@ -61,10 +88,24 @@ class ContractFeeFileService {
   readDisbursementExcel(value) {
     const filePath = requestedPath(value); if (!filePath) throw new TypeError('未指定 Excel 文件');
     if (!['.xlsx', '.xls', '.csv'].includes(path.extname(filePath).toLowerCase())) throw new Error('请选择 .xlsx、.xls 或 .csv 表格文件');
-    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false }); const sheetName = workbook.SheetNames[0];
-    if (!sheetName) throw new Error('表格中没有可读取的工作表');
-    const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
-    return { ...parseDisbursementExcelGrid(grid), fileName: path.basename(filePath), sheetName };
+    const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false });
+    if (!workbook.SheetNames.length) throw new Error('表格中没有可读取的工作表');
+    const fileName = path.basename(filePath);
+    const sheets = workbook.SheetNames.map((sheetName) => {
+      const grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
+      try {
+        const parsed = parseDisbursementExcelGrid(grid);
+        return { ...parsed, sheetName, sections: (parsed.sections || []).map((section) => ({ ...section, sheetName,
+          rows: section.rows.map((row) => ({ ...row, sheetName })) })) };
+      } catch (error) {
+        return { sheetName, error: error.message, rows: [], sections: [], rawGrid: grid, total: 0 };
+      }
+    });
+    const sections = sheets.flatMap((sheet) => sheet.sections || []);
+    const rows = sections.flatMap((section) => section.rows);
+    const first = sheets[0];
+    return { fileName, sheetName: first.sheetName, sheetNames: workbook.SheetNames.slice(), sheets, sections, rows, total: rows.length,
+      requiresMapping: !rows.length, columns: first.columns || [], rawGrid: first.rawGrid || [], excludedRows: sheets.flatMap((sheet) => sheet.excludedRows || []) };
   }
 
   async selectAndReadFarmlandSubsidyExcel() {
@@ -149,6 +190,72 @@ class ContractFeeFileService {
     return { ok: true, files, outputDirectory: resolvedDirectory };
   }
 
+  async exportContractFeeProjectWorkbook(value = {}) {
+    let outputDirectory = requestedPath(value.outputDirectory);
+    if (!outputDirectory) {
+      if (!this.dialog) throw new Error('当前环境无法选择导出文件夹');
+      const selected = await this.dialog.showOpenDialog({ title: '选择承包费成果表保存文件夹', properties: ['openDirectory', 'createDirectory'] });
+      if (selected.canceled || !selected.filePaths[0]) return { ok: false, canceled: true, file: null };
+      [outputDirectory] = selected.filePaths;
+    }
+    const batch = value.batch || {};
+    if (!Array.isArray(batch.groups) || !batch.groups.length) throw new Error('承包费项目没有可导出的组别');
+    const validation = ContractFeeModel.validateContractFeeDistributionBatch(batch);
+    if (!validation.ok) throw new Error(`承包费成果表尚不能导出：${validation.errors.join('；')}`);
+    const projectName = String(batch.projectName || batch.parcelName || '承包费项目');
+    const settings = batch.planSnapshot?.outputSettings || batch.outputSettings || {};
+    const title = String(settings.title || batch.title || `${projectName}发放明细表`);
+    const yuan = (cents) => Number(cents || 0) / 100;
+    const workbook = XLSX.utils.book_new(); const usedSheetNames = new Set();
+    const sheetName = (source) => {
+      const base = safeFilePart(source, '承包费').replace(/[\\/?*\[\]:]/gu, '-').slice(0, 28) || '承包费';
+      let candidate = base; let suffix = 2;
+      while (usedSheetNames.has(candidate)) candidate = `${base.slice(0, 25)}-${suffix++}`;
+      usedSheetNames.add(candidate); return candidate;
+    };
+    const summaryRows = [[`${batch.year || ''} 年${projectName}各组汇总表`], [`编制单位：${settings.organization || ''}　制表人：${settings.preparedBy || ''}　经办人：${settings.handledBy || ''}　审批人：${settings.approvedBy || ''}`], ['序号', '组别', '承包项目', '家庭数（户）', '计算方式', '计发依据合计', '参考单价（元）', '基础金额（元）', '尾差（元）', '最终合计（元）']];
+    batch.groups.forEach((group, index) => {
+      const active = (group.items || []).filter((item) => item.active !== false);
+      const basisLabel = group.allocationType === 'population' ? '按人口' : group.allocationType === 'acreage' ? '按亩数' : group.allocationType === 'fixed' ? '逐户固定金额' : '按自定义依据';
+      summaryRows.push([index + 1, group.groupName, projectName, active.length, basisLabel, Number(group.basisTotal || 0), yuan(group.referenceUnitPriceCents), yuan(group.baseAmountTotalCents), yuan(group.tailDifferenceCents), yuan(active.reduce((sum, item) => sum + Number(item.finalAmountCents || 0), 0))]);
+    });
+    summaryRows.push(['合计', '', projectName, batch.groups.reduce((sum, group) => sum + (group.items || []).filter((item) => item.active !== false).length, 0), '', '', '', yuan(batch.groups.reduce((sum, group) => sum + Number(group.baseAmountTotalCents || 0), 0)), yuan(batch.groups.reduce((sum, group) => sum + Number(group.tailDifferenceCents || 0), 0)), yuan(validation.totalCents)]);
+    const summarySheet = XLSX.utils.aoa_to_sheet(summaryRows); summarySheet['!cols'] = [{ wch: 8 }, { wch: 13 }, { wch: 22 }, { wch: 13 }, { wch: 16 }, { wch: 16 }, { wch: 17 }, { wch: 17 }, { wch: 13 }, { wch: 17 }];
+    XLSX.utils.book_append_sheet(workbook, summarySheet, sheetName('各组汇总表'));
+    for (const group of batch.groups) {
+      const sourceColumns = Array.isArray(group.outputTemplateSnapshot?.columns) ? structuredClone(group.outputTemplateSnapshot.columns) : [];
+      const detailColumns = ContractFeeModel.contractFeeOutputColumns(group, { signatureDetail: true });
+      const headers = detailColumns.map((column, index) => String(column.header || `未命名列${index + 1}`));
+      const rows = [[title], [`年度：${batch.year || ''}　项目：${projectName}　组别：${group.groupName || ''}`], [`编制单位：${settings.organization || ''}　制表人：${settings.preparedBy || ''}　经办人：${settings.handledBy || ''}　审批人：${settings.approvedBy || ''}`], headers];
+      const active = (group.items || []).filter((item) => item.active !== false);
+      active.forEach((item, index) => rows.push(detailColumns.map((column) => ContractFeeModel.contractFeeOutputValue(group, item, column, index))));
+      const finalTotal = active.reduce((sum, item) => sum + Number(item.finalAmountCents || 0), 0);
+      const totalValue = (column) => {
+        if (column.fieldKey === 'sequence') return '合计';
+        if (column.fieldKey === 'groupName') return sourceColumns.length ? '' : group.groupName;
+        if (['population', 'acreage', 'basis'].includes(column.fieldKey)) return Number(group.basisTotal || 0);
+        if (column.fieldKey === 'baseAmount') return yuan(group.baseAmountTotalCents);
+        if (column.fieldKey === 'tailAmount') return yuan(group.tailDifferenceCents);
+        if (column.fieldKey === 'amount') return yuan(finalTotal);
+        return '';
+      };
+      rows.push(detailColumns.map(totalValue));
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+      worksheet['!cols'] = detailColumns.map((column, index) => ({ wch: Number(column.width || 0) || (/银行卡|账号/u.test(headers[index]) ? 24 : /备注|签字|签章/u.test(headers[index]) ? 18 : /姓名|项目/u.test(headers[index]) ? 14 : 12) }));
+      const cardColumns = detailColumns.map((column, index) => column.fieldKey === 'bankCard' ? index : -1).filter((index) => index >= 0);
+      active.forEach((_item, rowIndex) => cardColumns.forEach((columnIndex) => {
+        const cell = worksheet[XLSX.utils.encode_cell({ r: rowIndex + 4, c: columnIndex })];
+        if (cell) { cell.t = 's'; cell.v = String(cell.v ?? ''); cell.z = '@'; }
+      }));
+      worksheet['!freeze'] = { xSplit: 0, ySplit: 4 };
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName(`${group.groupName || '未分组'}签字明细`));
+    }
+    const directory = path.resolve(outputDirectory); await fs.mkdir(directory, { recursive: true });
+    const fileName = `${safeFilePart(`${batch.year || '年度'}-${projectName}-承包费成果表`)}.xlsx`; const filePath = await availableFilePath(directory, fileName);
+    XLSX.writeFile(workbook, filePath);
+    return { ok: true, file: { path: filePath, fileName, sheetNames: workbook.SheetNames }, outputDirectory: directory };
+  }
+
   async exportTemplateDisbursementWorkbook(value = {}) {
     let outputDirectory = requestedPath(value.outputDirectory);
     if (!outputDirectory) {
@@ -177,7 +284,7 @@ class ContractFeeFileService {
         : batch.templateKey === 'public_service'
           ? [index + 1, item.name || '', item.responsibilityArea || '', String(item.bankCard || ''), yuan(item.amountCents), item.remark || '']
           : [index + 1, item.name || '', item.role || '', yuan(item.unitPriceCents), item.quantity || '', yuan(item.deductionsCents), yuan(item.amountCents), String(item.bankCard || ''), item.remark || '']);
-    const workbenchColumns = batch.visualLayout ? [{ key: '_sequence', label: '序号' }, ...WorkbenchModel.columns(template, batch.templateKey)] : null;
+    const workbenchColumns = batch.visualLayout ? WorkbenchModel.printColumns(template, batch.templateKey, batch.visualLayout) : null;
     if (workbenchColumns) {
       headers = workbenchColumns.map((c) => batch.visualLayout.labels?.[c.key] || c.label);
       rows = batch.items.map((item, index) => {
@@ -187,12 +294,14 @@ class ContractFeeFileService {
     }
     const totalCents = batch.items.reduce((sum, item) => sum + Number(item.amountCents || 0), 0);
     const title = String(batch.title || template.title || '资金发放表');
-    const heading = [[title], [`编制单位：${batch.villageName || ''}`], [`发放期间：${batch.period || ''}　发放日期：${batch.batchDate || ''}`], []];
-    const worksheet = XLSX.utils.aoa_to_sheet(heading); XLSX.utils.sheet_add_aoa(worksheet, [headers, ...rows, ['合计', ...Array(Math.max(0, headers.length - 3)).fill(''), yuan(totalCents), '']], { origin: 'A5' });
+    const dateHeading = `${batch.visualLayout?.showPeriod === false ? '' : `发放期间：${batch.period || ''}　`}发放日期：${batch.batchDate || ''}`;
+    const heading = [[title], [`编制单位：${batch.villageName || ''}`], [dateHeading], ...(batch.visualLayout?.headers || []).map((h) => [`${h.label}：${h.value || ''}`]), []];
+    const totalRow = Array(headers.length).fill(''); totalRow[0] = headers.length === 1 ? `合计 ¥${yuan(totalCents).toFixed(2)}` : '合计'; if (headers.length > 1) totalRow[headers.length - 1] = yuan(totalCents);
+    const worksheet = XLSX.utils.aoa_to_sheet(heading); XLSX.utils.sheet_add_aoa(worksheet, [headers, ...rows, totalRow], { origin: `A${heading.length + 1}` });
     worksheet['!cols'] = headers.map((header) => ({ wch: /卡|账号/u.test(header) ? 24 : /事项|区域|备注/u.test(header) ? 22 : 14 }));
     if (workbenchColumns) {
       worksheet['!cols'] = workbenchColumns.map((c, index) => batch.visualLayout.widths?.[c.key] ? { wpx: Number(batch.visualLayout.widths[c.key]) * 96 / 25.4 } : worksheet['!cols'][index]);
-      worksheet['!rows'] = [...Array(5).fill(null), ...batch.items.map((item) => ({ hpt: Number(batch.visualLayout.heights?.[item.id] || batch.visualLayout.rowHeight || 8) * 72 / 25.4 }))];
+      worksheet['!rows'] = [...Array(heading.length + 1).fill(null), ...batch.items.map((item) => ({ hpt: Number(batch.visualLayout.heights?.[item.id] || batch.visualLayout.rowHeight || 8) * 72 / 25.4 }))];
     }
     const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(workbook, worksheet, '发放表');
     const directory = path.resolve(outputDirectory); await fs.mkdir(directory, { recursive: true });
@@ -227,7 +336,7 @@ class ContractFeeFileService {
     const groupSummary = [[`${title}分村汇总表`], [`${ledger.villageName || ''}（盖章）`], ['序号', '村名', '补贴组数（个）', '补贴户数（户）', '土地确权耕地面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积（亩）', '补贴金额（元）', '备注']];
     [...groupedHouseholds].forEach(([groupName, rows], index) => groupSummary.push([index + 1, ledger.villageName, groupName, rows.length, rows.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), rows.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), rows.reduce((sum, row) => sum + yuan(row.amountCents), 0), '']));
     const cadreSummary = [[`${title}村干部分村汇总表`], [`${ledger.villageName || ''}（盖章）`], ['序号', '村名', '补贴户数（个）', '补贴依据面积（亩）', '采用排除法排除的面积（亩）', '应享受补贴面积（亩）', '补贴金额（元）', '备注'], [1, ledger.villageName, cadres.length, cadres.reduce((sum, row) => sum + Number(row.ownershipArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.excludedArea || 0), 0), cadres.reduce((sum, row) => sum + Number(row.eligibleArea || 0), 0), cadres.reduce((sum, row) => sum + yuan(row.amountCents), 0), '']];
-    const paymentRows = [[`${ledger.streetName || ''} ${ledger.year || ''}年耕地地力保护补贴兑付清册`], ['序号', '户主姓名', '身份证号', '开户行', '一卡通号', '村', '村民组', '应享受补贴面积（亩）', '补贴标准（元/亩）', '补贴金额（元）', '备注']];
+    const paymentRows = [[`${ledger.streetName || ''} ${ledger.year || ''}年耕地地力保护补贴兑付清册`], ['序号', '户主姓名', '身份证号', '开户行', '一卡通号', '村', "居民组", '应享受补贴面积（亩）', '补贴标准（元/亩）', '补贴金额（元）', '备注']];
     records.forEach((row, index) => paymentRows.push([index + 1, row.name, row.idCard, row.bankName, row.bankCard, ledger.villageName, row.groupName, row.eligibleArea, yuan(row.standardCents), yuan(row.amountCents), row.remark]));
     for (const [name, rows] of [['附件1-1', attachmentRows], ['附件1-4', cadreRows], ['附件2-1', groupSummary], ['附件2-4', cadreSummary], ['地力补贴兑付清册', paymentRows]]) {
       const sheet = XLSX.utils.aoa_to_sheet(rows); sheet['!cols'] = Array.from({ length: Math.max(...rows.map((row) => row.length)) }, () => ({ wch: 18 })); XLSX.utils.book_append_sheet(book, sheet, name);

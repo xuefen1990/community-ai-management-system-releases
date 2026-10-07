@@ -7,14 +7,23 @@ const test = require('node:test');
 
 const appRoot = path.resolve(__dirname, '..', '..');
 
-test('renderer loads the dual AI settings adapter', async () => {
-  const html = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'index.html'), 'utf8');
-  assert.match(html, /<script src="js\/ai-settings-ui\.js"><\/script>/u);
+test('foundation loads the dual AI settings adapter', async () => {
+  const extensions = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'extensions.mjs'), 'utf8');
+  const assistant = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'floating-assistant.mjs'), 'utf8');
+  assert.match(extensions, /loadScript\('js\/ai-settings-ui\.js'\)/u);
+  assert.match(assistant, /loadScript\('js\/ai-settings-ui\.js'\)/u);
   const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'ai-settings-ui.js'), 'utf8');
   assert.match(source, /自动：本地优先/u);
   assert.match(source, /importLocalModel/u);
   assert.match(source, /chatWithAi/u);
   assert.match(source, /communityAiTestStatus/u);
+  assert.match(source, /AI 存储与索引/u);
+  assert.match(source, /getAiStorageOverview/u);
+  assert.match(source, /cleanAiTemporaryCache/u);
+  assert.match(source, /rebuildAiFileIndex/u);
+  assert.match(source, /AI 主动核查/u);
+  assert.match(source, /scanAiAnomalies/u);
+  assert.match(source, /updateAiAnomalyFinding/u);
   assert.match(source, /appendConfirmationCard/u);
   assert.match(source, /确认执行/u);
   assert.match(source, /继续执行/u);
@@ -55,7 +64,42 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.match(source, /本次未能完成查询/u);
   assert.match(source, /系统未进行任何修改/u);
   assert.match(source, /服务暂不可用/u);
-  assert.match(source, /converseWithAiAssistant\(conversation\)/u);
+  assert.match(source, /converseWithAiAssistant\(\{ conversationId, conversationSummary, messages: conversation, attachmentIds: pendingAttachments\.map\(file => file\.id\) \}\)/u);
+  assert.match(source, /selectAiAssistantFiles/u);
+  assert.match(source, /appendFileRecognitionCard/u);
+  assert.match(source, /applyAiFileCategory/u);
+  assert.match(source, /undoAiFileCategory/u);
+  assert.match(source, /response\.data\?\.documentCategoryChanged === true/u);
+  assert.match(source, /await window\.loadDatabase\(\)/u);
+  assert.match(source, /创建“\$\{recommendation\.name\}”并归档/u);
+  assert.match(source, /撤销本次归档/u);
+  assert.match(source, /整理为证明模板/u);
+  assert.match(source, /识别图片版面/u);
+  assert.match(source, /在线视觉模型/u);
+  assert.match(source, /describeAiImage/u);
+  assert.match(source, /复用现有模板/u);
+  assert.match(source, /更新为新版本/u);
+  assert.match(source, /previewAiFileImport/u);
+  assert.match(source, /confirmAiFileImport/u);
+  assert.match(source, /prepareAiBusinessFile/u);
+  assert.match(source, /带入资金发放中心/u);
+  assert.match(source, /资料冲突不会覆盖/u);
+  assert.match(source, /appendTaskProgressCard/u);
+  assert.match(source, /已完成 \$\{completed\}\/\$\{task\.steps\.length\} 步/u);
+  assert.match(source, /restoreAssistantConversation/u);
+  assert.match(source, /listAiAssistantFiles\(\{ limit: 100 \}\)/u);
+  assert.match(source, /compactRestoredAssistantMessage/u);
+  assert.match(source, /识别和归档结果请查看电子档案柜/u);
+  assert.match(source, /未登记的 AI 工具：document\.category-assign/u);
+  assert.match(source, /saveAiAssistantConversation/u);
+  assert.match(source, /AI 长期记忆/u);
+  assert.match(source, /本次消耗和账户余量显示在对话框底部/u);
+  assert.doesNotMatch(source, /confirmEstimatedUsage|estimateAiUsage/u, '主 AI 对话不得调用 Token 估算或确认流程');
+  assert.doesNotMatch(source, /本次实际使用.*Token/u);
+  assert.doesNotMatch(source, /本次预计最多使用约/u);
+  assert.doesNotMatch(source, /confirmedUsageSignatures/u);
+  assert.match(source, /listAiAssistantMemories/u);
+  assert.match(source, /deleteAiAssistantMemory/u);
   assert.match(source, /typeof preparedContent === 'string' \? preparedContent : ''/u);
   assert.match(source, /\['aiDesktopSendBtn', \(\) => sendAiMessage\(\)\]/u);
   assert.doesNotMatch(source, /String\(preparedContent \|\| input\.value/u);
@@ -70,4 +114,44 @@ test('renderer loads the dual AI settings adapter', async () => {
   assert.doesNotMatch(source, /new MutationObserver\(\(\) => \{ if \(drawer\.classList\.contains\('hidden'\)\) resetPosition\(\); \}\)/u);
   assert.doesNotMatch(source, /finally\s*\{\s*event\.currentTarget/u);
   assert.doesNotMatch(source, /ipcRenderer|require\(/u);
+});
+
+test('AI 悬浮窗分隔顶部、滚动消息区和紧凑输入区', async () => {
+  const floating = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'floating-assistant.mjs'), 'utf8');
+  const ui = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'ai-settings-ui.js'), 'utf8');
+  const styles = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'assistant-extension.css'), 'utf8');
+
+  assert.match(floating, /ai-assistant-title-row/u);
+  assert.match(floating, /ai-assistant-header-actions/u);
+  assert.match(floating, /ai-assistant-shortcuts/u);
+  assert.match(floating, /await tokenStatus\?\.refresh\(\)/u, 'AI 助理首次打开时读取账户共享余量');
+  assert.match(floating, /data-ai-token-status/u);
+  assert.match(styles, /\.foundation-floating-assistant \.ai-drawer-header[^}]*height:auto/u);
+  assert.match(styles, /\.foundation-floating-assistant \.foundation-assistant-chat[^}]*min-height:0/u);
+  assert.match(styles, /\.foundation-floating-assistant \.ai-drawer-footer[^}]*flex:0 0 auto/u);
+  assert.match(ui, /\['completed', 'cancelled', 'undone'\]\.includes\(task\.status\)/u);
+  assert.match(ui, /ai-task-progress-toggle/u);
+  assert.match(ui, /Math\.min\(input\.scrollHeight, 92\)/u);
+});
+
+test('AI 悬浮窗使用图标式文件、图片和扫描材料入口', async () => {
+  const ui = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'ai-settings-ui.js'), 'utf8');
+  const styles = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'assistant-extension.css'), 'utf8');
+
+  assert.match(ui, /dataset\.aiAttachmentKind/u);
+  assert.match(ui, /selectionKind/u);
+  assert.match(ui, /上传文件/u);
+  assert.match(ui, /上传图片/u);
+  assert.match(ui, /扫描材料/u);
+  assert.doesNotMatch(ui, /先识别和核对，确认后才导入/u);
+  assert.match(styles, /\.ai-attachment-tool-button/u);
+  assert.match(styles, /\.ai-attachment-icon/u);
+  assert.match(styles, /\.ai-attachment-chip/u);
+  assert.match(styles, /translateY\(-1px\)/u);
+  assert.match(styles, /overflow-x:auto/u);
+  assert.match(styles, /prefers-reduced-motion/u);
+  assert.match(styles, /\.ai-file-media-preview[^}]*width:72px!important/u);
+  assert.match(styles, /\.ai-file-media-preview img[^}]*object-fit:cover!important/u);
+  assert.match(ui, /file\.documentClassification\?\.name \|\| '材料已保存'/u);
+  assert.doesNotMatch(ui, /请检查我刚上传的文件，并告诉我识别结果和下一步需要核对什么/u);
 });

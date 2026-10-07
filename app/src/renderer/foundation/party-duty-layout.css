@@ -1,0 +1,22 @@
+/* Local shell spacing: keep controls clear of the floating assistant. */
+.party-main-unified-card[data-v-cc5d17c0] .cwt-pagination-bar {
+  padding-right: 150px;
+  flex-wrap: wrap;
+}
+.side-footer[data-v-1bedb834] {
+  padding-right: 150px;
+  flex-wrap: wrap;
+}
+@media (max-width: 1100px) {
+  .duty-stage-grid[data-v-ea987fdf] {
+    grid-auto-rows: max-content;
+    align-content: start;
+    padding-bottom: 80px;
+  }
+  .calendar-panel-wrapper[data-v-ea987fdf] { height: 660px; }
+  .side-panel-wrapper[data-v-ea987fdf] { height: 620px; }
+  .calendar-grid[data-v-08e16645] { grid-auto-rows: minmax(90px, 1fr); }
+  .duty-toolbar-card[data-v-ea987fdf], .header-main-row[data-v-ea987fdf] {
+    flex-wrap: wrap;
+  }
+}

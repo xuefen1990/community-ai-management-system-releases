@@ -36,3 +36,18 @@ test('remembered login degrades to a manual password when safe storage is unavai
   assert.equal((await store.save({ phone: '13800138000', password: 'secret88' })).saved, false);
   assert.match((await store.save({ phone: '13800138000', password: 'secret88' })).warning, /安全存储/u);
 });
+
+test('server credentials remain isolated across switching, selective clearing and reload', async t => {
+  const userDataPath = await fs.mkdtemp(path.join(os.tmpdir(), 'login-isolation-'));
+  t.after(() => fs.rm(userDataPath, { recursive:true, force:true }));
+  const store = new RememberedLoginStore({userDataPath, safeStorage:fakeSafeStorage()});
+  await store.save({phone:'13800138000',password:'first',serverUrl:'https://first.test/'});
+  await store.save({phone:'13900139000',password:'second',serverUrl:'https://second.test'});
+  const restored = new RememberedLoginStore({userDataPath,safeStorage:fakeSafeStorage()});
+  assert.equal((await restored.load({serverUrl:'https://first.test'})).password,'first');
+  assert.equal((await restored.load({serverUrl:'https://second.test'})).password,'second');
+  assert.equal((await restored.load({serverUrl:'https://third.test'})).password,'');
+  await restored.clear({serverUrl:'https://second.test'});
+  assert.equal((await restored.load({serverUrl:'https://second.test'})).password,'');
+  assert.equal((await restored.load({serverUrl:'https://first.test'})).password,'first');
+});

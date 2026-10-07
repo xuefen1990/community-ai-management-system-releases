@@ -21,7 +21,7 @@ test('first read creates an empty isolated database on disk', async (t) => {
   const store = await makeStore(t);
   const database = await store.read();
 
-  assert.equal(database.settings.appSubtitle, '社区AI管理系统');
+  assert.equal(database.settings.appSubtitle, '村居AI管理系统');
   assert.deepEqual(database.personnel, []);
   assert.deepEqual(database.landParcel, []);
   assert.deepEqual(database.resourceContracts, []);
@@ -29,6 +29,8 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.deepEqual(database.contractFeeBatches, []);
   assert.deepEqual(database.contractFeeReceipts, []);
   assert.deepEqual(database.contractFeeAdvances, []);
+  assert.deepEqual(database.contractFeeDistributionPlans, []);
+  assert.deepEqual(database.contractFeeDistributionBatches, []);
   assert.deepEqual(database.documentDrafts, []);
   assert.deepEqual(database.documentVersions, []);
   assert.deepEqual(database.documentReferences, []);
@@ -40,6 +42,8 @@ test('first read creates an empty isolated database on disk', async (t) => {
   assert.deepEqual(database.workProgressRecords, []);
   assert.deepEqual(database.workResourceEntries, []);
   assert.deepEqual(database.workAcceptances, []);
+  assert.deepEqual(database.aiAssistantTasks, []);
+  assert.deepEqual(database.aiFileIndexEntries, []);
   assert.equal(JSON.parse(await fs.readFile(store.databasePath, 'utf8')).version, 4);
 });
 
@@ -54,10 +58,13 @@ test('older empty databases are normalized for the compatibility renderer', asyn
   assert.equal(database.version, 4);
   assert.deepEqual(database.resourceContracts, []);
   assert.deepEqual(database.contractFeeBatches, []);
+  assert.deepEqual(database.contractFeeDistributionPlans, []);
+  assert.deepEqual(database.contractFeeDistributionBatches, []);
   assert.deepEqual(database.documentDrafts, []);
   assert.deepEqual(database.documentDraftMessages, []);
   assert.deepEqual(database.writingProfiles, []);
   assert.deepEqual(database.workItems, []);
+  assert.deepEqual(database.aiAssistantTasks, []);
 });
 
 test('atomic updates serialize concurrent domain mutations', async (t) => {

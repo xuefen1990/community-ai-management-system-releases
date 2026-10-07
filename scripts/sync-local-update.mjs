@@ -1,41 +1,48 @@
 #!/usr/bin/env node
 
 import { openAsBlob } from 'node:fs';
-import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
-import os from 'node:os';
+import { access, readFile } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
 
 const projectRoot = path.resolve(import.meta.dirname, '..');
 const appRoot = path.join(projectRoot, 'app');
 const manifest = JSON.parse(await readFile(path.join(appRoot, 'package.json'), 'utf8'));
 const version = process.argv[2] || manifest.version;
-const tag = `v${version}`;
-const zipName = `community-ai-management-system-${version}-arm64.zip`;
+const platform = process.argv[3] || 'darwin-arm64';
+if (!['darwin-arm64', 'win32-x64'].includes(platform)) throw new Error(`不支持的更新平台：${platform}`);
+const packageType = platform === 'win32-x64' ? 'exe' : 'zip';
+const packageName = platform === 'win32-x64'
+  ? `community-ai-management-system-${version}-win-x64.exe`
+  : `community-ai-management-system-${version}-arm64.zip`;
+const packagePath = path.join(appRoot, 'release', platform === 'win32-x64' ? 'win-x64' : '', packageName);
+const blockMapPath = `${packagePath}.blockmap`;
 const notesPath = path.join(projectRoot, 'docs', 'releases', `${version}.md`);
-const repository = 'xuefen1990/community-ai-management-system-releases';
-const backendUrl = normalizeBackendUrl(process.env.COMMUNITY_AI_BACKEND_URL || 'http://127.0.0.1:3000');
-const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE;
-const adminPassword = process.env.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD;
+const backendUrl = normalizeBackendUrl(process.env.COMMUNITY_AI_BACKEND_URL || 'https://xuefeng0901.cn');
+const keychainService = 'community-ai-management-system-local-update';
+const keychainAccount = 'release-publisher';
+const keychainCredentials = readKeychainCredentials();
+// 兼容独立更新配置与本机后端现有的管理员配置，均不把凭据写入脚本。
+const adminPhone = process.env.COMMUNITY_AI_BACKEND_ADMIN_PHONE || process.env.ADMIN_PHONE || keychainCredentials.phone;
+const adminPassword = process.env.COMMUNITY_AI_BACKEND_ADMIN_PASSWORD || process.env.ADMIN_PASSWORD || keychainCredentials.password;
+
+function readKeychainCredentials() {
+  if (process.platform !== 'darwin') return {};
+  const result = spawnSync('security', ['find-generic-password', '-s', keychainService, '-a', keychainAccount, '-w'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  if (result.status !== 0 || !result.stdout) return {};
+  try {
+    const value = JSON.parse(result.stdout.trim());
+    return { phone: String(value.phone || '').trim(), password: String(value.password || '') };
+  } catch {
+    return {};
+  }
+}
 
 function normalizeBackendUrl(value) {
   const url = new URL(value);
   if (!['http:', 'https:'].includes(url.protocol)) throw new Error('本机账号服务器地址必须以 http:// 或 https:// 开头');
   return url.toString().replace(/\/$/u, '');
-}
-
-function run(command, args, { capture = false, cwd = projectRoot } = {}) {
-  const result = spawnSync(command, args, {
-    cwd,
-    encoding: 'utf8',
-    stdio: capture ? 'pipe' : 'inherit',
-  });
-  if (result.status !== 0) {
-    const detail = capture ? (result.stderr || result.stdout).trim() : '';
-    throw new Error(`${command} 执行失败${detail ? `：${detail}` : ''}`);
-  }
-  return capture ? result.stdout.trim() : '';
 }
 
 async function requireFile(filePath, label) {
@@ -48,14 +55,18 @@ async function requireFile(filePath, label) {
 
 function requireAdminCredentials() {
   const missing = [
-    ['COMMUNITY_AI_BACKEND_ADMIN_PHONE', adminPhone],
-    ['COMMUNITY_AI_BACKEND_ADMIN_PASSWORD', adminPassword],
+    ['管理员手机号', adminPhone],
+    ['管理员密码', adminPassword],
   ].filter(([, value]) => !value).map(([name]) => name);
   if (missing.length) throw new Error(`缺少本机同步配置：${missing.join('、')}`);
 }
 
 async function getLatestVersion() {
-  const response = await fetch(new URL('/api/update/check?version=0.0.0&platform=darwin-arm64&channel=stable', backendUrl));
+  const url = new URL('/api/update/check', backendUrl);
+  url.searchParams.set('version', '0.0.0');
+  url.searchParams.set('platform', platform);
+  url.searchParams.set('channel', 'stable');
+  const response = await fetch(url);
   if (!response.ok) throw new Error(`本机更新服务校验失败（${response.status}）`);
   return response.json();
 }
@@ -72,15 +83,19 @@ async function login() {
   return payload.token;
 }
 
-async function publish({ zipPath, releaseNotes, githubReleaseUrl, token }) {
+async function publish({ releaseNotes, token }) {
   const form = new FormData();
   form.set('version', version);
-  form.set('platform', 'darwin-arm64');
+  form.set('platform', platform);
   form.set('channel', 'stable');
   form.set('releaseNotes', releaseNotes);
-  form.set('githubReleaseUrl', githubReleaseUrl);
-  form.set('packageType', 'zip');
-  form.set('file', await openAsBlob(zipPath, { type: 'application/zip' }), zipName);
+  // 更新服务直接托管安装包；不依赖也不触发 GitHub Release。
+  form.set('githubReleaseUrl', '');
+  form.set('packageType', packageType);
+  form.set('file', await openAsBlob(packagePath, { type: platform === 'win32-x64' ? 'application/octet-stream' : 'application/zip' }), packageName);
+  if (['win32-x64', 'darwin-arm64'].includes(platform)) {
+    form.set('blockmap', await openAsBlob(blockMapPath, { type: 'application/octet-stream' }), `${packageName}.blockmap`);
+  }
 
   const response = await fetch(new URL('/api/update/publish', backendUrl), {
     method: 'POST',
@@ -95,26 +110,16 @@ async function publish({ zipPath, releaseNotes, githubReleaseUrl, token }) {
 
 requireAdminCredentials();
 await requireFile(notesPath, '发行说明');
+await requireFile(packagePath, '应用内更新安装包');
+await requireFile(blockMapPath, '差分更新块索引');
 const existing = await getLatestVersion();
 if (existing.latestVersion === version) {
-  console.log(JSON.stringify({ version, backendUrl, latestVersion: version, alreadySynced: true }, null, 2));
+  console.log(JSON.stringify({ version, platform, backendUrl, latestVersion: version, alreadySynced: true }, null, 2));
   process.exit(0);
 }
 
-const temporaryDirectory = await mkdtemp(path.join(os.tmpdir(), 'community-ai-update-'));
-try {
-  run('gh', ['release', 'download', tag, '--pattern', zipName, '--dir', temporaryDirectory, '--repo', repository]);
-  const githubReleaseUrl = run('gh', ['release', 'view', tag, '--json', 'url', '--jq', '.url', '--repo', repository], { capture: true });
-  const token = await login();
-  await publish({
-    zipPath: path.join(temporaryDirectory, zipName),
-    releaseNotes: (await readFile(notesPath, 'utf8')).trim(),
-    githubReleaseUrl,
-    token,
-  });
-  const verified = await getLatestVersion();
-  if (verified.latestVersion !== version) throw new Error(`本机更新记录校验失败：期望 ${version}，实际 ${verified.latestVersion || '无'}`);
-  console.log(JSON.stringify({ version, backendUrl, latestVersion: verified.latestVersion, githubReleaseUrl, alreadySynced: false }, null, 2));
-} finally {
-  await rm(temporaryDirectory, { recursive: true, force: true });
-}
+const token = await login();
+await publish({ releaseNotes: (await readFile(notesPath, 'utf8')).trim(), token });
+const verified = await getLatestVersion();
+if (verified.latestVersion !== version) throw new Error(`本机更新记录校验失败：期望 ${version}，实际 ${verified.latestVersion || '无'}`);
+console.log(JSON.stringify({ version, platform, backendUrl, latestVersion: verified.latestVersion, alreadySynced: false }, null, 2));

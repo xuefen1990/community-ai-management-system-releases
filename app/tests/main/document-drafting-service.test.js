@@ -46,7 +46,9 @@ test('creating a draft stores owner, template snapshot, visibility, and first ve
   assert.equal(result.document.currentVersionId, result.version.id);
   assert.equal(harness.database.documentVersions.length, 1);
   assert.equal(result.document.layout.bodyFont, 'fangsong');
-  assert.equal(result.version.layoutSnapshot.signatureUnit, '陆庄社区居民委员会');
+  assert.equal(result.version.layoutSnapshot.signatureUnit, '');
+  assert.equal(result.document.layout.issuedDate, '2026-08-13');
+  assert.equal(result.version.layoutSnapshot.issuedDate, '2026-08-13');
 });
 
 test('new documents inherit the previous saved layout without copying content', async () => {
@@ -197,12 +199,29 @@ test('report generation applies the reference addressee and signature structure 
   const html = structuredDocumentHtml({
     documentKind: 'report', title: '关于申请费用的请示',
     documentText: '关于申请费用的请示\n\n晓店街道办事处：\n\n现申请拨付有关费用。\n\n妥否，请批示。\n\n陆庄社区居民委员会\n\n2026年8月14日',
-    layout: { preset: 'request' }, fields: {}, now: new Date('2026-08-14T08:00:00.000Z'),
+    layout: { preset: 'request', addressee: '晓店街道办事处', signatureUnit: '幸福社区居民委员会', issuedDate: '2026-09-21' }, fields: {}, now: new Date('2026-08-14T08:00:00.000Z'),
   });
   assert.equal((html.match(/data-doc-role="title"/gu) || []).length, 1);
-  assert.equal((html.match(/陆庄社区居民委员会/gu) || []).length, 1);
+  assert.equal((html.match(/幸福社区居民委员会/gu) || []).length, 1);
   assert.match(html, /data-doc-role="addressee">晓店街道办事处：/u);
-  assert.match(html, /data-doc-role="date">2026年8月14日/u);
+  assert.match(html, /data-doc-role="date">2026年9月21日/u);
+});
+
+test('opening an older report recovers its saved footer date from document HTML', async () => {
+  const harness = makeHarness();
+  const created = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  await harness.service.databaseStore.update((database) => {
+    const document = database.documentDrafts.find((item) => item.id === created.document.id);
+    const version = database.documentVersions.find((item) => item.id === created.version.id);
+    delete document.layout.issuedDate;
+    delete version.layoutSnapshot.issuedDate;
+    document.workingContentHtml = '<h1 data-doc-role="title">旧报告</h1><p data-doc-role="signature">原署名</p><p data-doc-role="date">2025年12月6日</p>';
+    version.contentHtml = document.workingContentHtml;
+  });
+
+  const reopened = await harness.service.getDocument(created.document.id);
+  assert.equal(reopened.document.layout.issuedDate, '2025-12-06');
+  assert.equal(reopened.versions[0].layoutSnapshot.issuedDate, '2025-12-06');
 });
 
 test('direct drafting creates a draft and generates the first version without storing chat messages', async () => {

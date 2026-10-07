@@ -178,11 +178,12 @@ function runXml(run, block, layout) {
 function paragraphXml(block, layout) {
   const role = block.role || 'body';
   const line = Math.round(layout.lineSpacing * 20);
+  const titleLine = Math.round(Math.max(layout.lineSpacing, layout.titleSize * 1.2) * 20);
   const alignment = block.align || (role === 'title' ? 'center' : ['signature', 'date'].includes(role) ? 'right' : 'left');
   const shouldIndent = ['body', 'closing'].includes(role) && block.tag !== 'li';
   const spacing = role === 'title'
-    ? `<w:spacing w:line="${line}" w:lineRule="exact" w:after="${line}"/>`
-    : `<w:spacing w:line="${line}" w:lineRule="exact" w:before="${role === 'signature' ? line * 2 : 0}" w:after="0"/>`;
+    ? `<w:spacing w:line="${titleLine}" w:lineRule="exact" w:after="${line}"/>`
+    : `<w:spacing w:line="${line}" w:lineRule="exact" w:before="${role === 'signature' ? Math.round(line * layout.signatureGapLines) : 0}" w:after="0"/>`;
   const indent = shouldIndent ? `<w:ind w:firstLine="${Math.round(layout.bodySize * layout.firstLineChars * 20)}"/>` : '';
   return `<w:p><w:pPr>${spacing}${indent}<w:jc w:val="${alignment}"/></w:pPr>${block.runs.map((run) => runXml(run, block, layout)).join('')}</w:p>`;
 }
@@ -220,7 +221,7 @@ function printableHtml({ title, contentHtml, contentText, layout }) {
   if (!/<h1\b[^>]*data-doc-role="title"/iu.test(body) && comparableText(plain) !== comparableText(title)) body = `<h1 data-doc-role="title">${xmlEscape(title)}</h1>${body}`;
   const margins = normalizedLayout.margins;
   const fontRules = Object.keys(FONT_NAMES).map((key) => `[data-doc-font="${key}"]{font-family:${fontCss(key)}}`).join('');
-  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm}body{margin:0;color:#111;font-family:${fontCss(normalizedLayout.bodyFont)};font-size:${normalizedLayout.bodySize}pt;line-height:${normalizedLayout.lineSpacing}pt}h1[data-doc-role="title"]{margin:0 0 ${normalizedLayout.lineSpacing}pt;text-align:center;font-family:${fontCss(normalizedLayout.titleFont)};font-size:${normalizedLayout.titleSize}pt;line-height:${normalizedLayout.lineSpacing}pt;font-weight:${normalizedLayout.titleBold ? 700 : 400}}p{margin:0;text-indent:${normalizedLayout.firstLineChars}em}p[data-doc-role="addressee"],p[data-doc-role="signature"],p[data-doc-role="date"]{text-indent:0}p[data-doc-role="signature"]{margin-top:${normalizedLayout.lineSpacing * 2}pt;text-align:right}p[data-doc-role="date"]{text-align:right}[data-doc-align="left"]{text-align:left}[data-doc-align="center"]{text-align:center}[data-doc-align="right"]{text-align:right}[data-doc-align="justify"]{text-align:justify}${fontRules}[data-doc-size]{line-height:inherit}${[9,10.5,12,14,15,16,18,22,24,26,28,36,42].map((size) => `[data-doc-size="${size}"]{font-size:${size}pt}`).join('')}ul,ol{margin:0;padding-left:2em}</style></head><body>${body}</body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><style>@page{size:A4;margin:${margins.top}mm ${margins.right}mm ${margins.bottom}mm ${margins.left}mm}body{margin:0;color:#111;font-family:${fontCss(normalizedLayout.bodyFont)};font-size:${normalizedLayout.bodySize}pt;line-height:${normalizedLayout.lineSpacing}pt}h1[data-doc-role="title"]{margin:0 0 ${normalizedLayout.lineSpacing}pt;text-align:center;font-family:${fontCss(normalizedLayout.titleFont)};font-size:${normalizedLayout.titleSize}pt;line-height:${Math.max(normalizedLayout.lineSpacing, normalizedLayout.titleSize * 1.2)}pt;font-weight:${normalizedLayout.titleBold ? 700 : 400}}p{margin:0;text-indent:${normalizedLayout.firstLineChars}em}p[data-doc-role="addressee"],p[data-doc-role="signature"],p[data-doc-role="date"]{text-indent:0}p[data-doc-role="signature"]{margin-top:${normalizedLayout.lineSpacing * normalizedLayout.signatureGapLines}pt;text-align:right}p[data-doc-role="date"]{text-align:right}[data-doc-align="left"]{text-align:left}[data-doc-align="center"]{text-align:center}[data-doc-align="right"]{text-align:right}[data-doc-align="justify"]{text-align:justify}${fontRules}[data-doc-size]{line-height:inherit}${[9,10.5,12,14,15,16,18,22,24,26,28,36,42].map((size) => `[data-doc-size="${size}"]{font-size:${size}pt}`).join('')}ul,ol{margin:0;padding-left:2em}</style></head><body>${body}</body></html>`;
 }
 
 class DocumentExportService {

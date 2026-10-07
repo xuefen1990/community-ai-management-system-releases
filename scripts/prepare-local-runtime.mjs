@@ -63,7 +63,7 @@ if (!templateAppArgument || !projectAppArgument) {
   const templateApp = path.resolve(templateAppArgument);
   const projectApp = path.resolve(projectAppArgument);
   const runtimeRoot = path.join(projectApp, '.runtime');
-  const runtimeApp = path.join(runtimeRoot, '社区AI管理系统.app');
+  const runtimeApp = path.join(runtimeRoot, '村居AI管理系统.app');
   const resourcesDirectory = path.join(runtimeApp, 'Contents', 'Resources');
   const bundledAsar = path.join(resourcesDirectory, 'app.asar');
   const preservedAsar = path.join(resourcesDirectory, 'app.asar.original');
@@ -74,7 +74,7 @@ if (!templateAppArgument || !projectAppArgument) {
   const packageManifest = JSON.parse(await readFile(path.join(projectApp, 'package.json'), 'utf8'));
   const appVersion = packageManifest.version;
   const originalExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村务通管理系统');
-  const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '社区AI管理系统');
+  const runtimeExecutable = path.join(runtimeApp, 'Contents', 'MacOS', '村居AI管理系统');
 
   await makeTreeWritable(runtimeRoot);
   await rm(runtimeRoot, { recursive: true, force: true });
@@ -109,6 +109,8 @@ if (!templateAppArgument || !projectAppArgument) {
   await makeTreeWritable(path.join(runtimeSource, 'node_modules'));
   const updateRuntimeDependencies = [
     'electron-updater',
+    'pizzip',
+    'pako',
     'builder-util-runtime',
     'fs-extra',
     'js-yaml',
@@ -132,7 +134,25 @@ if (!templateAppArgument || !projectAppArgument) {
       { recursive: true, preserveTimestamps: true, verbatimSymlinks: true },
     );
   }
+  const verifyApplicationDependencies = spawnSync(process.execPath, [
+    '-e',
+    "for (const name of Object.keys(JSON.parse(process.argv[1]))) require.resolve(name); const PizZip = require('pizzip'); new PizZip();",
+    JSON.stringify(packageManifest.dependencies || {}),
+  ], { cwd: runtimeSource, encoding: 'utf8' });
+  if (verifyApplicationDependencies.status !== 0) {
+    throw new Error(`应用运行依赖未完整打包：${verifyApplicationDependencies.stderr || verifyApplicationDependencies.stdout || '模块解析失败'}`);
+  }
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
+  const ocrSource = path.join(projectApp, 'src', 'native', 'macos-vision-ocr.swift');
+  const ocrExecutable = path.join(resourcesDirectory, 'community-vision-ocr');
+  const ocrBuild = spawnSync('/usr/bin/xcrun', [
+    'swiftc', ocrSource, '-o', ocrExecutable, '-target', 'arm64-apple-macos13.0',
+    '-framework', 'Foundation', '-framework', 'AppKit', '-framework', 'PDFKit', '-framework', 'Vision',
+  ], { cwd: projectApp, encoding: 'utf8' });
+  if (ocrBuild.status !== 0) {
+    throw new Error(`无法生成离线文字识别组件：${ocrBuild.stderr || ocrBuild.stdout || 'Swift 编译失败'}`);
+  }
+  await chmod(ocrExecutable, 0o755);
   await rename(originalExecutable, runtimeExecutable);
 
   const frameworksDirectory = path.join(runtimeApp, 'Contents', 'Frameworks');
@@ -144,7 +164,7 @@ if (!templateAppArgument || !projectAppArgument) {
   ];
   for (const { suffix, identifierSuffix } of helperVariants) {
     const originalHelperName = `村务通管理系统 Helper${suffix}`;
-    const runtimeHelperName = `社区AI管理系统 Helper${suffix}`;
+    const runtimeHelperName = `村居AI管理系统 Helper${suffix}`;
     const originalHelperApp = path.join(frameworksDirectory, `${originalHelperName}.app`);
     const runtimeHelperApp = path.join(frameworksDirectory, `${runtimeHelperName}.app`);
     await rename(originalHelperApp, runtimeHelperApp);
@@ -168,13 +188,13 @@ if (!templateAppArgument || !projectAppArgument) {
   let infoPlist = await readFile(infoPlistPath, 'utf8');
   infoPlist = infoPlist
     .replace(/\s*<key>ElectronAsarIntegrity<\/key>\s*<dict>\s*<key>Resources\/app\.asar<\/key>\s*<dict>[\s\S]*?<\/dict>\s*<\/dict>/u, '')
-    .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>社区AI管理系统</string>')
-    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>CFBundleDisplayName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleDisplayName</key>\n\t<string>村居AI管理系统</string>')
+    .replace(/<key>CFBundleExecutable<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleExecutable</key>\n\t<string>村居AI管理系统</string>')
     .replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleIdentifier</key>\n\t<string>com.community.ai.management</string>')
-    .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>社区AI管理系统</string>')
+    .replace(/<key>CFBundleName<\/key>\s*<string>[^<]*<\/string>/u, '<key>CFBundleName</key>\n\t<string>村居AI管理系统</string>')
     .replace(/<key>CFBundleShortVersionString<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleShortVersionString</key>\n\t<string>${appVersion}</string>`)
     .replace(/<key>CFBundleVersion<\/key>\s*<string>[^<]*<\/string>/u, `<key>CFBundleVersion</key>\n\t<string>${appVersion}</string>`)
-    .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 社区AI管理系统</string>');
+    .replace(/<key>NSHumanReadableCopyright<\/key>\s*<string>[^<]*<\/string>/u, '<key>NSHumanReadableCopyright</key>\n\t<string>Copyright © 2026 村居AI管理系统</string>');
   await writeFile(infoPlistPath, infoPlist, 'utf8');
   await makeTreeWritable(runtimeApp);
 

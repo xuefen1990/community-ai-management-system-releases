@@ -2,6 +2,7 @@
 
 (function () {
   const M = window.WorkManagementModel;
+  const databaseApi = window.communityFoundationApi || window.api;
   if (!M) return;
   const TYPES = ['环境卫生', '农田水利', '道路交通', '巡查检查', '物业服务', '矛盾纠纷', '其他'];
   const STEPS = [['basic', '基本信息'], ['evidence', '交办依据'], ['progress', '执行过程'], ['resources', '资源投入'], ['acceptance', '成果验收'], ['archive', '档案导出']];
@@ -23,22 +24,22 @@
   function acceptance() { return related('workAcceptances')[0]; }
   function tag(status) { return `work-status work-${({ '未开始': 'new', '进行中': 'doing', '已完成': 'done', '已归档': 'archived' }[status] || 'new')}`; }
   function log(action, item) { state.db.operationLogs.unshift({ id: uid('work-log'), module: '工作管理', action, workId: item.id, workName: item.name, workNumber: item.number, createdAt: new Date().toISOString() }); }
-  async function load() { state.db = normalize(await window.api.readDb()); return state.db; }
-  async function persist() { const result = await window.api.writeDb(state.db); if (result?.ok === false) throw new Error(result.error || '保存失败'); }
+  async function load() { state.db = normalize(await databaseApi.readDb()); return state.db; }
+  async function persist() { const result = await databaseApi.writeDb(state.db); if (result?.ok === false) throw new Error(result.error || '保存失败'); }
 
-  function mount() {
+  function mount(container) {
+    container = container instanceof Element ? container : null;
     if (document.getElementById('tab-work-management')) return;
-    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'css/work-management.css'; document.head.appendChild(css);
+    if (!document.querySelector('link[href="css/work-management.css"]')) { const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'css/work-management.css'; document.head.appendChild(css); }
     const nav = document.querySelector('.sidebar-menu');
-    if (nav) {
+    if (nav && !container) {
       const button = document.createElement('button'); button.type = 'button'; button.className = 'menu-item'; button.dataset.target = 'tab-work-management';
       button.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="15" rx="2"/><path d="M7 3v4M17 3v4M7 12h4M7 16h7"/></svg><span>工作管理</span>';
       nav.insertBefore(button, nav.querySelector('[data-target="tab-finance"]')?.nextSibling || null);
       button.addEventListener('click', async () => { if (window.switchTab) window.switchTab('tab-work-management'); document.querySelectorAll('.sidebar-menu .menu-item').forEach((item) => item.classList.toggle('active', item === button)); await openList(); });
     }
-    const page = document.createElement('section'); page.id = 'tab-work-management'; page.className = 'tab-content hidden work-management-page'; document.querySelector('.app-main')?.appendChild(page);
+    const page = document.createElement('section'); page.id = 'tab-work-management'; page.className = container ? 'tab-content work-management-page foundation-extension-content' : 'tab-content hidden work-management-page'; (container || document.querySelector('.app-main'))?.appendChild(page);
     page.addEventListener('click', click); page.addEventListener('submit', submit); page.addEventListener('input', input);
-    window.WorkManagement = { open: openList, create: create, openWork };
   }
 
   async function openList() { await load(); state.workId = null; renderList(); }
@@ -49,7 +50,7 @@
     const root = document.getElementById('tab-work-management'); const all = works(); const month = new Date().toISOString().slice(0, 7);
     const total = all.reduce((sum, item) => sum + M.getWorkTotal(state.db.workResourceEntries, item.id), 0);
     const filtered = all.filter((item) => { const words = state.filters.keyword.toLowerCase(); const text = `${item.number} ${item.name} ${item.location} ${item.responsiblePerson}`.toLowerCase(); return (!words || text.includes(words)) && (!state.filters.status || item.status === state.filters.status) && (!state.filters.type || item.type === state.filters.type); }).sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
-    root.innerHTML = `<div class="work-head"><div><h2>工作管理</h2><p>从交办依据到验收归档，完整留存每一项社区工作。</p></div><button class="btn btn-primary" data-act="create">＋ 新建工作</button></div>
+    root.innerHTML = `<div class="work-head"><div><h2>工作管理</h2><p>从交办依据到验收归档，完整留存每一项村居工作。</p></div><button class="btn btn-primary" data-act="create">＋ 新建工作</button></div>
       <div class="work-stats"><article><span>累计工作</span><b>${all.length}</b><small>已建立事项</small></article><article><span>本月工作</span><b>${all.filter((item) => String(item.startDate).startsWith(month)).length}</b><small>当前月新建</small></article><article><span>累计投入</span><b>${money(total)}</b><small>真实投入汇总</small></article><article><span>已归档</span><b>${all.filter((item) => item.status === '已归档').length}</b><small>完整档案</small></article></div>
       <div class="work-filters"><input data-filter="keyword" value="${esc(state.filters.keyword)}" placeholder="搜索编号、名称、地点或责任人"><select data-filter="status"><option value="">全部状态</option>${M.WORK_STATUSES.map((value) => `<option ${state.filters.status === value ? 'selected' : ''}>${value}</option>`).join('')}</select><select data-filter="type"><option value="">全部类型</option>${TYPES.map((value) => `<option ${state.filters.type === value ? 'selected' : ''}>${value}</option>`).join('')}</select><button class="btn btn-outline" data-act="clear">清除筛选</button></div>
       <div class="work-card work-scroll"><table class="data-table"><thead><tr><th>工作编号</th><th>工作名称</th><th>类型 / 地点</th><th>责任人</th><th>状态</th><th>投入金额</th><th>更新时间</th><th>操作</th></tr></thead><tbody>${filtered.length ? filtered.map((item) => `<tr><td class="work-number">${esc(item.number)}</td><td><b>${esc(item.name)}</b><small>${esc(item.description || '未填写说明')}</small></td><td>${esc(item.type)}<small>${esc(item.location)}</small></td><td>${esc(item.responsiblePerson)}</td><td><span class="${tag(item.status)}">${item.status}</span></td><td>${money(M.getWorkTotal(state.db.workResourceEntries, item.id))}</td><td>${date(item.updatedAt)}</td><td><button class="btn btn-outline btn-xs" data-open="${item.id}">查看</button></td></tr>`).join('') : '<tr><td colspan="8" class="work-empty">暂无工作记录，点击右上角“新建工作”开始。</td></tr>'}</tbody></table></div>`;
@@ -92,5 +93,8 @@
   async function removeWork(workId) { const item = works().find((row) => row.id === workId); if (!item || item.status === '已归档' || !window.confirm(`确定删除“${item.name}”吗？`)) return; item.deletedAt = new Date().toISOString(); log('删除工作', item); await persist(); toast('工作已移至回收状态'); openList(); }
   function excel() { const item = work(); if (!window.XLSX) return toast('Excel 导出组件尚未加载', 'error'); const resources = related('workResourceEntries'); const wb = window.XLSX.utils.book_new(); const overview = [['工作编号', item.number], ['工作名称', item.name], ['类型', item.type], ['地点', item.location], ['责任人', item.responsiblePerson], ['状态', item.status], ['总投入', M.getWorkTotal(resources, item.id)]]; const detail = [['日期', '类别', '名称', '数量', '单位', '工时/天数', '单价', '金额', '实际用途', '经办人'], ...resources.map((row) => [row.date, row.category, row.name, row.quantity, row.unit, row.duration, row.unitPrice, M.calculateResourceAmount(row), row.usage, row.operator])]; window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(overview), '工作概览'); window.XLSX.utils.book_append_sheet(wb, window.XLSX.utils.aoa_to_sheet(detail), '资源投入明细'); window.XLSX.writeFile(wb, `${item.number}-${item.name}-工作档案.xlsx`); toast('Excel 明细已导出'); }
   function print() { const item = work(); const acc = acceptance() || {}; const resources = related('workResourceEntries'); const evidence = related('workEvidence'); const progress = related('workProgressRecords'); const section = (title, body) => `<section><h2>${title}</h2>${body || '<p>无记录</p>'}</section>`; const html = `<!doctype html><meta charset="utf-8"><title>${esc(item.number)} 工作档案</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;max-width:780px;margin:36px auto;line-height:1.65;color:#111}h1{text-align:center}h2{border-left:4px solid #0f766e;padding-left:10px;margin-top:26px;font-size:18px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:7px;text-align:left;font-size:12px}th{background:#f1f5f9}</style><h1>工作档案</h1><p>编号：${esc(item.number)}　状态：${esc(item.status)}</p>${section('一、基本信息', `<table><tr><th>名称</th><td>${esc(item.name)}</td><th>类型</th><td>${esc(item.type)}</td></tr><tr><th>地点</th><td>${esc(item.location)}</td><th>责任人</th><td>${esc(item.responsiblePerson)}</td></tr></table><p>${esc(item.description || '无说明')}</p>`)}${section('二、交办依据', evidence.map((row) => `<p><b>${esc(row.name)}</b>（${esc(row.type)}）：${esc(row.note || '无说明')}</p>`).join(''))}${section('三、执行过程', progress.map((row) => `<p><b>${date(row.recordedAt)} ${esc(row.recordedBy)}</b><br>${esc(row.description)}</p>`).join(''))}${section('四、资源投入', `<table><tr><th>日期</th><th>类别</th><th>名称</th><th>用途</th><th>金额</th></tr>${resources.map((row) => `<tr><td>${date(row.date)}</td><td>${esc(row.category)}</td><td>${esc(row.name)}</td><td>${esc(row.usage)}</td><td>${money(M.calculateResourceAmount(row))}</td></tr>`).join('')}<tr><th colspan="4">总投入</th><th>${money(M.getWorkTotal(resources, item.id))}</th></tr></table>`)}${section('五、成果验收', `<p><b>完成日期：</b>${date(acc.completedAt)}　<b>验收人：</b>${esc(acc.inspector || '未填写')}</p><p><b>验收结论：</b>${esc(acc.conclusion || '未填写')}</p><p><b>工作总结：</b>${esc(acc.summary || '未填写')}</p>`)}`; const view = window.open('', '_blank'); if (!view) return toast('无法打开打印窗口', 'error'); view.document.write(html); view.document.close(); setTimeout(() => view.print(), 300); }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
+  window.WorkManagement = { mount, open: openList, create, openWork };
+  if (!window.communityFoundation) {
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mount); else mount();
+  }
 }());

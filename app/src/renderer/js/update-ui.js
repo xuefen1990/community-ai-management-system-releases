@@ -60,13 +60,14 @@
       button.disabled = true;
       modal.querySelector('#appUpdateError').textContent = '';
       modal.querySelector('#appUpdateProgressWrap').style.display = 'block';
-      modal.querySelector('#appUpdateMessage').textContent = '正在下载更新，下载完成后可重启安装。';
+      modal.querySelector('#appUpdateMessage').textContent = '正在下载更新，完成后将自动安装并打开新版。';
       try {
         const result = await api.downloadAppUpdate();
-        if (!result.ok) throw new Error(result.error || '下载更新失败');
+        if (!result.ok) throw new Error(result.error || '更新失败');
       } catch (error) {
-        modal.querySelector('#appUpdateError').textContent = error.message || '下载更新失败';
+        modal.querySelector('#appUpdateError').textContent = error.message || '更新失败';
         button.disabled = false;
+        button.textContent = button.dataset.action === 'install' ? '重试安装' : '重试下载';
       }
     });
     return modal;
@@ -93,7 +94,16 @@
 
   function handleStatus(status) {
     if (status.type === 'available') return showAvailable(status);
+    if (status.type === 'startup-version-mismatch') return showToast('上次更新未启动目标版本，请重新检查更新。', 'warning');
     const modal = document.getElementById('appUpdateModal');
+    if (status.type === 'download-mode' && modal) {
+      modal.querySelector('#appUpdateMessage').textContent = status.mode === 'differential' ? '正在下载变化的文件块，完成后自动安装并打开新版。' : `${status.reason}，已切换为完整下载，完成后自动安装。`;
+      return;
+    }
+    if (status.type === 'download-metrics' && modal) {
+      modal.querySelector('#appUpdateProgressText').textContent = `实际下载 ${formatBytes(status.networkBytes)}（含块索引及重试）`;
+      return;
+    }
     if (status.type === 'download-progress' && modal) {
       modal.querySelector('#appUpdateProgressWrap').style.display = 'block';
       modal.querySelector('#appUpdateProgressBar').style.width = `${Math.max(0, Math.min(100, status.percent || 0))}%`;
@@ -101,15 +111,19 @@
       return;
     }
     if (status.type === 'downloaded' && modal) {
-      modal.querySelector('#appUpdateMessage').textContent = '更新已下载完成，重启应用即可安装。';
+      modal.querySelector('#appUpdateMessage').textContent = '下载完成，正在静默安装并重新打开应用…';
       const button = modal.querySelector('#downloadAppUpdate');
-      button.disabled = false;
+      button.disabled = true;
       button.dataset.action = 'install';
-      button.textContent = '重启并安装';
+      button.textContent = '正在安装';
+      return;
+    }
+    if (status.type === 'installing' && modal) {
+      modal.querySelector('#appUpdateMessage').textContent = '正在静默安装，新版将自动打开…';
       return;
     }
     if (status.type === 'installation-required') {
-      showToast(status.message || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
+      showToast(status.message || '请先正确安装应用后再检查更新', 'info');
       return;
     }
     if (status.type === 'backend-unavailable') {
@@ -122,6 +136,8 @@
     }
     if (status.type === 'error' && modal && !modal.classList.contains('hidden')) {
       modal.querySelector('#appUpdateError').textContent = status.message || '更新服务暂时不可用';
+      const button = modal.querySelector('#downloadAppUpdate');
+      button.disabled = false; button.textContent = button.dataset.action === 'install' ? '重试安装' : '重试下载';
     }
   }
 
@@ -148,9 +164,10 @@
       try {
         const result = await api.checkForAppUpdate();
         if (result.disabled) showToast('当前为本机测试版，暂不检查线上更新', 'info');
-        else if (result.installRequired) showToast(result.error || '请先将社区AI管理系统拖入“应用程序”后再打开', 'info');
+        else if (result.installRequired) showToast(result.error || '请先正确安装应用后再检查更新', 'info');
         else if (result.backendUnavailable) showToast('更新服务器暂时不可用，本次不下载更新。', 'info');
         else if (!result.ok) showToast(result.error || '检查更新失败', 'error');
+        else if (result.pendingPackage) showToast('更新安装包尚未准备好，请稍后再试。', 'info');
         else if (!result.hasUpdate) showToast('当前已是最新版本', 'success');
       } catch (error) {
         showToast(error?.message || '检查更新失败', 'error');

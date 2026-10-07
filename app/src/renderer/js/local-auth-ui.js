@@ -13,7 +13,7 @@
 
   function applyProductBrand() {
     const subtitle = document.getElementById('displayAppSubtitle');
-    if (subtitle && subtitle.textContent !== '社区AI管理系统') subtitle.textContent = '社区AI管理系统';
+    if (subtitle && subtitle.textContent !== "村居AI管理系统") subtitle.textContent = "村居AI管理系统";
   }
 
   function setError(kind, message = '') {
@@ -45,6 +45,45 @@
     if (entitlement?.type === 'trial') return entitlement.expiresAt ? `体验版 · 至 ${entitlement.expiresAt.slice(0, 10)}` : '体验版';
     if (entitlement?.type === 'expired') return '单位有效期已到';
     return '未授权';
+  }
+
+  function applyMemberNavigation(status) {
+    const modules = { 'tab-statistics': 'statistics', 'tab-personnel': 'personnel', 'tab-party': 'party', 'tab-visit-records': 'visit', 'tab-duty': 'work', 'tab-finance': 'finance', 'tab-land': 'land', 'tab-document-drafting': 'document', 'tab-certificate': 'certificate', 'tab-documents': 'archive', 'tab-disbursement': 'funds', 'tab-work-management': 'work', 'tab-settings': 'settings' };
+    const member = status?.account?.role === 'member';
+    const granted = status?.account?.permissions || {};
+    document.querySelectorAll('.menu-item[data-target]').forEach(button => {
+      const moduleId = modules[button.dataset.target];
+      const allowed = !member || !moduleId || Boolean(granted[moduleId]?.includes('view'));
+      button.hidden = !allowed;
+      button.style.display = allowed ? '' : 'none';
+    });
+    const aiButton = document.getElementById('aiCopilotToggleBtn');
+    if (aiButton) aiButton.style.display = member && status.account.aiAccessEnabled === false ? 'none' : '';
+  }
+
+  function showInitialPasswordChange() {
+    if (document.getElementById('firstPasswordChangeModal')) return;
+    const modal = document.createElement('div');
+    modal.id = 'firstPasswordChangeModal';
+    modal.className = 'modal-overlay';
+    modal.style.cssText = 'z-index:100100;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML = `<form class="modal-card" style="width:min(420px,94vw);padding:26px;display:grid;gap:13px;"><h2 style="margin:0;">首次登录，请修改初始密码</h2><p style="margin:0;color:var(--text-secondary);">修改后才能进入工作台。</p><label>初始密码<input name="oldPassword" type="password" autocomplete="current-password" required style="display:block;width:100%;margin-top:5px;"></label><label>新密码<input name="newPassword" type="password" autocomplete="new-password" minlength="6" required style="display:block;width:100%;margin-top:5px;"></label><label>确认新密码<input name="confirmPassword" type="password" autocomplete="new-password" minlength="6" required style="display:block;width:100%;margin-top:5px;"></label><p data-password-error role="alert" style="color:#bd3541;margin:0;"></p><button class="btn btn-primary" type="submit">修改密码并进入工作台</button></form>`;
+    document.body.appendChild(modal);
+    modal.querySelector('form').addEventListener('submit', async event => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const error = form.querySelector('[data-password-error]');
+      const button = form.querySelector('button[type="submit"]');
+      if (form.elements.newPassword.value !== form.elements.confirmPassword.value) { error.textContent = '两次输入的新密码不一致'; return; }
+      button.disabled = true;
+      try {
+        const status = await api.changeLocalAccountPassword({ oldPassword: form.elements.oldPassword.value, newPassword: form.elements.newPassword.value });
+        modal.remove();
+        await enterDashboard(status);
+      } catch (failure) { error.textContent = failure.message || '修改密码失败'; }
+      finally { button.disabled = false; }
+    });
+    modal.querySelector('[name="oldPassword"]').focus();
   }
 
   function refreshLegacyAuthLabels(status) {
@@ -121,12 +160,14 @@
   async function enterDashboard(status) {
     currentStatus = status;
     if (!status.authenticated) return;
+    if (status.account?.mustChangePassword) { showInitialPasswordChange(); return; }
     if (!['trial', 'licensed'].includes(status.entitlement?.type)) {
       showLoginScreen();
       window.showToast?.(status.entitlement?.reason || '单位有效期已到，请联系平台管理员续期', 'error');
       return;
     }
     removeLegacyTrialArtifacts();
+    applyMemberNavigation(status);
     document.body.classList.remove('auth-login-required');
     document.getElementById('loginView')?.classList.add('hidden');
     document.getElementById('dashboardView')?.classList.remove('hidden');
@@ -163,88 +204,13 @@
     return String(value ?? '').replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[character]);
   }
 
-  function permissionChoices(selected = {}) {
-    const has = (moduleName, action) => selected?.[moduleName]?.includes(action) ? 'checked' : '';
-    return `<div class="unit-permissions"><strong>成员权限</strong><label><input type="checkbox" data-permission="workspace:view" ${has('workspace', 'view')}> 查看单位共享数据</label><label><input type="checkbox" data-permission="workspace:update" ${has('workspace', 'update')}> 修改单位共享数据</label><label><input type="checkbox" data-permission="personnel:view" ${has('personnel', 'view')}> 人员档案查看</label><label><input type="checkbox" data-permission="personnel:create" ${has('personnel', 'create')}> 人员档案录入</label><label><input type="checkbox" data-permission="visit:view" ${has('visit', 'view')}> 走访记录查看</label><label><input type="checkbox" data-permission="visit:create" ${has('visit', 'create')}> 走访记录录入</label><label><input type="checkbox" data-permission="party:view" ${has('party', 'view')}> 党务查看</label><label><input type="checkbox" data-permission="work:view" ${has('work', 'view')}> 工作事项查看</label></div>`;
-  }
-
-  function selectedPermissions(root) {
-    const result = {};
-    root.querySelectorAll('[data-permission]:checked').forEach((input) => {
-      const [moduleName, action] = input.dataset.permission.split(':');
-      (result[moduleName] ||= []).push(action);
-    });
-    return result;
-  }
-
-  function closeUnitManagementModal() {
-    document.getElementById('unitManagementModal')?.remove();
-  }
-
-  async function openUnitManagementModal() {
-    if (!api.listUnitMemberApplications) return;
-    closeUnitManagementModal();
-    const modal = document.createElement('div');
-    modal.id = 'unitManagementModal';
-    modal.className = 'modal-overlay';
-    modal.style.cssText = 'z-index:100004;display:flex;align-items:center;justify-content:center;';
-    modal.innerHTML = `<div class="modal-card" style="width:760px;max-width:94vw;max-height:88vh;overflow:auto;padding:22px;"><div style="display:flex;justify-content:space-between;gap:12px;align-items:center;"><div><h3 style="margin:0;">成员与权限管理</h3><p style="margin:5px 0 0;color:var(--text-secondary);font-size:12px;">审核成员申请，生成邀请码并调整成员权限。</p></div><button type="button" class="btn btn-outline" data-close-unit-management>关闭</button></div><div data-unit-management-content style="padding-top:18px;">加载中…</div></div>`;
-    document.body.appendChild(modal);
-    modal.querySelector('[data-close-unit-management]').addEventListener('click', closeUnitManagementModal);
-    modal.addEventListener('click', (event) => { if (event.target === modal) closeUnitManagementModal(); });
-    const content = modal.querySelector('[data-unit-management-content]');
-    try {
-      const [applicationsResult, membersResult, invitesResult] = await Promise.all([api.listUnitMemberApplications(), api.listUnitMembers(), api.listUnitInvites()]);
-      const applications = applicationsResult.applications || [];
-      const members = membersResult.members || [];
-      const invites = invitesResult.invites || [];
-      content.innerHTML = `<section style="padding:12px;border:1px solid var(--border-color);border-radius:8px;"><h4 style="margin-top:0;">导入本机历史数据</h4><p style="font-size:12px;color:var(--text-secondary);">仅当单位共享工作区为空时，才可把当前电脑的数据一次性导入。已有共享数据时会拒绝导入，避免重复和覆盖。</p><button id="importLocalUnitDataBtn" class="btn btn-outline">导入当前电脑数据</button></section><section><h4>待审核申请（${applications.filter((item) => item.status === 'pending').length}）</h4>${applications.length ? applications.map((item) => `<article style="border:1px solid var(--border-color);border-radius:8px;padding:12px;margin:8px 0;"><div><strong>${escapeHtml(item.applicant?.name || '未命名')}</strong> · ${escapeHtml(item.applicant?.phone || '')} · ${item.status === 'pending' ? '待审核' : escapeHtml(item.status)}</div>${item.status === 'pending' ? `${permissionChoices()}<div style="display:flex;gap:8px;margin-top:10px;"><button class="btn btn-primary" data-approve-member="${item.id}">通过并授权</button><button class="btn btn-outline" data-reject-member="${item.id}">拒绝</button></div>` : ''}</article>`).join('') : '<p>暂无成员申请。</p>'}</section><section style="margin-top:22px;"><h4>邀请码</h4><div style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;"><label>有效至<input id="unitInviteExpiry" type="date" style="display:block;margin-top:4px;"></label><label>可使用人数<input id="unitInviteMaxUses" type="number" min="1" max="1000" value="20" style="display:block;margin-top:4px;width:90px;"></label><button class="btn btn-primary" id="createUnitInviteBtn">生成邀请码</button></div><div id="unitInviteCreated" style="margin-top:10px;"></div>${invites.length ? `<ul>${invites.map((item) => `<li>${escapeHtml(item.expiresAt?.slice(0, 10) || '')} · 已用 ${item.usedCount}/${item.maxUses} · ${item.isActive ? '<button class="btn btn-outline" data-deactivate-invite="' + item.id + '">作废</button>' : '已作废'}</li>`).join('')}</ul>` : ''}</section><section style="margin-top:22px;"><h4>已加入成员</h4>${members.length ? members.map((member) => `<article style="border-top:1px solid var(--border-color);padding:10px 0;"><strong>${escapeHtml(member.name || '')}</strong> · ${escapeHtml(member.phone)}${permissionChoices(member.permissions)}<button class="btn btn-primary" data-save-member="${member.id}" style="margin-top:8px;">保存权限</button></article>`).join('') : '<p>暂无已启用成员。</p>'}</section>`;
-      content.querySelector('#importLocalUnitDataBtn')?.addEventListener('click', async () => { if (!window.confirm('确认把当前电脑的本机数据导入本单位共享工作区？此操作只允许在共享工作区为空时进行。')) return; const result = await api.importLocalDataToUnit(); window.showToast?.(`已导入 ${result.recordCount} 条本机记录`, 'success'); });
-      content.querySelectorAll('[data-approve-member]').forEach((button) => button.addEventListener('click', async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.approveMember, approve: true, permissions: selectedPermissions(button.closest('article')) }); await openUnitManagementModal(); }));
-      content.querySelectorAll('[data-reject-member]').forEach((button) => button.addEventListener('click', async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.rejectMember, approve: false }); await openUnitManagementModal(); }));
-      content.querySelectorAll('[data-save-member]').forEach((button) => button.addEventListener('click', async () => { await api.updateUnitMemberPermissions({ memberId: button.dataset.saveMember, permissions: selectedPermissions(button.closest('article')) }); window.showToast?.('成员权限已保存', 'success'); }));
-      content.querySelector('#createUnitInviteBtn')?.addEventListener('click', async () => { const expiresAt = content.querySelector('#unitInviteExpiry').value; const maxUses = content.querySelector('#unitInviteMaxUses').value; const result = await api.createUnitInvite({ expiresAt: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined, maxUses }); content.querySelector('#unitInviteCreated').textContent = `请仅通过可信渠道发送邀请码：${result.code}`; });
-      content.querySelectorAll('[data-deactivate-invite]').forEach((button) => button.addEventListener('click', async () => { await api.deactivateUnitInvite({ inviteId: button.dataset.deactivateInvite }); await openUnitManagementModal(); }));
-    } catch (error) { content.textContent = error.message || '无法加载成员管理信息'; }
-  }
-
-  function closeMemberPermissionsPage() {
-    document.getElementById('memberPermissionsPage')?.remove();
-  }
-
   async function openMemberPermissionsPage() {
-    if (!api.listUnitMemberApplications || currentStatus?.account?.role !== 'unit_admin') return;
-    closeMemberPermissionsPage();
-    const page = document.createElement('section');
-    page.id = 'memberPermissionsPage';
-    page.className = 'member-permissions-page';
-    page.innerHTML = `<div class="member-permissions-page__panel"><header class="member-permissions-page__header"><div><p class="member-permissions-page__eyebrow">单位管理</p><h2>成员与权限</h2><p>统一授权：${escapeHtml(formatEntitlement(currentStatus?.entitlement))}</p></div><button type="button" class="btn btn-outline" data-close-member-page>返回工作台</button></header><main data-member-page-content class="member-permissions-page__content">正在加载成员信息…</main></div>`;
-    document.body.appendChild(page);
-    page.querySelector('[data-close-member-page]').addEventListener('click', closeMemberPermissionsPage);
-    const content = page.querySelector('[data-member-page-content]');
-    try {
-      const [applicationsResult, membersResult, invitesResult] = await Promise.all([api.listUnitMemberApplications(), api.listUnitMembers(), api.listUnitInvites()]);
-      const applications = applicationsResult.applications || [];
-      const members = membersResult.members || [];
-      const invites = invitesResult.invites || [];
-      const pendingApplications = applications.filter((item) => item.status === 'pending');
-      content.innerHTML = `<section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>单位成员</h3><p>${members.length} 个账号，成员有效期自动跟随单位管理员。</p></div></div>${members.length ? members.map((member) => `<article class="member-permissions-page__member"><div class="member-permissions-page__member-summary"><div><strong>${escapeHtml(member.name || '未命名成员')}</strong><span>${escapeHtml(member.phone || '')}</span></div><div><span class="member-status member-status--${member.isActive ? 'active' : 'disabled'}">${member.isActive ? '正常使用' : '已停用'}</span><small>最后登录：${escapeHtml(member.lastLoginAt ? new Date(member.lastLoginAt).toLocaleString('zh-CN') : '尚未登录')}</small></div></div>${permissionChoices(member.permissions)}<div class="member-permissions-page__actions"><button class="btn btn-primary" data-save-member="${escapeHtml(member.id)}">保存权限</button><button class="btn btn-outline" data-clear-member="${escapeHtml(member.id)}">清空权限</button><button class="btn ${member.isActive ? 'btn-outline member-permissions-page__danger' : 'btn-primary'}" data-toggle-member="${escapeHtml(member.id)}" data-next-active="${member.isActive ? 'false' : 'true'}">${member.isActive ? '停用成员' : '恢复成员'}</button></div></article>`).join('') : '<p class="member-permissions-page__empty">暂无已加入的成员。</p>'}</section><section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>待审核申请</h3><p>${pendingApplications.length} 个账号等待单位管理员处理。</p></div></div>${pendingApplications.length ? pendingApplications.map((item) => `<article class="member-permissions-page__member"><div class="member-permissions-page__member-summary"><div><strong>${escapeHtml(item.applicant?.name || '未命名申请人')}</strong><span>${escapeHtml(item.applicant?.phone || '')}</span></div><small>申请时间：${escapeHtml(item.createdAt ? new Date(item.createdAt).toLocaleString('zh-CN') : '')}</small></div>${permissionChoices()}<div class="member-permissions-page__actions"><button class="btn btn-primary" data-approve-member="${escapeHtml(item.id)}">通过并授权</button><button class="btn btn-outline member-permissions-page__danger" data-reject-member="${escapeHtml(item.id)}">拒绝申请</button></div></article>`).join('') : '<p class="member-permissions-page__empty">暂无待审核申请。</p>'}</section><section class="member-permissions-page__section"><div class="member-permissions-page__section-heading"><div><h3>邀请码</h3><p>通过邀请码申请加入后，仍需单位管理员审核。</p></div></div><div class="member-permissions-page__invite-form"><label>有效至<input id="unitInviteExpiry" type="date"></label><label>可使用人数<input id="unitInviteMaxUses" type="number" min="1" max="1000" value="20"></label><button class="btn btn-primary" id="createUnitInviteBtn">生成邀请码</button></div><div id="unitInviteCreated" class="member-permissions-page__invite-code"></div>${invites.length ? `<div class="member-permissions-page__invite-list">${invites.map((item) => `<article><span>${escapeHtml(item.expiresAt?.slice(0, 10) || '')} 前有效 · 已用 ${item.usedCount}/${item.maxUses}</span>${item.isActive ? `<button class="btn btn-outline" data-deactivate-invite="${escapeHtml(item.id)}">停用邀请码</button>` : '<span class="member-status member-status--disabled">已停用</span>'}</article>`).join('')}</div>` : '<p class="member-permissions-page__empty">尚未生成邀请码。</p>'}</section>`;
-      const refresh = () => openMemberPermissionsPage();
-      const runAction = async (action) => { try { await action(); } catch (error) { window.showToast?.(error.message || '操作未完成，请稍后重试', 'error'); } };
-      content.querySelectorAll('[data-approve-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.approveMember, approve: true, permissions: selectedPermissions(button.closest('article')) }); window.showToast?.('成员已通过审核', 'success'); await refresh(); })));
-      content.querySelectorAll('[data-reject-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.reviewUnitMemberApplication({ applicationId: button.dataset.rejectMember, approve: false }); window.showToast?.('已拒绝该申请', 'success'); await refresh(); })));
-      content.querySelectorAll('[data-save-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.updateUnitMemberPermissions({ memberId: button.dataset.saveMember, permissions: selectedPermissions(button.closest('article')) }); window.showToast?.('成员权限已保存', 'success'); })));
-      content.querySelectorAll('[data-clear-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.updateUnitMemberPermissions({ memberId: button.dataset.clearMember, permissions: {} }); window.showToast?.('成员权限已清空', 'success'); await refresh(); })));
-      content.querySelectorAll('[data-toggle-member]').forEach((button) => button.addEventListener('click', () => runAction(async () => { const isActive = button.dataset.nextActive === 'true'; await api.updateUnitMemberStatus({ memberId: button.dataset.toggleMember, isActive }); window.showToast?.(isActive ? '成员已恢复使用' : '成员已停用', 'success'); await refresh(); })));
-      content.querySelector('#createUnitInviteBtn')?.addEventListener('click', () => runAction(async () => { const expiresAt = content.querySelector('#unitInviteExpiry').value; const maxUses = content.querySelector('#unitInviteMaxUses').value; const result = await api.createUnitInvite({ expiresAt: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : undefined, maxUses }); content.querySelector('#unitInviteCreated').textContent = `请仅通过可信渠道发送邀请码：${result.code}`; window.showToast?.('邀请码已生成', 'success'); }));
-      content.querySelectorAll('[data-deactivate-invite]').forEach((button) => button.addEventListener('click', () => runAction(async () => { await api.deactivateUnitInvite({ inviteId: button.dataset.deactivateInvite }); window.showToast?.('邀请码已停用', 'success'); await refresh(); })));
-    } catch (error) {
-      content.innerHTML = `<p class="member-permissions-page__error">${escapeHtml(error.message || '无法加载成员管理信息')}</p>`;
-    }
+    if (!['unit_admin', 'main_account'].includes(currentStatus?.account?.role)) return;
+    await window.unitMemberManagement?.open(currentStatus);
   }
 
   function ensureUnitManagementEntry(status) {
-    if (status?.account?.role !== 'unit_admin' || document.getElementById('unitManagementEntry')) return;
+    if (!['unit_admin', 'main_account'].includes(status?.account?.role) || document.getElementById('unitManagementEntry')) return;
     const actions = document.querySelector('.sidebar-secondary-actions');
     if (!actions) return;
     const button = document.createElement('button');
@@ -252,7 +218,7 @@
     button.type = 'button';
     button.className = 'sidebar-member-btn';
     button.textContent = '成员与权限';
-    button.title = '管理单位成员、权限、申请和邀请码';
+    button.title = '开通成员并设置权限';
     button.addEventListener('click', openMemberPermissionsPage);
     actions.append(button);
   }
@@ -291,27 +257,21 @@
   async function submitRegister() {
     setError('reg');
     document.getElementById('openRemoteServerSettings')?.setAttribute('hidden', '');
-    const kind = document.querySelector('input[name="application-kind"]:checked')?.value || 'unit-admin';
     const phone = document.getElementById('reg-phone')?.value || '';
     const password = document.getElementById('reg-password')?.value || '';
-    const name = document.getElementById('reg-name')?.value || '';
-    if (password !== (document.getElementById('reg-password-confirm')?.value || '')) return setError('reg', '两次输入的密码不一致');
-    setLoading('doRegisterBtn', true, '提交申请');
+    const confirmPassword = document.getElementById('reg-password-confirm')?.value || '';
+    if (password !== confirmPassword) return setError('reg', '两次输入的密码不一致');
+    setLoading('doRegisterBtn', true, '注册并进入工作台');
     try {
-      if (kind === 'unit-admin') {
-        await api.submitUnitAdminApplication({ phone, password, name, organizationName: document.getElementById('reg-organization-name')?.value || '', region: document.getElementById('reg-region')?.value || '' });
-        setError('reg', '申请已提交，等待平台审核后即可登录。');
-      } else {
-        await api.submitMemberApplication({ phone, password, name, inviteCode: document.getElementById('reg-invite-code')?.value || '' });
-        setError('reg', '加入申请已提交，等待单位管理员审核。');
-      }
+      const status = await api.registerLocalAccount({ phone, password, confirmPassword });
+      await enterDashboard(status);
     } catch (error) {
       setError('reg', friendlyRemoteError(error));
       if (/无法连接账号服务|账号服务器响应超时|账号服务器连接超时|ECONNREFUSED|Failed to fetch|fetch failed/iu.test(String(error?.message || ''))) {
         document.getElementById('openRemoteServerSettings')?.removeAttribute('hidden');
       }
     }
-    finally { setLoading('doRegisterBtn', false, '提交申请'); }
+    finally { setLoading('doRegisterBtn', false, '注册并进入工作台'); }
   }
 
   function configureApplicationPanel() {
@@ -319,24 +279,20 @@
     if (!panel || panel.dataset.unitApplications) return;
     panel.dataset.unitApplications = 'true';
     panel.classList.add('unit-application-panel');
-    panel.innerHTML = `<div class="login-header unit-application-heading"><div class="login-logo-container"><img src="logo.png" alt="Logo" style="width:60px;height:60px;object-fit:contain;"></div><h1>开户注册申请</h1><p class="subtitle">填写资料后，由平台管理员审核开通</p></div><div class="unit-application-kind" role="radiogroup" aria-label="申请类型"><label class="unit-application-kind-option is-selected"><input type="radio" name="application-kind" value="unit-admin" checked><span>申请成为单位管理员</span></label><label class="unit-application-kind-option"><input type="radio" name="application-kind" value="member"><span>邀请码加入单位</span></label></div><div class="login-form unit-application-scroll"><div class="input-group"><label for="reg-name">姓名</label><input id="reg-name" type="text" placeholder="请输入真实姓名"></div><div class="input-group"><label for="reg-phone">手机号</label><input id="reg-phone" type="text" placeholder="请输入手机号"></div><div class="unit-application-passwords"><div class="input-group"><label for="reg-password">密码</label><input id="reg-password" type="password" placeholder="至少 6 位"></div><div class="input-group"><label for="reg-password-confirm">确认密码</label><input id="reg-password-confirm" type="password" placeholder="再次输入密码"></div></div><div data-unit-admin-fields><div class="input-group"><label for="reg-organization-name">村居/社区名称</label><input id="reg-organization-name" type="text" placeholder="例如：陆庄社区"></div><div class="input-group"><label for="reg-region">所在地区</label><input id="reg-region" type="text" placeholder="例如：晓店街道"></div></div><div class="input-group hidden" data-member-fields><label for="reg-invite-code">邀请码</label><input id="reg-invite-code" type="text" placeholder="扫描二维码后自动填入，或手工输入"></div><div id="regErrorContainer" class="login-error" style="visibility:hidden"><span id="regErrorText"></span></div><button id="openRemoteServerSettings" type="button" class="remote-server-settings-btn" hidden>设置账号服务器</button></div><div class="unit-application-actions"><button id="backToLoginBtn" type="button" class="btn btn-outline">返回登录</button><button id="doRegisterBtn" type="button" class="btn btn-primary"><span>提交申请</span></button></div>`;
-    const updateKind = () => { const member = panel.querySelector('input[name="application-kind"]:checked')?.value === 'member'; panel.querySelector('[data-unit-admin-fields]').classList.toggle('hidden', member); panel.querySelector('[data-member-fields]').classList.toggle('hidden', !member); panel.querySelectorAll('.unit-application-kind-option').forEach((option) => option.classList.toggle('is-selected', option.querySelector('input').checked)); };
-    panel.querySelectorAll('input[name="application-kind"]').forEach(input => input.addEventListener('change', updateKind));
-    panel.querySelector('#backToLoginBtn').addEventListener('click', () => forceLoginPanel());
+    panel.innerHTML = `<div class="login-header unit-application-heading"><div class="login-logo-container"><img src="logo.png" alt="Logo" style="width:60px;height:60px;object-fit:contain;"></div><h1>手机号注册</h1><p class="subtitle">注册后立即进入试用，子账号由主账号开通</p></div><div class="login-form unit-application-scroll"><div class="input-group"><label for="reg-phone">手机号</label><input id="reg-phone" type="tel" placeholder="作为主账号"></div><div class="unit-application-passwords"><div class="input-group"><label for="reg-password">密码</label><input id="reg-password" type="password" placeholder="至少 6 位"></div><div class="input-group"><label for="reg-password-confirm">确认密码</label><input id="reg-password-confirm" type="password" placeholder="再次输入密码"></div></div><div id="regErrorContainer" class="login-error" style="visibility:hidden"><span id="regErrorText"></span></div><button id="openRemoteServerSettings" type="button" class="remote-server-settings-btn" hidden>设置账号服务器</button></div><div class="unit-application-actions"><button id="backToLoginBtn" type="button" class="btn btn-outline">返回登录</button><button id="doRegisterBtn" type="button" class="btn btn-primary"><span>注册并进入工作台</span></button></div>`;
+    panel.querySelector('#backToLoginBtn').addEventListener('click', forceLoginPanel);
     panel.querySelector('#openRemoteServerSettings').addEventListener('click', openRemoteServerModal);
     bindButton('doRegisterBtn', submitRegister);
     const loginForm = document.querySelector('#panel-login .login-form');
     if (!document.getElementById('unitApplicationEntry') && loginForm) {
       const entry = document.createElement('div');
       entry.id = 'unitApplicationEntry';
-      entry.style.cssText = 'margin-top:18px;padding-top:16px;border-top:1px solid var(--border-color);display:grid;grid-template-columns:1fr 1fr;gap:10px;';
-      entry.innerHTML = '<button type="button" class="btn btn-outline" data-apply-kind="unit-admin">申请开通单位</button><button type="button" class="btn btn-outline" data-apply-kind="member">邀请码加入单位</button>';
-      entry.querySelectorAll('[data-apply-kind]').forEach((button) => button.addEventListener('click', () => {
-        document.querySelectorAll('#loginCard .auth-panel').forEach((item) => { item.classList.toggle('hidden', item !== panel); item.setAttribute('aria-hidden', String(item !== panel)); });
-        const radio = panel.querySelector(`input[name="application-kind"][value="${button.dataset.applyKind}"]`);
-        if (radio) { radio.checked = true; updateKind(); }
-        panel.querySelector('#reg-name')?.focus();
-      }));
+      entry.style.cssText = 'margin-top:18px;padding-top:16px;border-top:1px solid var(--border-color);';
+      entry.innerHTML = '<button type="button" class="btn btn-outline" style="width:100%;">手机号注册</button>';
+      entry.querySelector('button').addEventListener('click', () => {
+        document.querySelectorAll('#loginCard .auth-panel').forEach(item => { item.classList.toggle('hidden', item !== panel); item.setAttribute('aria-hidden', String(item !== panel)); });
+        panel.querySelector('#reg-phone')?.focus();
+      });
       loginForm.appendChild(entry);
     }
   }
@@ -490,7 +446,7 @@
     if (!summary) return;
     summary.textContent = config?.configured
       ? `账号服务器：${config.baseUrl}`
-      : `账号服务器：${config?.baseUrl || '尚未设置（将使用本机默认地址）'}`;
+      : `账号服务器：${config?.baseUrl || '尚未设置（将使用正式版默认地址）'}`;
   }
 
   function ensureLocalBackendStatus() {
@@ -583,7 +539,7 @@
     modal.innerHTML = `
       <div class="modal-card remote-server-modal-card">
         <div class="modal-header remote-server-modal-header"><div><h3>账号服务器设置</h3><p>请填写局域网内运行账号服务的电脑地址。</p></div><button id="closeRemoteServerModal" class="close-modal-btn" type="button">×</button></div>
-        <div class="modal-body remote-server-modal-body"><label for="remoteServerUrl">服务器地址</label><input id="remoteServerUrl" type="url" placeholder="http://192.168.x.x:3000" autocomplete="url"><p class="remote-server-note">仅在可信局域网中使用 HTTP；公网部署请使用 HTTPS。</p><div id="remoteServerMessage" class="remote-server-message"></div></div>
+        <div class="modal-body remote-server-modal-body"><label for="remoteServerUrl">主电脑 IP 或服务器地址</label><input id="remoteServerUrl" type="text" inputmode="url" placeholder="例如 192.168.2.106" autocomplete="url"><p class="remote-server-note">同一局域网内只需输入主电脑 IP；其他服务器请填写完整地址。</p><div id="remoteServerMessage" class="remote-server-message"></div></div>
         <div class="modal-footer remote-server-modal-footer"><button id="testRemoteServer" class="btn btn-outline" type="button">测试连接</button><button id="saveRemoteServer" class="btn btn-primary" type="button">保存并使用</button></div>
       </div>`;
     document.body.appendChild(modal);
@@ -770,7 +726,7 @@
   function populateAccountEntitlements(modal, accounts) {
     const select = modal.querySelector('#localEntitlementAccount');
     const previousValue = select.value;
-    select.innerHTML = accounts.map((account) => `<option value="${account.id}">${account.phone}${account.isOwner ? '（本机主账号）' : ''}</option>`).join('');
+    select.innerHTML = accounts.map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.phone)}${account.isOwner ? '（本机主账号）' : ''}</option>`).join('');
     if (accounts.some((account) => account.id === previousValue)) select.value = previousValue;
     const describeCurrent = () => {
       const account = accounts.find((candidate) => candidate.id === select.value);
@@ -873,6 +829,14 @@
     }, true);
   }
 
+  if (window.communityFoundation) {
+    window.CommunityAccountUi = { async openMembers() {
+      currentStatus = await api.getLocalAuthStatus();
+      if (!['unit_admin', 'main_account'].includes(currentStatus?.account?.role)) throw new Error('仅主账号可管理成员权限');
+      return openMemberPermissionsPage();
+    } };
+    return;
+  }
   forceLoginPanel();
   prepareAuthorizedStartup();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);
@@ -880,6 +844,7 @@
 }());
 
 // Load the readable public-document workspace separately from the legacy renderer bundle.
+if (!window.communityFoundation) {
 if (!document.querySelector('script[data-document-drafting-ui]')) {
   const documentDraftingScript = document.createElement('script');
   documentDraftingScript.src = 'js/document-drafting-ui.js?v=1.0.0';
@@ -947,6 +912,15 @@ if (!document.querySelector('script[data-personnel-search]')) {
   document.head.appendChild(personnelSearchScript);
 }
 
+// Keep the resident directory readable with a fixed table header, a fixed
+// name column and consistent sorting without altering the legacy renderer.
+if (!document.querySelector('script[data-personnel-directory-ui]')) {
+  const personnelDirectoryScript = document.createElement('script');
+  personnelDirectoryScript.src = 'js/personnel-directory-ui.js?v=1.0.0';
+  personnelDirectoryScript.dataset.personnelDirectoryUi = 'true';
+  document.head.appendChild(personnelDirectoryScript);
+}
+
 // Keep the party stage statistics readable and independently testable from
 // the legacy party-management bundle.
 if (!document.querySelector('script[data-party-stage-stat-cards]')) {
@@ -973,3 +947,5 @@ if (!document.querySelector('script[data-personnel-data-compatibility]')) {
   personnelCompatibilityScript.dataset.personnelDataCompatibility = 'true';
   document.head.appendChild(personnelCompatibilityScript);
 }
+
+} // Legacy automatic modules are not loaded by the v2.6.4 foundation.

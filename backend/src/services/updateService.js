@@ -2,12 +2,14 @@
 
 const path = require('path');
 const fs = require('fs');
+const zlib = require('zlib');
 const db = require('../database');
 const { sha256File, sha512FileBase64 } = require('../utils/crypto');
 const config = require('../config');
 const logger = require('../utils/logger');
 
 const filesDir = path.resolve(config.updateFilesDir);
+const inAppPackageTypes = Object.freeze({ 'darwin-arm64': 'zip', 'win32-x64': 'exe' });
 if (!fs.existsSync(filesDir)) {
   fs.mkdirSync(filesDir, { recursive: true });
 }
@@ -59,7 +61,7 @@ function checkUpdate({ currentVersion, platform, channel }) {
 
   const latest = versions[0];
   const hasUpdate = compareVersions(latest.version, currentVersion) > 0;
-  const supportsInAppUpdate = latest.package_type === 'zip' && Boolean(latest.file_sha512);
+  const supportsInAppUpdate = latest.package_type === inAppPackageTypes[platform] && Boolean(latest.file_sha512);
 
   return {
     hasUpdate: hasUpdate && supportsInAppUpdate,
@@ -80,7 +82,7 @@ function checkUpdate({ currentVersion, platform, channel }) {
   };
 }
 
-function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath, githubReleaseUrl, packageType }) {
+function publishVersion({ version, platform, channel, releaseNotes, fileName, filePath, blockMapPath, githubReleaseUrl, packageType }) {
   if (!version || !platform || !fileName || !filePath) {
     const err = new Error('version, platform, fileName, filePath 为必填');
     err.statusCode = 400;
@@ -89,8 +91,8 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
 
   channel = channel || 'stable';
   packageType = packageType || path.extname(fileName).slice(1).toLowerCase();
-  if (!['zip', 'dmg'].includes(packageType)) {
-    const err = new Error('应用更新包仅支持 ZIP 或 DMG 文件');
+  if (!['zip', 'dmg', 'exe'].includes(packageType)) {
+    const err = new Error('应用更新包仅支持 ZIP、DMG 或 EXE 文件');
     err.statusCode = 400;
     throw err;
   }
@@ -111,8 +113,23 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
   }
 
   const stat = fs.statSync(filePath);
+  if (blockMapPath) {
+    if (!((platform === 'win32-x64' && packageType === 'exe') || (platform === 'darwin-arm64' && packageType === 'zip'))) {
+      const err = new Error('块索引仅适用于 Windows EXE 或 Mac ZIP 更新包');
+      err.statusCode = 400;
+      throw err;
+    }
+    try {
+      const blockMap = JSON.parse(zlib.gunzipSync(fs.readFileSync(blockMapPath)).toString('utf8'));
+      if (!Array.isArray(blockMap.files) || !blockMap.files.length) throw new Error('缺少文件块');
+    } catch {
+      const err = new Error('更新块索引无效');
+      err.statusCode = 400;
+      throw err;
+    }
+  }
   const hash = sha256File(filePath);
-  const sha512 = packageType === 'zip' ? sha512FileBase64(filePath) : '';
+  const sha512 = ['zip', 'exe'].includes(packageType) ? sha512FileBase64(filePath) : '';
   const now = db.now();
   const id = db.genId();
 
@@ -124,6 +141,22 @@ function publishVersion({ version, platform, channel, releaseNotes, fileName, fi
     if (error.code !== 'EXDEV') throw error;
     fs.copyFileSync(filePath, destPath);
     fs.unlinkSync(filePath);
+  }
+
+  if (blockMapPath) {
+    try {
+      fs.renameSync(blockMapPath, `${destPath}.blockmap`);
+    } catch (error) {
+      try {
+        if (error.code !== 'EXDEV') throw error;
+        fs.copyFileSync(blockMapPath, `${destPath}.blockmap`);
+        fs.unlinkSync(blockMapPath);
+      } catch (moveError) {
+        fs.rmSync(`${destPath}.blockmap`, { force: true });
+        fs.rmSync(destPath, { force: true });
+        throw moveError;
+      }
+    }
   }
 
   const record = {
@@ -159,7 +192,8 @@ function getLatestInAppVersion(platform, channel) {
   platform = platform || 'darwin-arm64';
   channel = channel || 'stable';
   const versions = db.findAll('versions', v =>
-    v.platform === platform && v.channel === channel && v.is_active === 1 && v.package_type === 'zip' && v.file_sha512
+    v.platform === platform && v.channel === channel && v.is_active === 1
+      && v.package_type === inAppPackageTypes[platform] && v.file_sha512
   ).sort((a, b) => compareVersions(b.version, a.version) || (b.created_at || '').localeCompare(a.created_at || ''));
   return versions[0] || null;
 }
@@ -168,10 +202,10 @@ function getElectronManifest(platform, channel) {
   const version = getLatestInAppVersion(platform, channel);
   if (!version) return null;
   // electron-updater uses the final path segment as its cached download name.
-  // Keep the real ZIP name in the manifest so it never tries to create a file
+  // Keep the real package name in the manifest so it never tries to create a file
   // whose name is only the update record ID.
   const downloadPath = `../download/${encodeURIComponent(version.id)}/${encodeURIComponent(version.file_name)}`;
-  return [
+  const manifest = [
     `version: ${version.version}`,
     'files:',
     `  - url: ${downloadPath}`,
@@ -179,6 +213,10 @@ function getElectronManifest(platform, channel) {
     `    size: ${version.file_size}`,
     `path: ${downloadPath}`,
     `sha512: ${version.file_sha512}`,
+  ];
+  if (platform === 'win32-x64') manifest.push('sha2: ' + version.file_hash);
+  return [
+    ...manifest,
     `releaseDate: ${version.created_at}`,
     '',
   ].join('\n');
@@ -220,6 +258,22 @@ function getFilePath(id) {
   return { fullPath, fileName: v.file_name, fileSize: v.file_size };
 }
 
+function getBlockMapPath(id, requestedFileName) {
+  const source = db.findOne('versions', record => record.id === id && record.is_active === 1);
+  if (!source || !['win32-x64', 'darwin-arm64'].includes(source.platform)) return null;
+  const pattern = source.platform === 'win32-x64' ? /-(\d+\.\d+\.\d+)-win-x64\.exe\.blockmap$/u : /-(\d+\.\d+\.\d+)-arm64\.zip\.blockmap$/u;
+  const match = String(requestedFileName || '').match(pattern);
+  if (!match) return null;
+  const version = db.findOne('versions', record => record.version === match[1]
+    && record.platform === source.platform && record.channel === source.channel
+    && record.package_type === (source.platform === 'win32-x64' ? 'exe' : 'zip') && record.is_active === 1);
+  if (!version) return null;
+  const fullPath = path.join(filesDir, `${version.file_name}.blockmap`);
+  if (!fs.existsSync(fullPath)) return null;
+  const stat = fs.statSync(fullPath);
+  return { fullPath, fileName: `${version.file_name}.blockmap`, fileSize: stat.size };
+}
+
 module.exports = {
   checkUpdate,
   publishVersion,
@@ -230,5 +284,6 @@ module.exports = {
   deactivateVersion,
   incrementDownloadCount,
   getFilePath,
+  getBlockMapPath,
   sanitizeVersion,
 };

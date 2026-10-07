@@ -1,4 +1,4 @@
-# 社区AI管理系统品牌素材
+# 村居AI管理系统品牌素材
 
 品牌依据：用户上传的参考图。
 
@@ -11,7 +11,7 @@
 - 橙色“AI”字样
 - 圆环右下方少量绿色到金色过渡
 
-产品名称统一为“社区AI管理系统”。“AI 牛小二”作为原版业务功能名称保留。
+产品名称统一为“村居AI管理系统”。“AI 牛小二”作为原版业务功能名称保留。
 
 ## 最终素材
 
@@ -19,6 +19,7 @@
 - `app/assets/brand/logo-transparent.png`：登录页和侧边栏使用的透明 Logo。
 - `app/build/icon.icns`：macOS 应用和 DMG 使用的多尺寸图标。
 - `app/src/renderer/logo.png`：渲染页面实际加载的 Logo 副本。
+- `app/src/renderer/foundation/vendor/community-logo.png`、`app/src/renderer/foundation/vendor/assets/community-logo.png`：新版登录界面和侧栏使用的透明 Logo，与主品牌素材保持一致；旧 Foundation 素材留作来源基线。
 
 ## 使用规则
 
@@ -31,4 +32,3 @@
 ## 生成方式
 
 使用内置图像生成流程，以用户参考图作为唯一设计参考。应用图标和透明 Logo 分别生成，随后通过洋红色键控背景进行本地透明化处理；最终检查透明边缘、中心对齐、小尺寸识别度和“AI”文字准确性。
-

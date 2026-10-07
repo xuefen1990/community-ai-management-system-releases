@@ -1,7 +1,7 @@
 {
   "name": "community-ai-license-generator",
   "version": "0.1.0",
-  "description": "社区AI管理系统离线授权工具",
+  "description": "村居AI管理系统离线授权工具",
   "main": "src/main/index.js",
   "private": true,
   "scripts": {

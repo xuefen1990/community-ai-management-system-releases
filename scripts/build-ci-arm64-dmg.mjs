@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createUpdateBlockmap } from './update-blockmap.mjs';
 
 import crypto from 'node:crypto';
 import { chmod, cp, lstat, mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
@@ -15,7 +16,7 @@ const version = packageManifest.version;
 const applicationIdentifier = 'com.community.ai.management';
 const signingRequirement = `designated => identifier "${applicationIdentifier}"`;
 const verificationRequirement = `identifier "${applicationIdentifier}"`;
-const dmgPath = path.join(releaseDirectory, `社区AI管理系统-${version}-arm64.dmg`);
+const dmgPath = path.join(releaseDirectory, `村居AI管理系统-${version}-arm64.dmg`);
 const zipPath = path.join(releaseDirectory, `community-ai-management-system-${version}-arm64.zip`);
 const latestPath = path.join(releaseDirectory, 'latest-mac.yml');
 const archiveListingBuffer = 16 * 1024 * 1024;
@@ -111,6 +112,13 @@ run('npx', ['--no-install', 'electron-builder', '--mac', 'dir', '--arm64', '--pu
 });
 
 const runtimeApp = await findBuiltApplication();
+const ocrSource = path.join(appProject, 'src', 'native', 'macos-vision-ocr.swift');
+const ocrExecutable = path.join(runtimeApp, 'Contents', 'Resources', 'community-vision-ocr');
+run('/usr/bin/xcrun', [
+  'swiftc', ocrSource, '-o', ocrExecutable, '-target', 'arm64-apple-macos13.0',
+  '-framework', 'Foundation', '-framework', 'AppKit', '-framework', 'PDFKit', '-framework', 'Vision',
+]);
+await chmod(ocrExecutable, 0o755);
 await verifyEmbeddedBackend(runtimeApp);
 await writeFile(path.join(runtimeApp, 'Contents', 'Resources', 'app-update.yml'), updateConfig, 'utf8');
 run('xattr', ['-cr', runtimeApp]);
@@ -128,12 +136,13 @@ await cp(runtimeApp, stagedApplicationPath, {
 });
 await symlink('/Applications', path.join(stagingDirectory, 'Applications'));
 try {
-  run('hdiutil', ['create', '-volname', '社区AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', dmgPath]);
+  run('hdiutil', ['create', '-volname', '村居AI管理系统', '-srcfolder', stagingDirectory, '-ov', '-format', 'UDZO', dmgPath]);
 } finally {
   await rm(stagingDirectory, { recursive: true, force: true });
 }
 run('ditto', ['-c', '-k', '--sequesterRsrc', '--keepParent', runtimeApp, zipPath]);
 verifyUpdateArchive(zipPath);
+await createUpdateBlockmap(zipPath);
 
 const installerDigest = crypto.createHash('sha256').update(await readFile(dmgPath)).digest('hex');
 const zipBuffer = await readFile(zipPath);

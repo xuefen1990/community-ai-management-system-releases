@@ -1,0 +1,7 @@
+.community-overview-balance.wb-stat-card{margin:0;display:flex;align-items:flex-start;flex-wrap:wrap;gap:10px;padding:20px 24px;border:1px solid #cce4d9;border-radius:12px;background:linear-gradient(110deg,#ecf7f1,#f7fbf9);color:#426b5e}
+.community-overview-balance>div{display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.community-overview-balance strong{font-size:26px;color:#147954;font-variant-numeric:tabular-nums}
+.community-overview-balance strong.negative{color:#b56e53}
+.community-overview-balance small{font-size:12px;color:#6b8381}
+.community-overview-balance button{font:inherit;padding:8px 13px;border:1px solid #cddedb;border-radius:8px;color:#31514c;background:#fff;cursor:pointer}
+@media(max-width:760px){.community-overview-balance.wb-stat-card{padding:16px}.community-overview-balance strong{font-size:22px}}

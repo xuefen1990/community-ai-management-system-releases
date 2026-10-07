@@ -6,6 +6,7 @@ const path = require('node:path');
 const DEFAULT_AI_SETTINGS = Object.freeze({
   mode: 'local',
   localModelPath: '',
+  tokenReminderMode: 'high_cost_only',
   online: {
     baseUrl: 'https://api.openai.com/v1',
     model: '',
@@ -47,6 +48,7 @@ class AiSettingsStore {
     return {
       mode: settings.mode,
       localModelPath: settings.localModelPath,
+      tokenReminderMode: ['high_cost_only', 'always', 'insufficient_only'].includes(settings.tokenReminderMode) ? settings.tokenReminderMode : 'high_cost_only',
       online: {
         baseUrl: settings.online.baseUrl,
         model: settings.online.model,
@@ -77,6 +79,8 @@ class AiSettingsStore {
     const settings = {
       mode: input.mode,
       localModelPath: String(input.localModelPath || ''),
+      tokenReminderMode: ['high_cost_only', 'always', 'insufficient_only'].includes(input.tokenReminderMode)
+        ? input.tokenReminderMode : current.tokenReminderMode || 'high_cost_only',
       online: {
         baseUrl,
         model: String(input.online?.model || ''),
@@ -109,6 +113,19 @@ class AiSettingsStore {
       model: settings.online.model,
       apiKey: this.safeStorage.decryptString(Buffer.from(settings.online.encryptedApiKey, 'base64')),
     };
+  }
+
+  async clearLegacyOnlineSettings() {
+    const settings = await this.readRaw();
+    const hadLegacy = Boolean(settings.online?.encryptedApiKey || settings.online?.baseUrl || settings.online?.model || this.sessionApiKey);
+    if (!hadLegacy) return false;
+    this.sessionApiKey = '';
+    const cleaned = { ...settings, online: { baseUrl: '', model: '', encryptedApiKey: '' } };
+    await fs.mkdir(this.directory, { recursive: true });
+    const temporaryPath = `${this.filePath}.tmp-${process.pid}`;
+    await fs.writeFile(temporaryPath, `${JSON.stringify(cleaned, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+    await fs.rename(temporaryPath, this.filePath);
+    return true;
   }
 }
 

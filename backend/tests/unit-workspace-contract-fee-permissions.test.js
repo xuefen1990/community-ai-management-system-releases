@@ -6,7 +6,7 @@ const test = require('node:test');
 const { moduleFor } = require('../src/services/unitWorkspaceService');
 
 test('contract fee collections use existing finance permissions', () => {
-  for (const key of ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances']) {
+  for (const key of ['resourceContracts', 'contractFeeLedgers', 'contractFeeBatches', 'contractFeeReceipts', 'contractFeeAdvances', 'contractFeeDistributionPlans', 'contractFeeDistributionBatches']) {
     assert.equal(moduleFor(key), 'finance');
   }
 });

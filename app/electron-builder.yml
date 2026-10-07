@@ -1,5 +1,5 @@
 appId: com.community.ai.management
-productName: 社区AI管理系统
+productName: 村居AI管理系统
 asar: true
 directories:
   output: release
@@ -21,7 +21,5 @@ pkg:
   installLocation: /Applications
   artifactName: community-ai-management-system-${version}-${arch}.${ext}
 publish:
-  provider: github
-  owner: xuefen1990
-  repo: community-ai-management-system-releases
-  releaseType: release
+  provider: generic
+  url: https://xuefeng0901.cn/api/update/electron/

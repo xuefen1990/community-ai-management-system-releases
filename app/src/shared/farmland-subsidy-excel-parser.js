@@ -20,7 +20,7 @@
   function parsePaymentGrid(grid, cadreNames = new Set()) {
     const header = findHeader(grid, {
       name: ['户主姓名', '姓名'], idCard: ['身份证号', '身份证'], bankName: ['开户行'], bankCard: ['一卡通号', '卡号', '银行账号'], phone: ['联系电话', '手机号码', '手机号', '联系电话手机号'],
-      village: ['村'], groupName: ['村民组', '组别'], eligibleArea: ['应享受补贴面积（亩）', '应享受补贴面积', '补贴依据面积（亩）'], standard: ['补贴标准（元/亩）', '补贴标准'], amount: ['补贴金额（元）', '补贴金额', '金额'], remark: ['备注'],
+      village: ['村'], groupName: ["居民组", '村民组', '组别'], eligibleArea: ['应享受补贴面积（亩）', '应享受补贴面积', '补贴依据面积（亩）'], standard: ['补贴标准（元/亩）', '补贴标准'], amount: ['补贴金额（元）', '补贴金额', '金额'], remark: ['备注'],
     });
     if (!header) throw new Error('未识别到地力补贴兑付清册表头');
     const records = [];
@@ -42,7 +42,7 @@
 
   function parseContactRows(grid, sheetName) {
     const header = findHeader(grid, {
-      name: ['户主姓名', '姓名'], idCard: ['身份证号', '身份证'], groupName: ['村民组', '组别'], phone: ['联系电话', '手机号码', '手机号', '联系电话手机号'],
+      name: ['户主姓名', '姓名'], idCard: ['身份证号', '身份证'], groupName: ["居民组", '村民组', '组别'], phone: ['联系电话', '手机号码', '手机号', '联系电话手机号'],
     }, ['name', 'phone']);
     if (!header) return [];
     const get = (row, key) => header.map[key] === undefined ? '' : row[header.map[key]];

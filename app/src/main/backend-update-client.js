@@ -6,14 +6,21 @@ function createTimeoutSignal(timeoutMs) {
   return { signal: controller.signal, clear: () => clearTimeout(timer) };
 }
 
+function updatePlatform(platform = process.platform, arch = process.arch) {
+  if (platform === 'darwin' && arch === 'arm64') return 'darwin-arm64';
+  if (platform === 'win32' && arch === 'x64') return 'win32-x64';
+  throw new Error(`暂不支持此设备的应用内更新：${platform}-${arch}`);
+}
+
 class BackendUpdateClient {
-  constructor({ getServerConfig, fetchImpl = globalThis.fetch, timeoutMs = 5000 }) {
+  constructor({ getServerConfig, fetchImpl = globalThis.fetch, timeoutMs = 5000, platform = null }) {
     this.getServerConfig = getServerConfig;
     this.fetchImpl = fetchImpl;
     this.timeoutMs = timeoutMs;
+    this.platform = platform;
   }
 
-  async check({ currentVersion, platform = 'darwin-arm64', channel = 'stable' }) {
+  async check({ currentVersion, platform = this.platform || updatePlatform(), channel = 'stable' }) {
     if (typeof this.fetchImpl !== 'function') throw new Error('当前运行环境不支持更新检查');
     const config = await this.getServerConfig();
     const url = new URL('/api/update/check', config.baseUrl);
@@ -40,4 +47,4 @@ class BackendUpdateClient {
   }
 }
 
-module.exports = { BackendUpdateClient };
+module.exports = { BackendUpdateClient, updatePlatform };

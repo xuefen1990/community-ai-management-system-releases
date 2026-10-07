@@ -31,9 +31,18 @@ test('online API key is encrypted at rest and omitted from public settings', asy
   });
 
   assert.equal(publicSettings.online.hasApiKey, true);
+  assert.equal(publicSettings.tokenReminderMode, 'high_cost_only');
   assert.equal(publicSettings.online.apiKey, undefined);
   assert.doesNotMatch(await fs.readFile(store.filePath, 'utf8'), /secret-key/u);
   assert.equal((await store.getOnlineCredentials()).apiKey, 'secret-key');
+});
+
+test('Token 提醒偏好可保存，非法值回到推荐模式', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-settings-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const store = new AiSettingsStore({ userDataPath: root, safeStorage: fakeSafeStorage() });
+  assert.equal((await store.save({ mode: 'online', tokenReminderMode: 'insufficient_only', online: {} })).tokenReminderMode, 'insufficient_only');
+  assert.equal((await store.save({ mode: 'online', tokenReminderMode: 'invalid', online: {} })).tokenReminderMode, 'insufficient_only');
 });
 
 test('remote online AI endpoints must use HTTPS', async (t) => {

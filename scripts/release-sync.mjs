@@ -12,7 +12,7 @@ const manifest = JSON.parse(await readFile(path.join(appRoot, 'package.json'), '
 const version = manifest.version;
 const tag = `v${version}`;
 const releaseDirectory = path.join(appRoot, 'release');
-const dmgPath = path.join(releaseDirectory, `社区AI管理系统-${version}-arm64.dmg`);
+const dmgPath = path.join(releaseDirectory, `村居AI管理系统-${version}-arm64.dmg`);
 const zipPath = path.join(releaseDirectory, `community-ai-management-system-${version}-arm64.zip`);
 const latestPath = path.join(releaseDirectory, 'latest-mac.yml');
 const githubInstallerName = `AI.-${version}-arm64.dmg`;
@@ -135,9 +135,9 @@ if (!skipGithub) {
     stdio: 'ignore',
   }).status === 0;
   if (releaseExists) {
-    run('gh', ['release', 'edit', tag, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
+    run('gh', ['release', 'edit', tag, '--title', `村居AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
   } else {
-    run('gh', ['release', 'create', tag, '--target', releaseTarget, '--title', `社区AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
+    run('gh', ['release', 'create', tag, '--target', releaseTarget, '--title', `村居AI管理系统 v${version}`, '--notes-file', notesPath, '--latest', '--repo', 'xuefen1990/community-ai-management-system-releases']);
   }
   for (const asset of assets) {
     run('gh', ['release', 'upload', tag, asset, '--clobber', '--repo', 'xuefen1990/community-ai-management-system-releases']);

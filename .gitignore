@@ -11,6 +11,8 @@ source-original/app-bundle/
 # Dependencies and build outputs
 node_modules/
 app/.runtime/
+app/.dev/
+app/.dev-*/
 app/build/icon.iconset/
 app/assets/brand/*-chroma-source.png
 app/assets/brand/icon-master-generated.png
@@ -39,3 +41,9 @@ license-generator/private/
 # Logs and local OS files
 *.log
 .DS_Store
+
+# Local release checkouts, private notes and packaging staging
+.release-worktree*/
+.workbuddy/
+app/.dmg-root/
+app/.packaged-check*/

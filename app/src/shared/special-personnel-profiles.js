@@ -6,7 +6,7 @@
   const normalizeIdCard = (value) => text(value).replace(/\s/g, '').toUpperCase();
 
   const COMMON_FIELD_DEFINITIONS = [
-    { key: 'name', label: '姓名', aliases: ['姓名', '村民姓名', '人员姓名', '名字'] },
+    { key: 'name', label: '姓名', aliases: ['姓名', "居民姓名", '村民姓名', '人员姓名', '名字'] },
     { key: 'idCard', label: '身份证号', aliases: ['身份证号', '身份证号码', '公民身份号码', '公民身份证号码', '证件号码'], required: true },
     { key: 'gender', label: '性别', aliases: ['性别'] },
     { key: 'ethnicity', label: '民族', aliases: ['民族'] },
@@ -14,7 +14,7 @@
     { key: 'education', label: '学历', aliases: ['学历', '文化程度'] },
     { key: 'phone', label: '联系电话', aliases: ['联系电话', '手机号码', '手机号', '联系电话手机号', '电话', '联系方式'] },
     { key: 'household_id', label: '户号', aliases: ['户号', '家庭户号', '家庭编号'] },
-    { key: 'village_group', label: '村民小组', aliases: ['村民小组', '村组', '小组', '组别'] },
+    { key: 'village_group', label: "居民小组", aliases: ["居民小组", '村民小组', '村组', '小组', '组别'] },
     { key: 'relation_to_head', label: '与户主关系', aliases: ['与户主关系', '户主关系', '关系'] },
     { key: 'address', label: '住址', aliases: ['住址', '地址', '详细地址', '家庭住址'] },
   ];

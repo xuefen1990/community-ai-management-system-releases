@@ -1,0 +1,68 @@
+[
+  {
+    "id": "tpl_residency",
+    "name": "🏡 户籍常住人口证明",
+    "category": "户籍证明",
+    "title": "常住户籍证明",
+    "content": "兹证明居民 {居民姓名}（性别：{性别}，身份证号：{身份证号}），系我村 {居民小组} 常住户籍居民。户号：{户号}，现常住地址为：{常住地址}。\n\n该居民在辖区内遵纪守法，无不良记录。\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  },
+  {
+    "id": "tpl_relation",
+    "name": "👨‍👩‍👧 亲属关系证明 (双人通用)",
+    "category": "户籍证明",
+    "title": "亲属关系证明",
+    "content": "兹证明我村 {居民小组} 居民 {居民姓名}（性别：{性别}，身份证号：{身份证号}），与居民 {第二居民姓名}（身份证号：{第二居民身份证号}），系 {双方关系} 关系。\n\n二人属同一家庭共同生活成员，上述情况属实。\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  },
+  {
+    "id": "tpl_housing",
+    "name": "🏠 宅基地建房/无房证明",
+    "category": "建设土地",
+    "title": "居民宅基地与房屋情况证明",
+    "content": "兹证明居民 {居民姓名}（身份证号：{身份证号}），系我村 {居民小组} 农户，家庭总人口 {家庭人口数} 人。\n\n经核实，该户在村辖区内确权承包土地共 {承包地块数} 块，确权总面积 {承包总面积} 亩。现 {房屋土地状况描述}，申请 {申请建房事项} 情况属实，地块界线清楚无纠纷，符合村庄规划与一户一宅管理要求。\n\n{地块明细}\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  },
+  {
+    "id": "tpl_hardship",
+    "name": "💰 家庭经济困难救助证明",
+    "category": "民政救助",
+    "title": "家庭经济困难证明",
+    "content": "兹证明居民 {居民姓名}（身份证号：{身份证号}），系我村 {居民小组} 常住居民，家庭总人口 {家庭人口数} 人。\n\n该家庭主要因 {困难原因} 导致生活困难，属我村 {专项身份} 人员。\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  },
+  {
+    "id": "tpl_land",
+    "name": "🌾 土地承包确权证明",
+    "category": "农业土地",
+    "title": "土地承包确权证明",
+    "content": "兹证明居民 {居民姓名}（身份证号：{身份证号}），系我村 {居民小组} 承包户。\n\n名下确权承包地块共计 {承包地块数} 块，确权总面积 {承包总面积} 亩，地块四至界限清晰，产权权属明确，不存在纠纷。\n\n{地块明细}\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  },
+  {
+    "id": "tpl_death",
+    "name": "⚰️ 居民死亡证明",
+    "category": "户籍民政",
+    "title": "居民死亡证明",
+    "content": "兹证明居民 {居民姓名}（性别：{性别}，身份证号：{身份证号}），系我村 {居民小组} 常住居民。\n\n该居民因 {死亡原因} 于 {死亡时间} 在 {死亡地点} 不幸去世，享年 {享年岁数} 岁。户籍销户及殡葬事宜正在办理中。\n\n特此证明。",
+    "redSeal": true,
+    "builtin": true,
+    "isSystem": true,
+    "sealEnabled": true
+  }
+]

@@ -19,6 +19,7 @@ function service(database, options = {}) {
     databaseStore: store,
     aiRouter: options.aiRouter || { chat: async () => ({ content: '一般回答', provider: 'local' }) },
     authService: options.authService || null,
+    aiFileTaskService: options.aiFileTaskService || null,
     now: () => new Date('2026-09-01T08:00:00.000Z'),
   });
 }
@@ -75,6 +76,8 @@ test('answers an annual payment question from paid general and contract batches 
 
   const result = await assistant.converse({ messages: [{ role: 'user', content: '张三这年度共计发了多少钱？' }] });
   assert.equal(result.provider, 'system');
+  assert.equal(result.aiTool.id, 'funds.paid-summary');
+  assert.deepEqual(result.aiTool.permission, { module: 'finance', action: 'view' });
   assert.match(result.content, /¥2500\.00/u);
   assert.match(result.content, /共 2 笔/u);
   assert.match(result.content, /地力补贴台账目前没有/u);
@@ -97,6 +100,8 @@ test('shows pending funding as an alert rather than including it in paid totals'
 
   const result = await assistant.converse({ messages: [{ role: 'user', content: '张三 2026 年还有多少待发资金？' }] });
   assert.equal(result.provider, 'system');
+  assert.equal(result.aiTool.id, 'funds.pending-summary');
+  assert.deepEqual(result.aiTool.permission, { module: 'finance', action: 'view' });
   assert.match(result.content, /¥800\.00/u);
   assert.equal(result.data.queryEvidence.paidTotalCents, 0);
   assert.equal(result.data.queryEvidence.empty, true);
@@ -145,12 +150,125 @@ test('answers a unique resident identity-card request from the local archive wit
 
   const result = await assistant.converse({ messages: [{ role: 'user', content: '帮我查找一下薛锋的身份证号' }] });
   assert.equal(result.provider, 'system');
+  assert.equal(result.aiTool.id, 'resident.identity-query');
+  assert.deepEqual(result.aiTool.permission, { module: 'personnel', action: 'view' });
   assert.match(result.content, /321302199009011634/u);
-  assert.match(result.content, /本机村民一户一档/u);
+  assert.match(result.content, /本机居民一户一档/u);
   assert.equal(result.data.queryEvidence.kind, 'record-evidence');
   assert.equal(result.data.queryEvidence.records[0].sourceAction.target, 'tab-personnel');
   assert.equal(result.data.queryEvidence.records[0].sourceAction.filters.query, '薛锋');
   assert.equal(onlineCalled, false);
+});
+
+test('answers a resident overview directly from the local archive without sending the database online', async () => {
+  let onlineCalls = 0;
+  const assistant = service({
+    personnel: [{
+      id: 'person-xue-bofeng', name: '薛伯凤', village_group: '西六组', household_id: '209043607',
+      relation_to_head: '户主', gender: '男', birth_date: '1957年11月14日', phone: '13800000000',
+    }],
+  }, {
+    aiRouter: { onlineChat: async () => { onlineCalls += 1; throw new Error('不应调用在线 AI'); } },
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '查下薛伯凤的基本情况' }] });
+
+  assert.equal(result.provider, 'system');
+  assert.match(result.content, /薛伯凤/u);
+  assert.match(result.content, /西六组/u);
+  assert.match(result.content, /户主/u);
+  assert.equal(result.data.queryEvidence.kind, 'record-evidence');
+  assert.equal(onlineCalls, 0);
+});
+
+test('never returns a full database fact bundle even when an online plan requests it', () => {
+  const database = {
+    personnel: [
+      { id: 'target', name: '薛伯凤', village_group: '西六组' },
+      ...Array.from({ length: 200 }, (_, index) => ({ id: `other-${index}`, name: `其他居民${index}`, village_group: '一组' })),
+    ],
+    financeRecords: Array.from({ length: 200 }, (_, index) => ({ id: `finance-${index}`, summary: `无关记录${index}` })),
+  };
+  const assistant = service(database);
+
+  const facts = assistant.relevantFacts(database, { dataScope: 'full_database' }, '查下薛伯凤的基本情况');
+  assert.equal(facts.personnel.length, 1);
+  assert.equal(facts.personnel[0].name, '薛伯凤');
+  assert.ok(Buffer.byteLength(JSON.stringify(facts), 'utf8') < 64 * 1024);
+});
+
+test('forwards the recent conversation to general online chat', async () => {
+  let received = null;
+  const assistant = service({ personnel: [] }, {
+    aiRouter: { chat: async (value) => { received = value; return { content: '好的', provider: 'online' }; } },
+  });
+  await assistant.converse({ messages: [
+    { role: 'user', content: '我叫小王' },
+    { role: 'assistant', content: '好的' },
+    { role: 'user', content: '我刚才叫什么？' },
+  ] });
+  assert.equal(received.messages.some((item) => item.content === '我叫小王'), true);
+  assert.equal(received.messages.at(-1).content, '我刚才叫什么？');
+});
+
+test('shows a useful Chinese reason when online fact explanation fails', async () => {
+  let calls = 0;
+  const assistant = service({ personnel: [] }, {
+    aiRouter: {
+      onlineChat: async () => {
+        calls += 1;
+        if (calls === 1) return { content: JSON.stringify({ canonicalMessage: '查询村民情况', intent: 'query', needsFacts: true, dataScope: 'related_records' }) };
+        throw new Error('单位 AI 剩余额度不足');
+      },
+    },
+  });
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '查询村民情况' }] });
+  assert.match(result.content, /单位 AI 剩余额度不足/u);
+  assert.match(result.content, /请补充/u);
+});
+
+test('stores an explicit personal preference and confirms an organization rule', async () => {
+  const created = [];
+  const authService = {
+    request: async (path, options = {}) => {
+      if (path === '/unit/workspace/ai/memories' && options.method === 'POST') {
+        created.push(options.body);
+        return { memory: { id: `memory-${created.length}`, ...options.body } };
+      }
+      if (path === '/unit/workspace/ai/memories') return { memories: [] };
+      throw new Error(`unexpected ${path}`);
+    },
+  };
+  const assistant = service({ personnel: [] }, { authService });
+
+  const personal = await assistant.converse({ messages: [{ role: 'user', content: '记住：以后称呼我为薛主任' }] });
+  assert.match(personal.content, /已记住/u);
+  assert.deepEqual(created[0], { scope: 'personal', content: '以后称呼我为薛主任' });
+
+  const proposed = await assistant.converse({ messages: [{ role: 'user', content: '单位规则：承包费先核对各组固定总额' }] });
+  assert.equal(proposed.needsConfirmation, true);
+  assert.equal(created.length, 1);
+  const confirmed = await assistant.converse({ messages: [{ role: 'user', content: '确认保存' }] });
+  assert.match(confirmed.content, /已保存单位规则/u);
+  assert.deepEqual(created[1], { scope: 'organization', content: '承包费先核对各组固定总额' });
+});
+
+test('adds saved personal and organization memories to online conversation context', async () => {
+  let received = null;
+  const authService = {
+    request: async (path) => path === '/unit/workspace/ai/memories' ? { memories: [
+      { id: 'personal', scope: 'personal', content: '称呼我为薛主任' },
+      { id: 'unit', scope: 'organization', content: '承包费先核对各组固定总额' },
+    ] } : { conversation: null },
+  };
+  const assistant = service({ personnel: [] }, {
+    authService,
+    aiRouter: { chat: async value => { received = value; return { content: '收到', provider: 'online' }; } },
+  });
+  await assistant.converse({ messages: [{ role: 'user', content: '帮我写一句工作提醒' }] });
+  const context = received.messages.map(item => item.content).join('\n');
+  assert.match(context, /称呼我为薛主任/u);
+  assert.match(context, /承包费先核对各组固定总额/u);
 });
 
 test('answers a same-household relationship from the local resident archive without calling online AI', async () => {
@@ -169,7 +287,7 @@ test('answers a same-household relationship from the local resident archive with
   assert.match(result.content, /同一户/u);
   assert.match(result.content, /薛锋.*子/u);
   assert.match(result.content, /薛伯齐.*户主/u);
-  assert.match(result.content, /本机村民一户一档/u);
+  assert.match(result.content, /本机居民一户一档/u);
   assert.equal(result.data.queryEvidence.kind, 'record-evidence');
   assert.equal(result.data.queryEvidence.metricValue, '薛锋是薛伯齐的子女');
   assert.equal(result.data.queryEvidence.records.length, 2);
@@ -240,7 +358,7 @@ test('automatically sends an explicitly requested online analysis after the admi
   assert.match(onlineMessages[2].content, /321302199009011634/u);
 });
 
-test('can automatically provide the complete local database to online analysis when the planner requires it', async () => {
+test('ignores an online request for the complete database and sends only bounded related facts', async () => {
   const onlineCalls = [];
   const assistant = service({
     personnel: [{ id: 'person-1', name: '张三', village_group: '一组' }],
@@ -252,7 +370,7 @@ test('can automatically provide the complete local database to online analysis w
         if (/对话理解器/u.test(messages[0].content)) {
           return { content: JSON.stringify({ canonicalMessage: '请用在线 AI 对本系统资料作综合分析。', intent: 'query', needsFacts: true, dataScope: 'full_database' }) };
         }
-        return { content: '已根据完整资料完成综合分析。', provider: 'online' };
+        return { content: '已根据必要资料完成综合分析。', provider: 'online' };
       },
     },
   });
@@ -261,8 +379,8 @@ test('can automatically provide the complete local database to online analysis w
 
   assert.equal(result.provider, 'online');
   assert.equal(onlineCalls.length, 2);
-  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /partyMembers/u);
-  assert.match(onlineCalls[1][onlineCalls[1].length - 1].content, /正式党员/u);
+  assert.doesNotMatch(onlineCalls[1][onlineCalls[1].length - 1].content, /partyMembers/u);
+  assert.doesNotMatch(onlineCalls[1][onlineCalls[1].length - 1].content, /正式党员/u);
 });
 
 test('uses online context understanding and verified household facts for a sibling relationship', async () => {
@@ -420,7 +538,7 @@ test('requires two confirmations for a high-risk action and records its cancella
   const database = { personnel: [], aiAssistantOperations: [] };
   const assistant = service(database);
   assistant.queueControlledAction({
-    type: 'future_bulk_delete', riskLevel: 'high', personName: '一组居民', before: { count: 5 }, after: { deleted: true },
+    type: 'finance_records_clear', riskLevel: 'high', personName: '财务收支台账', before: { count: 5 }, after: { deleted: true },
   });
   const first = await assistant.converse({ messages: [{ role: 'user', content: '继续执行' }] });
   assert.match(first.content, /第一次确认/u);
@@ -1072,6 +1190,30 @@ test('does not guess an annual range when the user omitted the year', async () =
   assert.match(result.content, /哪一年/u);
 });
 
+test('answers an explicitly requested all-years resident payment total without asking for a year', async () => {
+  const assistant = service({
+    personnel: [{ id: 'a', name: '陆敬辉', village_group: '东二组' }],
+    disbursementBatches: [
+      { id: 'salary-2025', categoryName: '固定工资', completedAt: '2025-03-01T00:00:00.000Z', items: [
+        { personId: 'a', name: '陆敬辉', amountCents: 125050, paymentStatus: 'paid' },
+      ] },
+      { id: 'salary-2026', categoryName: '固定工资', completedAt: '2026-03-01T00:00:00.000Z', items: [
+        { personId: 'a', name: '陆敬辉', amountCents: 250000, paymentStatus: 'paid' },
+        { personId: 'a', name: '陆敬辉', amountCents: 999900, paymentStatus: 'pending' },
+      ] },
+    ],
+    contractFeeBatches: [],
+  });
+
+  const result = await assistant.converse({ messages: [{ role: 'user', content: '历年陆敬辉共计发了多少钱？' }] });
+
+  assert.doesNotMatch(result.content, /哪一年/u);
+  assert.match(result.content, /历年/u);
+  assert.match(result.content, /¥3750\.50/u);
+  assert.equal(result.data.queryEvidence.period, 'all');
+  assert.equal(result.data.queryEvidence.paidCount, 2);
+});
+
 test('asks for clarification before handling an unstructured system request', async () => {
   const assistant = service({ personnel: [], disbursementBatches: [], contractFeeBatches: [] });
   const result = await assistant.converse({ messages: [{ role: 'user', content: '查一下村民发放记录' }] });
@@ -1098,7 +1240,7 @@ test('returns explicitly scoped read-only counts for other system ledgers', asyn
     resourceContracts: [{ id: 'contract-1' }, { id: 'contract-2' }],
   });
   const residents = await assistant.converse({ messages: [{ role: 'user', content: '现在有多少村民？' }] });
-  assert.match(residents.content, /2 条村民档案/u);
+  assert.match(residents.content, /2 条居民档案/u);
   assert.match(residents.content, /未按年份或状态筛选/u);
 
   const contracts = await assistant.converse({ messages: [{ role: 'user', content: '系统有几份合同？' }] });
@@ -1111,6 +1253,34 @@ test('uses the configured AI only for non-system conversations and adds a no-gue
   const result = await assistant.converse({ messages: [{ role: 'user', content: '帮我写一句节日祝福' }] });
   assert.equal(result.content, '收到');
   assert.match(received.messages[0].content, /不得编造/u);
+});
+
+test('AI 证明起草只发送模板结构并返回可核对的结构化草稿', async () => {
+  let received = null;
+  const assistant = service({}, { aiRouter: { onlineChat: async (messages, options) => {
+    received = { messages, options };
+    return { content: '```json\n{"reply":"已拟写，请确认居民和正文。","needsMoreInfo":false,"residentNames":["张三","李四"],"recommendedTemplateId":"tpl-relation","draftMode":"template","title":"亲属关系证明","content":"兹证明{居民姓名}与{第二居民}系兄弟关系。","manualValues":{"两人之间关系":"兄弟"}}\n```' };
+  } } });
+  const result = await assistant.draftCertificateWithAi({
+    messages: [{ role: 'user', content: '给张三和李四开兄弟关系证明' }],
+    templates: [{ id: 'tpl-relation', name: '亲属关系证明', category: '户籍证明', title: '亲属关系证明', content: '原正文', fields: [{ label: '居民姓名', source: 'archive' }] }],
+  });
+  assert.equal(result.recommendedTemplateId, 'tpl-relation');
+  assert.deepEqual(result.residentNames, ['张三', '李四']);
+  assert.equal(result.manualValues['两人之间关系'], '兄弟');
+  assert.match(received.messages[0].content, /仅输出一个 JSON/u);
+  assert.doesNotMatch(JSON.stringify(received.messages), /321302/u);
+  assert.equal(received.options.temperature, 0.15);
+});
+
+test('AI 证明起草拒绝不存在的模板编号并保留临时草稿', async () => {
+  const assistant = service({}, { aiRouter: { onlineChat: async () => ({ content: JSON.stringify({
+    reply: '没有匹配模板，已生成临时草稿。', needsMoreInfo: false, residentNames: ['王五'], recommendedTemplateId: 'fake-template',
+    draftMode: 'temporary', title: '情况证明', content: '兹证明{居民姓名}有关情况如下。', manualValues: {},
+  }) }) } });
+  const result = await assistant.draftCertificateWithAi({ messages: [{ role: 'user', content: '起草情况证明' }], templates: [] });
+  assert.equal(result.recommendedTemplateId, '');
+  assert.equal(result.draftMode, 'temporary');
 });
 
 test('stops and manually restores a unit member only after two confirmations', async () => {
@@ -1145,4 +1315,257 @@ test('does not hard-delete a unit account through the AI assistant', async () =>
   const assistant = service({ aiAssistantOperations: [] });
   const result = await assistant.converse({ messages: [{ role: 'user', content: '删除账号：13800000000' }] });
   assert.match(result.content, /不执行硬删除账号/u);
+});
+
+test('persists a cross-module task, asks for one missing condition, and resumes it in the same conversation', async () => {
+  const database = {
+    personnel: [{ id: 'person-zhang', name: '张三', village_group: '一组', id_card: '321302199001011111' }],
+    landParcel: [{ id: 'land-1', name: '东地', area: 3.5, contractorIds: ['321302199001011111'] }],
+    disbursementBatches: [{ id: 'batch-1', categoryName: '土地租金', period: '2026 年', items: [
+      { personId: 'person-zhang', name: '张三', groupName: '一组', amountCents: 80000, paymentStatus: 'paid', paidAt: '2026-05-01' },
+    ] }],
+    contractFeeBatches: [],
+    aiAssistantTasks: [],
+  };
+  const assistant = service(database);
+  const first = await assistant.converse({
+    conversationId: 'conversation-cross-module',
+    messages: [{ role: 'user', content: '查询张三名下有多少亩承包地，以及他发了多少钱' }],
+  });
+  assert.equal(first.task.status, 'waiting-input');
+  assert.equal(first.task.progress.completed >= 1, true);
+  assert.match(first.content, /请告诉我需要查询哪一年/u);
+  assert.equal(database.aiAssistantTasks[0].status, 'waiting-input');
+
+  const second = await assistant.converse({
+    conversationId: 'conversation-cross-module',
+    messages: [{ role: 'user', content: '2026年' }],
+  });
+  assert.equal(second.task.status, 'completed');
+  assert.match(second.content, /3\.50 亩/u);
+  assert.match(second.content, /¥800\.00/u);
+  assert.match(second.content, /已完成 2\/2 步/u);
+});
+
+test('does not let the resident overview shortcut bypass a cross-module task', async () => {
+  const assistant = service({
+    personnel: [{ id: 'person-zhang', name: '张三', village_group: '一组', id_card: '321302199001011111' }],
+    disbursementBatches: [{ id: 'batch-1', categoryName: '补贴', items: [
+      { personId: 'person-zhang', name: '张三', amountCents: 6000, paymentStatus: 'paid', paidAt: '2026-05-01' },
+    ] }],
+    aiAssistantTasks: [],
+  });
+  const result = await assistant.converse({
+    conversationId: 'conversation-overview-and-funds',
+    messages: [{ role: 'user', content: '查询张三基本情况，以及他2026年发了多少钱' }],
+  });
+  assert.equal(result.task.status, 'completed');
+  assert.equal(result.task.progress.total, 2);
+  assert.match(result.content, /居民档案/u);
+  assert.match(result.content, /¥60\.00/u);
+});
+
+test('persists a pending write task, restores it after service restart, verifies it, and links the operation', async () => {
+  const database = {
+    personnel: [{ id: 'person-persist', name: '张三', village_group: '一组', phone: '13800000000' }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  const first = service(database);
+  const proposal = await first.converse({
+    conversationId: 'conversation-write-persist',
+    messages: [{ role: 'user', content: '把一组张三的电话改成13900000000' }],
+  });
+  assert.equal(proposal.task.status, 'waiting-confirmation');
+  assert.equal(proposal.task.pendingAction.type, 'resident_phone_update');
+  assert.equal(database.personnel[0].phone, '13800000000');
+
+  const restarted = service(database);
+  const completed = await restarted.converse({
+    conversationId: 'conversation-write-persist',
+    messages: [{ role: 'user', content: '确认' }],
+  });
+  assert.equal(database.personnel[0].phone, '13900000000');
+  assert.equal(completed.task.status, 'completed');
+  assert.equal(completed.verification.passed, true);
+  const operation = database.aiAssistantOperations.find(item => item.type === 'resident_phone_update');
+  assert.equal(operation.taskId, proposal.task.id);
+  assert.equal(operation.toolId, 'resident.phone-update');
+  assert.equal(operation.verification.passed, true);
+  assert.equal(operation.confirmationHistory.length, 1);
+  const undone = await restarted.undoOperation({ operationId: operation.id });
+  assert.equal(undone.task.status, 'undone');
+  assert.equal(database.personnel[0].phone, '13800000000');
+});
+
+test('persists the first high-risk confirmation and resumes the final confirmation after restart', async () => {
+  const database = {
+    workItems: [{ id: 'work-persist', number: 'GZ-20260901-001', name: '入户走访', status: 'pending', updatedAt: '2026-08-31T08:00:00.000Z' }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  const first = service(database);
+  await first.converse({ conversationId: 'conversation-high-risk', messages: [{ role: 'user', content: '删除工作：编号=GZ-20260901-001' }] });
+  const firstConfirmation = await first.converse({ conversationId: 'conversation-high-risk', messages: [{ role: 'user', content: '继续执行' }] });
+  assert.equal(firstConfirmation.task.pendingAction.confirmationStep, 1);
+  assert.equal(database.workItems[0].deletedAt, undefined);
+
+  const restarted = service(database);
+  const completed = await restarted.converse({ conversationId: 'conversation-high-risk', messages: [{ role: 'user', content: '确认执行' }] });
+  assert.ok(database.workItems[0].deletedAt);
+  assert.equal(completed.task.status, 'completed');
+  assert.equal(database.aiAssistantOperations.find(item => item.type === 'work_item_soft_delete').confirmationHistory.length, 2);
+});
+
+test('denies a write before confirmation when a member only has view permission', async () => {
+  const database = {
+    personnel: [{ id: 'person-readonly', name: '张三', village_group: '一组', phone: '13800000000' }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  const assistant = service(database, { authService: {
+    getStatus: async () => ({ authenticated: true, account: { id: 'member-readonly', role: 'member', permissions: { personnel: ['view'] } } }),
+  } });
+  const result = await assistant.converse({
+    conversationId: 'conversation-denied',
+    messages: [{ role: 'user', content: '把一组张三的电话改成13900000000' }],
+  });
+  assert.match(result.content, /没有.*权限/u);
+  assert.equal(database.personnel[0].phone, '13800000000');
+  assert.equal(database.aiAssistantTasks.length, 0);
+  assert.equal(assistant.pendingAction, null);
+});
+
+test('keeps pending writes scoped to their own conversation', async () => {
+  const database = {
+    personnel: [{ id: 'person-conversation', name: '张三', village_group: '一组', phone: '13800000000' }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  const assistant = service(database);
+  await assistant.converse({ conversationId: 'conversation-a', messages: [{ role: 'user', content: '把一组张三的电话改成13900000000' }] });
+  await assistant.converse({ conversationId: 'conversation-b', messages: [{ role: 'user', content: '确认' }] });
+  assert.equal(database.personnel[0].phone, '13800000000');
+  const completed = await assistant.converse({ conversationId: 'conversation-a', messages: [{ role: 'user', content: '确认' }] });
+  assert.equal(completed.verification.passed, true);
+  assert.equal(database.personnel[0].phone, '13900000000');
+});
+
+test('checks member permission again immediately before executing a confirmed write', async () => {
+  const database = {
+    personnel: [{ id: 'person-permission-change', name: '张三', village_group: '一组', phone: '13800000000' }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  let permissions = { personnel: ['view', 'update'] };
+  const assistant = service(database, { authService: {
+    getStatus: async () => ({ authenticated: true, account: { id: 'member-change', role: 'member', permissions } }),
+  } });
+  const proposal = await assistant.converse({ conversationId: 'conversation-permission-change', messages: [{ role: 'user', content: '把一组张三的电话改成13900000000' }] });
+  assert.equal(proposal.task.status, 'waiting-confirmation');
+  permissions = { personnel: ['view'] };
+  const denied = await assistant.converse({ conversationId: 'conversation-permission-change', messages: [{ role: 'user', content: '确认' }] });
+  assert.match(denied.content, /未执行.*权限/u);
+  assert.equal(denied.task.status, 'failed');
+  assert.equal(database.personnel[0].phone, '13800000000');
+});
+
+test('creates a requested archive category and archives the current conversation file after confirmation', async () => {
+  const database = {
+    documents: [{ id: 'document-union-license', name: '工会法人资格证书.png', category: '待归档' }],
+    foundationDictionaries: [],
+    aiFileIndexEntries: [{
+      id: 'file-union-license', documentId: 'document-union-license', fileName: '工会法人资格证书.png',
+      archiveState: 'pending', status: 'reviewed', conversationIds: ['conversation-document-category'],
+      createdAt: '2026-09-01T07:00:00.000Z', lastUsedAt: '2026-09-01T07:00:00.000Z',
+    }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  let applied = null;
+  const aiFileTaskService = {
+    list: async ({ conversationId }) => structuredClone(database.aiFileIndexEntries.filter(item => item.conversationIds.includes(conversationId))),
+    applyCategoryDecision: async (value) => {
+      applied = structuredClone(value);
+      database.foundationDictionaries.push({ id: 'dictionary-business-license', category: 'document_category', name: '营业执照', label: '营业执照', value: '营业执照' });
+      database.documents[0].category = '营业执照';
+      Object.assign(database.aiFileIndexEntries[0], {
+        archiveState: 'archived', finalCategory: '营业执照',
+        categoryDecision: { action: 'create-and-archive', categoryName: '营业执照', operationId: 'operation-document-category' },
+      });
+      database.aiAssistantOperations.push({
+        id: 'operation-document-category', type: 'document_category_create_and_archive', sourceFileId: 'file-union-license',
+        module: '电子档案柜', object: { id: 'document-union-license', name: '工会法人资格证书.png' }, status: 'completed',
+      });
+      return { ok: true, message: '已创建“营业执照”分类并完成归档。', file: structuredClone(database.aiFileIndexEntries[0]) };
+    },
+  };
+  const assistant = service(database, { aiFileTaskService });
+
+  const proposal = await assistant.converse({
+    conversationId: 'conversation-document-category',
+    messages: [{ role: 'user', content: '把工会法人资格证书导入到档案管理，新建营业执照' }],
+  });
+  assert.equal(proposal.task.status, 'waiting-confirmation');
+  assert.equal(proposal.task.pendingAction.type, 'document_category_create_and_archive');
+  assert.equal(proposal.task.pendingAction.fileId, 'file-union-license');
+  assert.equal(proposal.task.pendingAction.categoryName, '营业执照');
+  assert.match(proposal.content, /新建档案分类“营业执照”/u);
+
+  const completed = await assistant.converse({
+    conversationId: 'conversation-document-category',
+    messages: [{ role: 'user', content: '确认' }],
+  });
+  assert.deepEqual(applied, { fileId: 'file-union-license', action: 'create-and-archive', categoryName: '营业执照' });
+  assert.equal(database.documents[0].category, '营业执照');
+  assert.equal(database.aiFileIndexEntries[0].archiveState, 'archived');
+  assert.equal(completed.verification.passed, true);
+  assert.equal(completed.data.documentCategoryChanged, true);
+  assert.equal(completed.action.target, 'tab-documents');
+  assert.match(completed.content, /确认分类和文件都已保存/u);
+  const operation = database.aiAssistantOperations.find(item => item.id === 'operation-document-category');
+  assert.equal(operation.taskId, proposal.task.id);
+  assert.equal(operation.verification.passed, true);
+});
+
+test('does not claim archive success when the category service fails', async () => {
+  const database = {
+    documents: [{ id: 'document-failed-archive', name: '工会法人资格证书.png', category: '待归档' }],
+    foundationDictionaries: [],
+    aiFileIndexEntries: [{
+      id: 'file-failed-archive', documentId: 'document-failed-archive', fileName: '工会法人资格证书.png',
+      archiveState: 'pending', status: 'reviewed', conversationIds: ['conversation-failed-archive'],
+    }],
+    aiAssistantOperations: [], aiAssistantTasks: [],
+  };
+  const assistant = service(database, { aiFileTaskService: {
+    list: async () => structuredClone(database.aiFileIndexEntries),
+    applyCategoryDecision: async () => { throw new Error('创建档案分类失败'); },
+  } });
+  await assistant.converse({
+    conversationId: 'conversation-failed-archive',
+    messages: [{ role: 'user', content: '新建营业执照分类并归档这个文件' }],
+  });
+  const failed = await assistant.converse({
+    conversationId: 'conversation-failed-archive',
+    messages: [{ role: 'user', content: '确认' }],
+  });
+  assert.equal(database.documents[0].category, '待归档');
+  assert.equal(database.aiFileIndexEntries[0].archiveState, 'pending');
+  assert.equal(failed.task.status, 'failed');
+  assert.match(failed.content, /未完成本次归档/u);
+  assert.doesNotMatch(failed.content, /已创建|已完成归档/u);
+});
+
+test('asks for a file name when several pending conversation files could be archived', async () => {
+  const database = { documents: [], foundationDictionaries: [], aiAssistantOperations: [], aiAssistantTasks: [] };
+  const files = [
+    { id: 'file-a', fileName: '证书A.png', archiveState: 'pending', status: 'reviewed', conversationIds: ['conversation-multiple'] },
+    { id: 'file-b', fileName: '证书B.png', archiveState: 'pending', status: 'reviewed', conversationIds: ['conversation-multiple'] },
+  ];
+  const assistant = service(database, { aiFileTaskService: {
+    list: async () => structuredClone(files),
+    applyCategoryDecision: async () => { throw new Error('不应执行'); },
+  } });
+  const result = await assistant.converse({
+    conversationId: 'conversation-multiple',
+    messages: [{ role: 'user', content: '新建营业执照分类并归档' }],
+  });
+  assert.match(result.content, /有 2 个待归档文件/u);
+  assert.match(result.content, /说明文件名/u);
+  assert.equal(assistant.pendingAction, null);
 });

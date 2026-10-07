@@ -26,7 +26,7 @@ class OpenAiCompatibleClient {
     this.timeoutMs = timeoutMs;
   }
 
-  async chat({ baseUrl, apiKey, model, messages, temperature = 0.2 }) {
+  async chat({ baseUrl, apiKey, model, messages, temperature = 0.2, maxTokens = 4096 }) {
     if (!baseUrl || !model) throw new Error('请先填写在线 AI 接口地址和模型名称');
     if (!apiKey) throw new Error('请先填写在线 AI API 密钥');
     if (!Array.isArray(messages) || messages.length === 0) throw new Error('消息内容不能为空');
@@ -34,7 +34,7 @@ class OpenAiCompatibleClient {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const requestBody = { model, messages, temperature, stream: false };
+      const requestBody = { model, messages, temperature, max_tokens: Math.min(8192, Math.max(16, Number(maxTokens) || 4096)), stream: false };
       if (usesDeepSeekV4(baseUrl, model)) requestBody.thinking = { type: 'disabled' };
       const response = await this.fetchImplementation(`${baseUrl.replace(/\/+$/u, '')}/chat/completions`, {
         method: 'POST',

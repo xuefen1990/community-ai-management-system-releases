@@ -8,6 +8,8 @@ const router = express.Router();
 
 router.get('/data', authRequired, (req, res, next) => { try { res.json(workspace.read(req.user)); } catch (error) { next(error); } });
 router.put('/data', authRequired, (req, res, next) => { try { res.json(workspace.write(req.user, req.body)); } catch (error) { next(error); } });
+router.get('/migration', authRequired, (req, res, next) => { try { res.json(workspace.migrationSnapshot(req.user)); } catch (error) { next(error); } });
+router.post('/migration/complete', authRequired, (req, res, next) => { try { res.json(workspace.completeMigration(req.user, req.body)); } catch (error) { next(error); } });
 router.get('/events', authRequired, (req, res, next) => {
   try {
     res.status(200).set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive' });

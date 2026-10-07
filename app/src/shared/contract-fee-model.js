@@ -34,8 +34,12 @@
     return legacy ? [{ id: `legacy-${legacy}`, cardNumber: legacy, isDefault: true, source: 'legacy' }] : [];
   }
 
+  function isCurrentBankAccount(account) {
+    return Boolean(normalizeBankCard(account?.cardNumber)) && account?.status !== 'historical' && account?.status !== 'disabled';
+  }
+
   function defaultBankCard(person) {
-    const accounts = bankAccounts(person);
+    const accounts = bankAccounts(person).filter(isCurrentBankAccount);
     return normalizeBankCard(accounts.find((item) => item.isDefault)?.cardNumber || accounts[0]?.cardNumber);
   }
 
@@ -44,13 +48,13 @@
     if (!card) return { person, changed: false, previousCard: defaultBankCard(person), nextCard: '' };
     const updatedAt = nowIso(now);
     const previousCard = defaultBankCard(person);
-    const accounts = bankAccounts(person).map((item) => ({ ...item, isDefault: normalizeBankCard(item.cardNumber) === card }));
+    const accounts = bankAccounts(person).map((item) => ({ ...item }));
     let account = accounts.find((item) => normalizeBankCard(item.cardNumber) === card);
     if (!account) {
-      account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, isDefault: true, source, createdAt: updatedAt, updatedAt };
+      account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, isDefault: true, status: 'active', source, createdAt: updatedAt, updatedAt };
       accounts.push(account);
-    } else account.updatedAt = updatedAt;
-    accounts.forEach((item) => { item.isDefault = item === account; });
+    } else { account.status = 'active'; account.updatedAt = updatedAt; }
+    accounts.forEach((item) => { item.isDefault = item === account && isCurrentBankAccount(item); });
     person.bankAccounts = accounts;
     person.bank_card = card;
     person.bank_account = card;
@@ -66,16 +70,59 @@
     const accounts = bankAccounts(person).map((item) => ({ ...item }));
     let account = accounts.find((item) => normalizeBankCard(item.cardNumber) === card);
     if (!account) {
-      account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, bankName: text(value?.bankName), accountName: text(value?.accountName), isDefault: !accounts.length, source, createdAt: updatedAt, updatedAt };
+      account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, bankName: text(value?.bankName), accountName: text(value?.accountName), isDefault: !accounts.some(isCurrentBankAccount), status: 'active', source, createdAt: updatedAt, updatedAt };
       accounts.push(account);
     } else {
       if (text(value?.bankName)) account.bankName = text(value.bankName);
       if (text(value?.accountName)) account.accountName = text(value.accountName);
-      account.source = text(account.source) || source; account.updatedAt = updatedAt;
+      account.status = 'active'; account.source = text(account.source) || source; account.updatedAt = updatedAt;
     }
     person.bankAccounts = accounts;
     if (makeDefault || !defaultBankCard(person)) return { ...setDefaultBankCard(person, card, { source, now }), account };
     person.updated_at = updatedAt;
+    return { person, changed: true, account };
+  }
+
+  function updateBankAccount(person, previousCardNumber, value, { source = 'resident-profile', now = new Date() } = {}) {
+    const previousCard = normalizeBankCard(previousCardNumber);
+    const card = normalizeBankCard(value?.cardNumber);
+    if (!previousCard || !card) throw new TypeError('请填写银行卡号');
+    const updatedAt = nowIso(now);
+    const accounts = bankAccounts(person).map((item) => ({ ...item }));
+    const previous = accounts.find((item) => normalizeBankCard(item.cardNumber) === previousCard);
+    if (!previous) throw new Error('未找到需要修改的银行卡');
+    const bankName = text(value?.bankName);
+    const accountName = text(value?.accountName);
+    const cardChanged = previousCard !== card;
+    const wasDefault = Boolean(previous.isDefault);
+    let account = previous;
+    if (cardChanged) {
+      previous.status = 'historical'; previous.isDefault = false; previous.archivedAt = updatedAt; previous.updatedAt = updatedAt;
+      account = accounts.find((item) => item !== previous && normalizeBankCard(item.cardNumber) === card);
+      if (!account) {
+        account = { id: identifier('bank-account', now instanceof Date ? now.getTime() : Date.now()), cardNumber: card, bankName, accountName, isDefault: wasDefault, status: 'active', source, createdAt: updatedAt, updatedAt, replacedCardNumber: previousCard };
+        accounts.push(account);
+      } else {
+        account.status = 'active'; account.bankName = bankName; account.accountName = accountName; account.updatedAt = updatedAt;
+      }
+    } else {
+      account.bankName = bankName; account.accountName = accountName; account.status = 'active'; account.updatedAt = updatedAt;
+    }
+    if (wasDefault) accounts.forEach((item) => { item.isDefault = item === account && isCurrentBankAccount(item); });
+    person.bankAccounts = accounts;
+    if (wasDefault) { person.bank_card = card; person.bank_account = card; person.bankCard = card; }
+    person.updated_at = updatedAt;
+    return { person, changed: true, account, previousCard, nextCard: card, cardChanged, wasDefault };
+  }
+
+  function deactivateBankAccount(person, cardNumber, { now = new Date() } = {}) {
+    const card = normalizeBankCard(cardNumber);
+    const accounts = bankAccounts(person).map((item) => ({ ...item }));
+    const account = accounts.find((item) => normalizeBankCard(item.cardNumber) === card);
+    if (!account || !isCurrentBankAccount(account)) throw new Error('未找到当前可用银行卡');
+    if (account.isDefault) throw new Error('请先将另一张当前银行卡设为默认卡，再停用此卡');
+    account.status = 'historical'; account.isDefault = false; account.archivedAt = nowIso(now); account.updatedAt = account.archivedAt;
+    person.bankAccounts = accounts; person.updated_at = account.archivedAt;
     return { person, changed: true, account };
   }
 
@@ -274,12 +321,452 @@
     return { ...structuredClone(advance), status: 'reimbursed', reimbursedDate: text(reimbursedDate), updatedAt: nowIso(now) };
   }
 
+  // 承包费的“基础台账”和“本年发放批次”分开保存。基础台账只记录实际收款人，
+  // 不会把某个村民组的全部居民自动塞入发放名单。
+  const CONTRACT_FEE_ALLOCATION_TYPES = Object.freeze(['population', 'acreage', 'custom', 'fixed']);
+  const CONTRACT_FEE_FIELD_TYPES = Object.freeze(['text', 'number', 'calculated']);
+  const CONTRACT_FEE_FORMULA_OPERATORS = Object.freeze(['add', 'subtract', 'multiply', 'divide']);
+  const CONTRACT_FEE_NUMBER_SCALE = 10000;
+
+  function centsInput(value, yuanKey, centsKey) {
+    if (value[yuanKey] !== undefined && value[yuanKey] !== null && text(value[yuanKey]) !== '') return amountToCents(value[yuanKey]);
+    return Math.round(Number(value[centsKey] || 0));
+  }
+
+  function decimalToScaledInteger(value, scale = CONTRACT_FEE_NUMBER_SCALE) {
+    const cleaned = text(value).replace(/,/g, '').replace(/[^\d.+-]/g, '');
+    if (!cleaned) return 0;
+    const number = Number(cleaned);
+    if (!Number.isFinite(number)) throw new Error(`“${text(value)}”不是有效数字`);
+    return Math.round(number * scale);
+  }
+
+  function scaledIntegerToNumber(value, scale = CONTRACT_FEE_NUMBER_SCALE) { return Number(value || 0) / scale; }
+
+  function normalizeFormulaExpression(value = {}) {
+    if (value.kind === 'field') return { kind: 'field', fieldId: text(value.fieldId) };
+    if (value.kind === 'constant') return { kind: 'constant', value: numberValue(value.value) };
+    if (value.kind === 'operation') {
+      const operator = text(value.operator);
+      if (!CONTRACT_FEE_FORMULA_OPERATORS.includes(operator)) throw new Error('计算字段只能使用加、减、乘、除');
+      return { kind: 'operation', operator, left: normalizeFormulaExpression(value.left), right: normalizeFormulaExpression(value.right) };
+    }
+    if (value.leftFieldId || value.rightFieldId || value.rightValue !== undefined) {
+      return normalizeFormulaExpression({
+        kind: 'operation', operator: value.operator,
+        left: { kind: 'field', fieldId: value.leftFieldId },
+        right: value.rightFieldId ? { kind: 'field', fieldId: value.rightFieldId } : { kind: 'constant', value: value.rightValue },
+      });
+    }
+    throw new Error('计算公式不完整');
+  }
+
+  function formulaFieldIds(expression, result = new Set()) {
+    if (!expression) return result;
+    if (expression.kind === 'field' && text(expression.fieldId)) result.add(text(expression.fieldId));
+    if (expression.kind === 'operation') { formulaFieldIds(expression.left, result); formulaFieldIds(expression.right, result); }
+    return result;
+  }
+
+  function normalizeContractFeeFieldDefinition(value = {}, index = 0) {
+    const id = text(value.id || value.key) || `custom-field-${index + 1}`;
+    const type = text(value.type) || 'text';
+    if (!CONTRACT_FEE_FIELD_TYPES.includes(type)) throw new Error('自定义字段类型只能选择文字、数字或计算字段');
+    const field = {
+      id, label: text(value.label || value.name) || `自定义字段${index + 1}`, type,
+      sourceKey: text(value.sourceKey), order: Number.isFinite(Number(value.order)) ? Number(value.order) : index,
+      visibleInEditor: value.visibleInEditor !== false, visibleInSignature: value.visibleInSignature !== false,
+      visibleInExport: value.visibleInExport !== false, builtIn: Boolean(value.builtIn),
+    };
+    if (type === 'calculated') field.formula = normalizeFormulaExpression(value.formula || value);
+    return field;
+  }
+
+  function normalizeContractFeeFieldDefinitions(fields = []) {
+    const defaults = [
+      { id: 'population', label: '家庭人口', type: 'number', sourceKey: 'population', builtIn: true, order: 0 },
+      { id: 'acreage', label: '实际亩数', type: 'number', sourceKey: 'acreage', builtIn: true, order: 1 },
+    ];
+    const supplied = (fields || []).map(normalizeContractFeeFieldDefinition);
+    const suppliedIds = new Set(supplied.map((field) => field.id));
+    return [...defaults.filter((field) => !suppliedIds.has(field.id)).map(normalizeContractFeeFieldDefinition), ...supplied].sort((left, right) => left.order - right.order);
+  }
+
+  function validateContractFeeFieldDefinitions(fields = []) {
+    const errors = []; const definitions = normalizeContractFeeFieldDefinitions(fields); const byId = new Map();
+    for (const field of definitions) {
+      if (byId.has(field.id)) errors.push(`字段编号“${field.id}”重复`);
+      byId.set(field.id, field);
+    }
+    const visiting = new Set(); const visited = new Set();
+    function visit(field) {
+      if (visited.has(field.id)) return;
+      if (visiting.has(field.id)) { errors.push(`计算字段“${field.label}”存在循环引用`); return; }
+      visiting.add(field.id);
+      for (const dependencyId of formulaFieldIds(field.formula)) {
+        const dependency = byId.get(dependencyId);
+        if (!dependency) errors.push(`计算字段“${field.label}”引用了不存在的字段`);
+        else if (dependency.type === 'text') errors.push(`计算字段“${field.label}”不能引用文字字段“${dependency.label}”`);
+        else if (dependency.type === 'calculated') visit(dependency);
+      }
+      visiting.delete(field.id); visited.add(field.id);
+    }
+    definitions.filter((field) => field.type === 'calculated').forEach(visit);
+    return { ok: errors.length === 0, errors, fields: definitions };
+  }
+
+  function contractFeeDistributionItem(value = {}, { now = new Date(), id } = {}) {
+    const rowId = id || text(value.id) || identifier('contract-fee-plan-item', now instanceof Date ? now.getTime() : Date.now());
+    const householderName = text(value.householderName || value.householdName || value.name);
+    const recipientName = text(value.recipientName || value.payeeName || value.name || householderName);
+    if (!householderName) throw new Error('承包费家庭必须填写户主姓名');
+    if (!recipientName) throw new Error('承包费家庭必须填写收款人姓名');
+    return {
+      id: rowId, householdId: text(value.householdId || value.householdKey) || `household-${rowId}`,
+      householdPersonId: text(value.householdPersonId), householderName,
+      recipientPersonId: text(value.recipientPersonId || value.personId), recipientName,
+      personId: text(value.recipientPersonId || value.personId), name: recipientName,
+      idCard: normalizedIdCard(value.idCard || value.id_card), phone: normalizedPhone(value.phone || value.mobile),
+      bankCard: normalizeBankCard(value.bankCard), bankName: text(value.bankName || value.bank),
+      population: Math.max(0, numberValue(value.population)), acreage: Math.max(0, numberValue(value.acreage)),
+      fixedAmountCents: centsInput(value, 'fixedAmount', 'fixedAmountCents') || amountToCents(value.amount ?? value.finalAmount ?? 0),
+      customData: structuredClone(value.customData || {}), sourceData: structuredClone(value.sourceData || value.rawData || {}),
+      sourceRowNumber: Number(value.sourceRowNumber || value.rowNumber || 0), sourceRowId: text(value.sourceRowId),
+      active: value.active !== false, removedAt: value.active === false ? (text(value.removedAt) || nowIso(now)) : null,
+      notes: text(value.notes || value.remark), sharedAccountNote: text(value.sharedAccountNote),
+      createdAt: text(value.createdAt) || nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function normalizeContractFeeGroup(value = {}, { now = new Date(), id } = {}) {
+    const allocationType = text(value.allocationType) || 'population';
+    if (!CONTRACT_FEE_ALLOCATION_TYPES.includes(allocationType)) throw new Error('组内分配方式只能选择按人口、按亩数、自定义依据或固定金额');
+    if (!text(value.groupName)) throw new Error('请填写承包费组别');
+    const fieldValidation = validateContractFeeFieldDefinitions(value.fieldDefinitions || value.fields || []);
+    if (!fieldValidation.ok) throw new Error(fieldValidation.errors.join('；'));
+    const defaultBasisFieldId = allocationType === 'acreage' ? 'acreage' : allocationType === 'fixed' ? '' : 'population';
+    const expectedBasisSource = value.expectedBasisTotal ?? value.confirmedBasisTotal ?? null;
+    const expectedBasisTotal = expectedBasisSource === null || expectedBasisSource === undefined || text(expectedBasisSource) === '' ? null : Math.max(0, numberValue(expectedBasisSource));
+    const group = {
+      id: id || text(value.id) || identifier('contract-fee-plan-group', now instanceof Date ? now.getTime() : Date.now()),
+      groupName: text(value.groupName), allocationType, basisFieldId: text(value.basisFieldId) || defaultBasisFieldId,
+      allocatedAmountCents: centsInput(value, 'allocatedAmount', 'allocatedAmountCents'),
+      expectedBasisTotal,
+      fieldDefinitions: fieldValidation.fields,
+      importMetadata: structuredClone(value.importMetadata || {}), outputColumns: structuredClone(value.outputColumns || {}),
+      outputTemplateSnapshot: structuredClone(value.outputTemplateSnapshot || null),
+      tailRecipientItemId: text(value.tailRecipientItemId),
+      items: (value.items || []).map((item, index) => contractFeeDistributionItem(item, { now, id: text(item?.id) || `${text(value.id) || id || 'group'}-item-${index + 1}` })),
+      notes: text(value.notes), createdAt: text(value.createdAt) || nowIso(now), updatedAt: nowIso(now),
+    };
+    if (group.allocatedAmountCents < 0) throw new Error('各组应发金额不能小于零');
+    return group;
+  }
+
+  function normalizeContractFeeDistributionPlan(value = {}, { now = new Date(), id } = {}) {
+    if (!text(value.year)) throw new Error('请填写承包费年度');
+    const projectName = text(value.projectName || value.parcelName);
+    if (!projectName) throw new Error('请填写承包项目名称');
+    const planId = id || text(value.id) || identifier('contract-fee-plan', now instanceof Date ? now.getTime() : Date.now());
+    const groups = (value.groups || []).map((group, index) => normalizeContractFeeGroup(group, { now, id: text(group?.id) || `${planId}-group-${index + 1}` }));
+    if (!groups.length) throw new Error('至少需要建立一个涉及组别');
+    return {
+      id: planId, projectId: text(value.projectId) || `contract-fee-project-${planId}`,
+      contractId: text(value.contractId), year: text(value.year), projectName, parcelName: projectName,
+      distributableAmountCents: centsInput(value, 'distributableAmount', 'distributableAmountCents'),
+      retainedAmountCents: centsInput(value, 'retainedAmount', 'retainedAmountCents'),
+      retainedReason: text(value.retainedReason), groups, notes: text(value.notes), status: text(value.status) || 'active',
+      importMetadata: structuredClone(value.importMetadata || {}),
+      outputSettings: structuredClone(value.outputSettings || {}),
+      copiedFromPlanId: text(value.copiedFromPlanId), createdAt: text(value.createdAt) || nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function createContractFeeDistributionPlan(value = {}, { now = new Date(), id } = {}) {
+    const plan = normalizeContractFeeDistributionPlan(value, { now, id });
+    const validation = validateContractFeeDistributionPlan(plan);
+    if (!validation.ok) throw new Error(validation.errors.join('；'));
+    return plan;
+  }
+
+  function validateContractFeeDistributionPlan(plan = {}) {
+    const errors = [];
+    const groupAmountCents = (plan.groups || []).reduce((sum, group) => sum + Number(group.allocatedAmountCents || 0), 0);
+    const distributableAmountCents = Number(plan.distributableAmountCents || 0);
+    const retainedAmountCents = Number(plan.retainedAmountCents || 0);
+    if (!text(plan.year)) errors.push('请填写承包费年度');
+    if (!text(plan.projectName || plan.parcelName)) errors.push('请填写承包项目名称');
+    if (!(plan.groups || []).length) errors.push('至少需要建立一个涉及组别');
+    if (retainedAmountCents > 0 && !text(plan.retainedReason)) errors.push('填写集体留存金额时必须说明原因');
+    if (groupAmountCents + retainedAmountCents !== distributableAmountCents) errors.push('各组应发金额与集体留存金额之和必须等于本年度可分配金额');
+    return { ok: errors.length === 0, errors, groupAmountCents, retainedAmountCents, distributableAmountCents, differenceCents: distributableAmountCents - groupAmountCents - retainedAmountCents };
+  }
+
+  function evaluateContractFeeItemFields(group = {}, item = {}) {
+    const validation = validateContractFeeFieldDefinitions(group.fieldDefinitions || []);
+    if (!validation.ok) throw new Error(validation.errors.join('；'));
+    const byId = new Map(validation.fields.map((field) => [field.id, field])); const resolved = {}; const resolving = new Set();
+    function directValue(field) {
+      const sourceKey = text(field.sourceKey);
+      if (sourceKey && item[sourceKey] !== undefined) return numberValue(item[sourceKey]);
+      return numberValue(item.customData?.[field.id]);
+    }
+    function expressionValue(expression) {
+      if (expression.kind === 'constant') return Number(expression.value || 0);
+      if (expression.kind === 'field') return fieldValue(expression.fieldId);
+      const left = expressionValue(expression.left); const right = expressionValue(expression.right);
+      if (expression.operator === 'add') return left + right;
+      if (expression.operator === 'subtract') return left - right;
+      if (expression.operator === 'multiply') return left * right;
+      if (expression.operator === 'divide') {
+        if (right === 0) throw new Error('计算公式不能除以零');
+        return left / right;
+      }
+      throw new Error('计算公式包含不支持的运算');
+    }
+    function fieldValue(fieldId) {
+      if (resolved[fieldId] !== undefined) return resolved[fieldId];
+      const field = byId.get(fieldId); if (!field) throw new Error(`计算依据字段“${fieldId}”不存在`);
+      if (resolving.has(fieldId)) throw new Error(`计算字段“${field.label}”存在循环引用`);
+      resolving.add(fieldId);
+      const value = field.type === 'calculated' ? expressionValue(field.formula) : directValue(field);
+      resolving.delete(fieldId);
+      if (!Number.isFinite(value)) throw new Error(`“${field.label}”的计算结果无效`);
+      if (value < 0) throw new Error(`“${field.label}”的计算结果不能小于零`);
+      resolved[fieldId] = value; return value;
+    }
+    validation.fields.filter((field) => field.type !== 'text').forEach((field) => fieldValue(field.id));
+    return resolved;
+  }
+
+  function contractFeeOutputColumns(group = {}, { signatureDetail = false } = {}) {
+    const imported = Array.isArray(group.outputTemplateSnapshot?.columns) ? structuredClone(group.outputTemplateSnapshot.columns) : [];
+    if (imported.length) {
+      if (signatureDetail && !imported.some((column) => text(column.fieldKey) === 'signature')) imported.push({ header: '签字/按手印', fieldKey: 'signature' });
+      return imported;
+    }
+    const basisField = (group.fieldDefinitions || []).find((field) => text(field.id) === text(group.basisFieldId));
+    const customFields = (group.fieldDefinitions || []).filter((field) => field.visibleInExport !== false && field.visibleInSignature !== false && !field.builtIn && text(field.id) !== text(group.basisFieldId));
+    return [
+      { header: '序号', fieldKey: 'sequence' }, { header: '组别', fieldKey: 'groupName' },
+      { header: '户主姓名', fieldKey: 'householderName' }, { header: '收款人姓名', fieldKey: 'recipientName' },
+      { header: basisField?.label || '计发依据', fieldKey: 'basis' },
+      ...customFields.map((field) => ({ header: field.label, fieldKey: 'custom', customFieldId: field.id })),
+      { header: '参考单价（元）', fieldKey: 'unitPrice' }, { header: '基础金额（元）', fieldKey: 'baseAmount' },
+      { header: '尾差补入（元）', fieldKey: 'tailAmount' }, { header: '最终金额（元）', fieldKey: 'amount' },
+      { header: '完整银行卡号', fieldKey: 'bankCard' }, { header: '开户行', fieldKey: 'bankName' },
+      { header: '备注', fieldKey: 'notes' },
+      ...(signatureDetail ? [{ header: '签字/按手印', fieldKey: 'signature' }] : []),
+    ];
+  }
+
+  function contractFeeOutputValue(group = {}, item = {}, column = {}, index = 0) {
+    let calculated = {};
+    try { calculated = evaluateContractFeeItemFields(group, item); } catch (_error) { calculated = {}; }
+    const fieldKey = text(column.fieldKey);
+    if (fieldKey === 'sequence') return index + 1;
+    if (fieldKey === 'groupName') return text(group.groupName);
+    if (fieldKey === 'householderName' || fieldKey === 'name') return text(item.householderName || item.name);
+    if (fieldKey === 'recipientName') return text(item.recipientName || item.name);
+    if (fieldKey === 'population') return Number(item.population || 0);
+    if (fieldKey === 'acreage') return Number(item.acreage || 0);
+    if (fieldKey === 'basis') return calculated[group.basisFieldId] ?? item.basisValue ?? '';
+    if (fieldKey === 'unitPrice') return Number(centsToYuan(group.referenceUnitPriceCents));
+    if (fieldKey === 'baseAmount') return Number(centsToYuan(item.baseAmountCents));
+    if (fieldKey === 'tailAmount') return Number(centsToYuan(item.tailAmountCents));
+    if (fieldKey === 'amount') return Number(centsToYuan(item.finalAmountCents));
+    if (fieldKey === 'bankCard') return text(item.bankCard);
+    if (fieldKey === 'bankName') return text(item.bankName);
+    if (fieldKey === 'notes') return text(item.notes);
+    if (fieldKey === 'signature') return '';
+    if (column.customFieldId) {
+      const field = (group.fieldDefinitions || []).find((entry) => text(entry.id) === text(column.customFieldId));
+      if (field?.type === 'calculated') return calculated[field.id] ?? '';
+      if (field?.sourceKey) return item[field.sourceKey] ?? '';
+      return item.customData?.[column.customFieldId] ?? '';
+    }
+    return item.sourceData?.[column.sourceKey] ?? item.customData?.[column.sourceKey] ?? '';
+  }
+
+  function participantWeight(item, group) {
+    if (group.allocationType === 'fixed') return 0;
+    const fieldId = text(group.basisFieldId) || (group.allocationType === 'acreage' ? 'acreage' : 'population');
+    return Number(evaluateContractFeeItemFields(group, item)[fieldId] || 0);
+  }
+
+  function removeContractFeeField(group, fieldId) {
+    const targetId = text(fieldId); const field = (group.fieldDefinitions || []).find((entry) => text(entry.id) === targetId);
+    if (!field) return structuredClone(group);
+    if (field.builtIn) throw new Error('基础字段不能删除，可以在输出设置中隐藏');
+    const dependent = (group.fieldDefinitions || []).find((entry) => formulaFieldIds(entry.formula).has(targetId));
+    if (dependent) throw new Error(`字段“${field.label}”正在被“${dependent.label}”引用，请先修改计算公式`);
+    if (text(group.basisFieldId) === targetId) throw new Error('该字段正在作为计发依据，请先更换计发依据');
+    const next = structuredClone(group); next.fieldDefinitions = next.fieldDefinitions.filter((entry) => text(entry.id) !== targetId);
+    next.items.forEach((item) => { if (item.customData) delete item.customData[targetId]; });
+    return next;
+  }
+
+  function recalculateContractFeeBatchGroup(group, { now = new Date() } = {}) {
+    const next = structuredClone(group);
+    const activeItems = next.items.filter((item) => item.active !== false);
+    next.items.forEach((item) => { item.tailAmountCents = 0; if (item.active === false) { item.baseAmountCents = 0; item.automaticAmountCents = 0; item.finalAmountCents = 0; } });
+    if (next.allocationType === 'fixed') {
+      activeItems.forEach((item) => {
+        item.automaticAmountCents = Number(item.fixedAmountCents || 0);
+        item.baseAmountCents = item.automaticAmountCents;
+        if (!item.manualAmount) item.finalAmountCents = item.baseAmountCents;
+      });
+      next.basisTotal = 0; next.actualBasisTotal = 0; next.basisDifference = 0; next.referenceUnitPriceCents = 0;
+    } else {
+      const manualTotal = activeItems.filter((item) => item.manualAmount).reduce((sum, item) => sum + Number(item.finalAmountCents || 0), 0);
+      const automaticItems = activeItems.filter((item) => !item.manualAmount);
+      const availableCents = Number(next.allocatedAmountCents || 0) - manualTotal;
+      if (availableCents < 0) throw new Error(`${next.groupName}的手工调整金额超过本组应发金额`);
+      const allWeights = new Map(activeItems.map((item) => [item.id, decimalToScaledInteger(participantWeight(item, next))]));
+      const actualBasisScaled = activeItems.reduce((sum, item) => sum + allWeights.get(item.id), 0);
+      const weights = new Map(automaticItems.map((item) => [item.id, decimalToScaledInteger(participantWeight(item, next))]));
+      const totalWeightScaled = automaticItems.reduce((sum, item) => sum + weights.get(item.id), 0);
+      if (automaticItems.length && totalWeightScaled <= 0) throw new Error(`${next.groupName}存在缺少计发依据数据的家庭`);
+      const hasExpectedBasis = next.expectedBasisTotal !== null && next.expectedBasisTotal !== undefined && text(next.expectedBasisTotal) !== '';
+      const expectedBasisScaled = hasExpectedBasis ? decimalToScaledInteger(next.expectedBasisTotal) : actualBasisScaled;
+      const calculationBasisScaled = hasExpectedBasis && manualTotal === 0 ? expectedBasisScaled : totalWeightScaled;
+      const referenceUnitPriceCents = calculationBasisScaled > 0 ? Math.floor((availableCents * CONTRACT_FEE_NUMBER_SCALE) / calculationBasisScaled) : 0;
+      automaticItems.forEach((item) => {
+        // 先把参考单价向下保留到分，再按家庭依据计算基础金额；尾差必须明确补入一户。
+        item.basisValue = scaledIntegerToNumber(weights.get(item.id));
+        item.automaticAmountCents = Math.floor((weights.get(item.id) * referenceUnitPriceCents) / CONTRACT_FEE_NUMBER_SCALE);
+        item.baseAmountCents = item.automaticAmountCents; item.finalAmountCents = item.baseAmountCents;
+      });
+      next.basisTotal = scaledIntegerToNumber(actualBasisScaled); next.actualBasisTotal = next.basisTotal;
+      next.basisDifference = scaledIntegerToNumber(actualBasisScaled - expectedBasisScaled);
+      next.referenceUnitPriceCents = referenceUnitPriceCents;
+    }
+    const baseAmountTotalCents = activeItems.reduce((sum, item) => sum + Number(item.finalAmountCents || 0), 0);
+    const tailDifferenceCents = Number(next.allocatedAmountCents || 0) - baseAmountTotalCents;
+    const tailRecipient = activeItems.find((item) => text(item.id) === text(next.tailRecipientItemId));
+    if (tailRecipient && tailDifferenceCents >= 0) {
+      tailRecipient.tailAmountCents = tailDifferenceCents; tailRecipient.finalAmountCents += tailDifferenceCents;
+    } else if (!tailRecipient) next.tailRecipientItemId = '';
+    next.baseAmountTotalCents = baseAmountTotalCents;
+    next.tailDifferenceCents = tailDifferenceCents;
+    next.unallocatedCents = tailRecipient ? 0 : tailDifferenceCents;
+    next.items.forEach((item) => { item.updatedAt = nowIso(now); });
+    next.updatedAt = nowIso(now);
+    return next;
+  }
+
+  function batchGroupFromPlan(group, { now = new Date(), id } = {}) {
+    const items = (group.items || []).map((item, index) => ({
+      ...structuredClone(item), id: `${id || text(group.id) || 'group'}-item-${index + 1}`,
+      sourceItemId: text(item.id), active: item.active !== false, manualAmount: false,
+      automaticAmountCents: 0, baseAmountCents: 0, tailAmountCents: 0, finalAmountCents: 0, adjustmentReason: '', exclusionReason: '',
+    }));
+    const tailRecipientItemId = items.find((item) => item.sourceItemId === text(group.tailRecipientItemId))?.id || '';
+    const next = {
+      id: id || `contract-fee-batch-group-${identifier('group', now instanceof Date ? now.getTime() : Date.now())}`,
+      sourceGroupId: text(group.id), groupName: text(group.groupName), allocationType: text(group.allocationType),
+      basisFieldId: text(group.basisFieldId), fieldDefinitions: structuredClone(group.fieldDefinitions || []),
+      importMetadata: structuredClone(group.importMetadata || {}), outputColumns: structuredClone(group.outputColumns || {}),
+      outputTemplateSnapshot: structuredClone(group.outputTemplateSnapshot || null), expectedBasisTotal: group.expectedBasisTotal ?? null,
+      allocatedAmountCents: Number(group.allocatedAmountCents || 0), notes: text(group.notes), tailRecipientItemId, items,
+    };
+    return recalculateContractFeeBatchGroup(next, { now });
+  }
+
+  function createContractFeeDistributionBatch({ plan, batchDate, title = '', copyPlanChangesToBase = false } = {}, { now = new Date(), id } = {}) {
+    if (!plan?.id) throw new Error('请选择承包费年度方案');
+    const validation = validateContractFeeDistributionPlan(plan);
+    if (!validation.ok) throw new Error(validation.errors.join('；'));
+    const batchId = id || identifier('contract-fee-distribution-batch', now instanceof Date ? now.getTime() : Date.now());
+    return {
+      id: batchId, planId: text(plan.id), projectId: text(plan.projectId), planSnapshot: structuredClone(plan), contractId: text(plan.contractId), year: text(plan.year), projectName: text(plan.projectName || plan.parcelName), parcelName: text(plan.projectName || plan.parcelName),
+      title: text(title) || `${text(plan.year)} 年${text(plan.projectName || plan.parcelName)}承包费发放表`, batchDate: text(batchDate),
+      distributableAmountCents: Number(plan.distributableAmountCents || 0), retainedAmountCents: Number(plan.retainedAmountCents || 0), retainedReason: text(plan.retainedReason),
+      groups: (plan.groups || []).map((group, index) => batchGroupFromPlan(group, { now, id: `${batchId}-group-${index + 1}` })),
+      status: 'draft', copyPlanChangesToBase: Boolean(copyPlanChangesToBase), duplicateResolutions: {}, createdAt: nowIso(now), updatedAt: nowIso(now),
+    };
+  }
+
+  function summarizeContractFeeDistributionBatch(batch = {}) {
+    const groups = (batch.groups || []).map((group) => {
+      const activeItems = (group.items || []).filter((item) => item.active !== false);
+      const finalAmountCents = activeItems.reduce((sum, item) => sum + Number(item.finalAmountCents || 0), 0);
+      return { id: group.id, groupName: group.groupName, allocatedAmountCents: Number(group.allocatedAmountCents || 0), finalAmountCents, recipientCount: activeItems.length, basisTotal: Number(group.basisTotal || 0), actualBasisTotal: Number(group.actualBasisTotal ?? group.basisTotal ?? 0), expectedBasisTotal: group.expectedBasisTotal ?? null, basisDifference: Number(group.basisDifference || 0), referenceUnitPriceCents: Number(group.referenceUnitPriceCents || 0), baseAmountTotalCents: Number(group.baseAmountTotalCents || 0), tailDifferenceCents: Number(group.tailDifferenceCents || 0), unallocatedCents: Number(group.allocatedAmountCents || 0) - finalAmountCents };
+    });
+    const totalCents = groups.reduce((sum, group) => sum + group.finalAmountCents, 0);
+    return { groups, totalCents, retainedAmountCents: Number(batch.retainedAmountCents || 0), distributableAmountCents: Number(batch.distributableAmountCents || 0), differenceCents: Number(batch.distributableAmountCents || 0) - Number(batch.retainedAmountCents || 0) - totalCents };
+  }
+
+  function contractFeePlanDuplicateRecipients(plan = {}) {
+    const byRecipient = new Map();
+    for (const group of plan.groups || []) for (const item of group.items || []) {
+      if (item.active === false) continue;
+      const key = text(item.householdId);
+      if (!key) continue;
+      const rows = byRecipient.get(key) || []; rows.push({ groupId: group.id, groupName: group.groupName, itemId: item.id, householdId: key, householderName: item.householderName, name: item.recipientName || item.name, personId: item.recipientPersonId || item.personId, idCard: item.idCard, bankCard: item.bankCard }); byRecipient.set(key, rows);
+    }
+    return [...byRecipient.values()].filter((rows) => rows.length > 1);
+  }
+
+  function contractFeeBatchDuplicateRecipients(batch = {}) { return contractFeePlanDuplicateRecipients(batch); }
+
+  function setContractFeeBatchItemParticipation(batch, { groupId, itemId, participating, reason = '' } = {}, { now = new Date() } = {}) {
+    const next = structuredClone(batch); const group = next.groups?.find((entry) => text(entry.id) === text(groupId));
+    const item = group?.items?.find((entry) => text(entry.id) === text(itemId));
+    if (!group || !item) throw new Error('未找到承包费收款人');
+    item.active = Boolean(participating); item.removedAt = item.active ? null : nowIso(now); item.exclusionReason = item.active ? '' : text(reason); item.manualAmount = false; item.adjustmentReason = ''; group.tailRecipientItemId = '';
+    const recalculated = recalculateContractFeeBatchGroup(group, { now });
+    next.groups.splice(next.groups.indexOf(group), 1, recalculated); next.status = 'draft'; next.updatedAt = nowIso(now);
+    return next;
+  }
+
+  function adjustContractFeeBatchItem(batch, { groupId, itemId, amount, reason } = {}, { now = new Date() } = {}) {
+    if (!text(reason)) throw new Error('手工调整承包费金额必须填写原因');
+    const next = structuredClone(batch); const group = next.groups?.find((entry) => text(entry.id) === text(groupId));
+    const item = group?.items?.find((entry) => text(entry.id) === text(itemId));
+    if (!group || !item || item.active === false) throw new Error('未找到本次参与发放的收款人');
+    item.manualAmount = true; item.finalAmountCents = amountToCents(amount); item.adjustmentReason = text(reason); group.tailRecipientItemId = '';
+    const recalculated = recalculateContractFeeBatchGroup(group, { now });
+    next.groups.splice(next.groups.indexOf(group), 1, recalculated); next.status = 'draft'; next.updatedAt = nowIso(now);
+    return next;
+  }
+
+  function assignContractFeeBatchGroupTail(batch, { groupId, itemId } = {}, { now = new Date() } = {}) {
+    const next = structuredClone(batch); const group = next.groups?.find((entry) => text(entry.id) === text(groupId));
+    const item = group?.items?.find((entry) => text(entry.id) === text(itemId) && entry.active !== false);
+    if (!group || !item) throw new Error('请选择本次参与发放的家庭补入尾差');
+    group.tailRecipientItemId = item.id;
+    const recalculated = recalculateContractFeeBatchGroup(group, { now });
+    next.groups.splice(next.groups.indexOf(group), 1, recalculated); next.status = 'draft'; next.updatedAt = nowIso(now);
+    return next;
+  }
+
+  function validateContractFeeDistributionBatch(batch = {}) {
+    const errors = [];
+    if (!text(batch.batchDate)) errors.push('请填写实际发放日期');
+    const summary = summarizeContractFeeDistributionBatch(batch);
+    for (const group of summary.groups) if (group.unallocatedCents !== 0) errors.push(`${group.groupName}尚有${centsToYuan(Math.abs(group.unallocatedCents))}元${group.unallocatedCents > 0 ? '尾差待分配' : '超出应发金额'}`);
+    for (const group of summary.groups) if (group.expectedBasisTotal !== null && Math.abs(group.basisDifference) > 0.0000001) errors.push(`${group.groupName}核定计发依据为${group.expectedBasisTotal}，明细合计为${group.actualBasisTotal.toFixed(2)}，相差${Math.abs(group.basisDifference).toFixed(2)}，请核对后再生成正式表格`);
+    for (const group of batch.groups || []) for (const item of group.items || []) if (item.active !== false && item.manualAmount && !text(item.adjustmentReason)) errors.push(`${item.name}的手工调整缺少原因`);
+    const duplicates = contractFeeBatchDuplicateRecipients(batch).filter((rows) => !batch.duplicateResolutions?.[rows.map((row) => row.itemId).sort().join('|')]);
+    if (duplicates.length) errors.push(`发现 ${duplicates.length} 个家庭台账编号重复，需人工确认`);
+    if (summary.differenceCents !== 0) errors.push('居民发放金额与本年度可分配金额不一致');
+    return { ok: errors.length === 0, errors, duplicates, ...summary };
+  }
+
+  function copyContractFeeDistributionPlan(plan, { year, now = new Date(), id } = {}) {
+    const copied = structuredClone(plan); copied.id = id || identifier('contract-fee-plan', now instanceof Date ? now.getTime() : Date.now()); copied.year = text(year) || text(plan.year);
+    copied.projectId = text(plan.projectId) || `contract-fee-project-${text(plan.id)}`; copied.projectName = text(plan.projectName || plan.parcelName); copied.parcelName = copied.projectName;
+    copied.copiedFromPlanId = text(plan.id); copied.groups = (copied.groups || []).map((group, index) => ({ ...group, id: `${copied.id}-group-${index + 1}`, items: (group.items || []).map((item, itemIndex) => ({ ...item, id: `${copied.id}-group-${index + 1}-item-${itemIndex + 1}`, householdId: text(item.householdId) || `household-${text(item.id)}`, createdAt: nowIso(now), updatedAt: nowIso(now) })), createdAt: nowIso(now), updatedAt: nowIso(now) }));
+    copied.createdAt = nowIso(now); copied.updatedAt = nowIso(now); return copied;
+  }
+
   const DEFAULT_DISBURSEMENT_CATEGORIES = Object.freeze([
-    { code: 'contract_fee', name: '承包费', groupExport: true, contractOptional: true },
-    { code: 'subsidy', name: '补贴', groupExport: true, contractOptional: false },
-    { code: 'salary', name: '固定工资', groupExport: false, contractOptional: false },
-    { code: 'casual_labor', name: '杂工工资', groupExport: false, contractOptional: false },
-    { code: 'public_service_salary', name: '公共服务运行人员工资', groupExport: false, contractOptional: false },
+    { code: 'contract_fee', name: '承包费', groupExport: true, contractOptional: true, entryMode: 'project' },
+    { code: 'subsidy', name: '补贴', groupExport: true, contractOptional: false, entryMode: 'ledger' },
+    { code: 'salary', name: '固定工资', groupExport: false, contractOptional: false, entryMode: 'recurring' },
+    { code: 'casual_labor', name: '杂工工资', groupExport: false, contractOptional: false, entryMode: 'manual' },
+    { code: 'public_service_salary', name: '公共服务运行人员工资', groupExport: false, contractOptional: false, entryMode: 'recurring' },
   ]);
 
   function defaultDisbursementCategories() { return DEFAULT_DISBURSEMENT_CATEGORIES.map((item) => ({ ...item, id: `category-${item.code}`, builtIn: true, active: true })); }
@@ -297,7 +784,7 @@
   }
   function createDisbursementCategory(value, { now = new Date(), id } = {}) {
     if (!text(value?.name)) throw new Error('请填写资金类别名称');
-    return { id: id || identifier('disbursement-category', now instanceof Date ? now.getTime() : Date.now()), code: text(value.code) || `custom-${Date.now()}`, name: text(value.name), groupExport: Boolean(value.groupExport), contractOptional: Boolean(value.contractOptional), builtIn: false, active: value.active !== false, createdAt: nowIso(now), updatedAt: nowIso(now) };
+    return { id: id || identifier('disbursement-category', now instanceof Date ? now.getTime() : Date.now()), code: text(value.code) || `custom-${Date.now()}`, name: text(value.name), groupExport: Boolean(value.groupExport), contractOptional: Boolean(value.contractOptional), entryMode: text(value.entryMode) === 'recurring' ? 'recurring' : 'manual', builtIn: false, active: value.active !== false, createdAt: nowIso(now), updatedAt: nowIso(now) };
   }
   function disbursementItem(value, personnel = [], { now = new Date(), id } = {}) {
     const person = personnel.find((item) => personId(item) === text(value.personId));
@@ -320,7 +807,19 @@
   function summarizeDisbursementBatch(batch) { return { totalCents: (batch?.items || []).reduce((sum, item) => sum + Number(item.amountCents || 0), 0), recipientCount: (batch?.items || []).length, paidCount: (batch?.items || []).filter((item) => item.paymentStatus === 'paid').length }; }
   function reviewDisbursementBatch(batch, { now = new Date() } = {}) { if (!batch?.items?.length) throw new Error('批次没有收款明细'); return { ...structuredClone(batch), status: 'reviewed', reviewedAt: nowIso(now), updatedAt: nowIso(now) }; }
   function markDisbursementBatchPaid(batch, { now = new Date(), note = '' } = {}) { if (!['reviewed', 'draft', 'prepared', 'printed'].includes(batch.status)) throw new Error('该批次当前不能登记发放'); const next = structuredClone(batch); next.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); item.paymentNote = text(note) || item.paymentNote; }); next.status = 'completed'; next.completedAt = nowIso(now); next.updatedAt = nowIso(now); return next; }
-  function summarizeDisbursementDashboard(batches = []) { const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; for (const batch of batches) { const total = summarizeDisbursementBatch(batch).totalCents; totalCents += total; totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total; if (batch.status === 'draft') pendingReview += 1; if (batch.status === 'completed') completed += 1; } return { totalCents, pendingReview, completed, totalsByCategory }; }
+  function summarizeDisbursementDashboard(batches = []) {
+    const totalsByCategory = {}; let totalCents = 0; let pendingReview = 0; let completed = 0; let testCount = 0;
+    for (const batch of batches) {
+      // 演示和试录数据保留在系统中方便核对，但不得进入正式金额与批次数统计。
+      if (batch?.isTest) { testCount += 1; continue; }
+      const total = summarizeDisbursementBatch(batch).totalCents;
+      totalCents += total;
+      totalsByCategory[batch.categoryName || '未分类'] = (totalsByCategory[batch.categoryName || '未分类'] || 0) + total;
+      if (batch.status !== 'completed') pendingReview += 1;
+      if (batch.status === 'completed') completed += 1;
+    }
+    return { totalCents, pendingReview, completed, totalsByCategory, testCount };
+  }
 
   function recycleDisbursementBatch(batch, { now = new Date(), reason = '' } = {}) {
     if (!batch?.id) throw new Error('未找到要清理的发放批次');
@@ -446,9 +945,9 @@
     const name = person ? personName(person) : text(value.name);
     if (!name) throw new Error('请填写人员姓名');
     const templateKey = text(value.templateKey) || DISBURSEMENT_TEMPLATE_KEYS.positionSalary;
-    if (![DISBURSEMENT_TEMPLATE_KEYS.positionSalary, DISBURSEMENT_TEMPLATE_KEYS.publicService].includes(templateKey)) throw new Error('固定人员台账仅支持岗位工资或公共服务人员');
+    if (!text(value.categoryId) && ![DISBURSEMENT_TEMPLATE_KEYS.positionSalary, DISBURSEMENT_TEMPLATE_KEYS.publicService].includes(templateKey)) throw new Error('未指定发放类别的旧名单仅支持岗位工资或公共服务人员');
     return {
-      id: id || identifier('disbursement-profile', now instanceof Date ? now.getTime() : Date.now()), templateKey,
+      id: id || identifier('disbursement-profile', now instanceof Date ? now.getTime() : Date.now()), templateKey, categoryId: text(value.categoryId),
       personId: person ? personId(person) : text(value.personId), name, groupName: person ? personGroup(person) : text(value.groupName),
       role: text(value.role), responsibilityArea: text(value.responsibilityArea), bankCard: person ? (normalizeBankCard(value.bankCard) || defaultBankCard(person)) : normalizeBankCard(value.bankCard),
       standardCents: amountToCents(value.standard), active: value.active !== false, notes: text(value.notes),
@@ -458,7 +957,9 @@
 
   function templateItem(value, personnel = [], templateKey, { now = new Date(), id } = {}) {
     const person = personnel.find((item) => personId(item) === text(value.personId));
-    const sameNamePeople = !person && text(value.name) ? personnel.filter((item) => personName(item) === text(value.name)) : [];
+    // 承包费台账已经用家庭编号和来源明细编号锁定每一户。同一个收款人可以
+    // 代多个家庭收款，这些行必须分别保留，不能再按收款人同名误判为重复。
+    const sameNamePeople = !person && !text(value.contractFeeSourceItemId) && text(value.name) ? personnel.filter((item) => personName(item) === text(value.name)) : [];
     if (sameNamePeople.length > 1) throw new Error(`${text(value.name)}在居民档案中有重名，请按组别和证件或银行卡尾号手工确认具体人员`);
     const name = person ? personName(person) : text(value.name);
     if (!name) throw new Error('每一笔发放都必须填写收款人');
@@ -483,6 +984,8 @@
       unitPriceCents, quantity, deductionsCents, calculatedAmountCents, automaticAmountCents, amountCents: finalAmountCents,
       adjustmentReason: text(value.adjustmentReason), residentSnapshot: person ? { personId: personId(person), name, groupName: personGroup(person), bankCard: normalizeBankCard(value.bankCard) || defaultBankCard(person) } : null,
       customData: value.customData && typeof value.customData === 'object' ? structuredClone(value.customData) : {},
+      contractFeeSourceItemId: text(value.contractFeeSourceItemId), householdId: text(value.householdId), householderName: text(value.householderName),
+      contractFeeBaseAmountCents: Number(value.contractFeeBaseAmountCents || 0), contractFeeTailAmountCents: Number(value.contractFeeTailAmountCents || 0),
       paymentStatus: text(value.paymentStatus) || 'pending', paymentNote: text(value.paymentNote), remark: text(value.remark), createdAt: nowIso(now), updatedAt: nowIso(now),
     };
   }
@@ -511,7 +1014,6 @@
   function createTemplateDisbursementBatch(value, { personnel = [], now = new Date(), id } = {}) {
     const templateKey = text(value.templateKey);
     if (!Object.values(DISBURSEMENT_TEMPLATE_KEYS).includes(templateKey) && !text(value.templateId)) throw new Error('请选择发放模板');
-    if (!text(value.period)) throw new Error('请填写发放期间');
     const batchId = id || identifier('template-disbursement-batch', now instanceof Date ? now.getTime() : Date.now());
     const items = (value.items || []).map((item, index) => templateItem(item, personnel, templateKey, { now, id: `${batchId}-item-${index + 1}` }));
     if (!items.length) throw new Error('请至少添加一名收款人');
@@ -553,8 +1055,20 @@
   function disbursementResidentSyncPlan(batch, personnel = [], resolutions = {}) {
     return (batch?.items || []).map((item) => {
       const rowId = text(item.id); const resolution = resolutions[rowId] || {}; const candidateId = text(resolution.personId || item.personId);
-      const candidates = disbursementResidentCandidates(item, personnel); const person = personnel.find((entry) => personId(entry) === candidateId) || (candidates.length === 1 ? candidates[0].person : null);
-      if (!person) return { itemId: rowId, status: candidates.length > 1 ? 'manual' : 'missing', reason: candidates.length > 1 ? '存在重名或多个居民候选，必须人工确认' : '未找到居民档案', candidates, item };
+      const candidates = disbursementResidentCandidates(item, personnel);
+      const createNew = candidateId === '__new__';
+      if (createNew) {
+        if (!text(item.name)) return { itemId: rowId, status: 'missing', reason: '缺少姓名，不能新建居民档案', candidates, item };
+        return { itemId: rowId, status: 'create', reason: '操作员确认新增居民档案，身份证号可后续补充', candidates, item };
+      }
+      const explicitPerson = personnel.find((entry) => personId(entry) === candidateId);
+      const idCardMatch = candidates.find((candidate) => candidate.reason === '身份证号一致')?.person || null;
+      const person = explicitPerson || idCardMatch;
+      if (!person) {
+        if (!text(item.name)) return { itemId: rowId, status: 'missing', reason: '缺少姓名，不能新建居民档案', candidates, item };
+        if (candidates.length) return { itemId: rowId, status: 'manual', reason: '存在同名居民，请确认关联已有档案或新增居民', candidates, item };
+        return { itemId: rowId, status: 'create', reason: '未找到居民档案，将在发放完成时新增；身份证号可后续补充', candidates, item };
+      }
       const incomingCard = normalizeBankCard(item.bankCard); const existingCard = defaultBankCard(person);
       const requested = text(resolution.bankCardDecision);
       const decision = requested === 'sync' ? 'default' : (requested || (incomingCard && !existingCard ? 'default' : ''));
@@ -600,7 +1114,7 @@
       }
       const conflicts = [];
       const compare = (field, existing, incoming) => { if (text(existing) && text(incoming) && text(existing) !== text(incoming)) conflicts.push({ field, residentValue: text(existing), disbursementValue: text(incoming) }); };
-      compare('姓名', personName(person), item.name); compare('村民组', personGroup(person), item.groupName);
+      compare('姓名', personName(person), item.name); compare("居民组", personGroup(person), item.groupName);
       const existingId = normalizedIdCard(person.id_card || person.idCard); if (existingId && idCard && existingId !== idCard) conflicts.push({ field: '身份证号', residentValue: existingId, disbursementValue: idCard });
       compare('手机号', residentPhone(person), normalizedPhone(item.phone));
       const incomingCard = normalizeBankCard(item.bankCard); const cards = bankAccounts(person); const hasIncomingCard = incomingCard && cards.some((account) => normalizeBankCard(account.cardNumber) === incomingCard);
@@ -624,7 +1138,9 @@
       const account = bankAccounts(person).find((entry) => normalizeBankCard(entry.cardNumber) === card); if (account && text(item.bankName)) account.bankName = text(item.bankName);
     } else if (knownAccount && !text(knownAccount.bankName) && text(item.bankName)) { knownAccount.bankName = text(item.bankName); changedFields.push('bankName'); }
     if (text(item.bankName) && (!text(person.bank_name || person.bankName) || adopt) && text(person.bank_name || person.bankName) !== text(item.bankName)) { person.bank_name = text(item.bankName); changedFields.push('bankName'); }
-    appendDisbursementResidentHistory(person, disbursementResidentHistory(batch, item, now)); person.updated_at = nowIso(now);
+    // Importing/synchronizing a prepared batch only updates resident fields.
+    // The fee record is written by completeTemplateDisbursementBatch after payment is completed.
+    person.updated_at = nowIso(now);
     return [...new Set(changedFields)];
   }
 
@@ -647,15 +1163,40 @@
     return { batch: nextBatch, personnel: nextPersonnel, plan, results, summary };
   }
 
-  function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, now = new Date(), operator = '' } = {}) {
+  function completeTemplateDisbursementBatch(batch, { personnel = [], resolutions = {}, paymentResults, now = new Date(), operator = '' } = {}) {
     if (batch?.workbenchDraft?.ready === false) throw new Error('草稿尚未填写完整，不能发放完成');
-    if (!['draft', 'prepared', 'printed'].includes(text(batch?.status))) throw new Error('该批次当前不能登记为发放完成');
-    const nextBatch = structuredClone(batch); const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan(nextBatch, nextPersonnel, resolutions);
+    if (!['draft', 'prepared', 'printed', 'partial'].includes(text(batch?.status))) throw new Error('该批次当前不能登记发放结果');
+    const nextBatch = structuredClone(batch);
+    const byId = new Map((paymentResults || []).map((entry) => [text(entry.itemId), entry]));
+    const newlyPaid = [];
+    nextBatch.items.forEach((item) => {
+      const result = byId.get(text(item.id));
+      if (item.paymentStatus === 'paid') return;
+      const status = result ? text(result.status) : paymentResults ? 'pending' : 'paid';
+      if (!['paid', 'unpaid', 'failed', 'pending'].includes(status)) throw new Error(`${item.name}的发放结果无效`);
+      item.paymentStatus = status;
+      item.paymentNote = result ? text(result.note) : text(item.paymentNote);
+      item.paidAt = status === 'paid' ? nowIso(now) : null;
+      if (status === 'paid') newlyPaid.push(item);
+    });
+    if (!nextBatch.items.length) throw new Error('批次没有发放明细');
+    const allPaid = nextBatch.items.every((item) => item.paymentStatus === 'paid');
+    if (batch?.isTest) {
+      nextBatch.status = allPaid ? 'completed' : 'partial'; nextBatch.completedAt = allPaid ? nowIso(now) : null; nextBatch.updatedAt = nowIso(now);
+      return { batch: nextBatch, personnel: structuredClone(personnel || []), results: [], operationEntries: [] };
+    }
+    const nextPersonnel = structuredClone(personnel || []); const plan = disbursementResidentSyncPlan({ ...nextBatch, items: newlyPaid }, nextPersonnel, resolutions);
     const unresolved = plan.filter((entry) => ['manual', 'missing'].includes(entry.status));
     if (unresolved.length) throw new Error(`仍有 ${unresolved.length} 条居民关联或银行卡待处理：${unresolved.map((entry) => entry.reason).join('；')}`);
-    const syncResults = []; const operationEntries = [];
+    const syncResults = []; const operationEntries = []; let createdSerial = 0;
     for (const entry of plan) {
-      const item = nextBatch.items.find((row) => text(row.id) === entry.itemId); const person = nextPersonnel.find((row) => personId(row) === entry.personId);
+      const item = nextBatch.items.find((row) => text(row.id) === entry.itemId); let person = nextPersonnel.find((row) => personId(row) === entry.personId);
+      if (entry.status === 'create' && item) {
+        createdSerial += 1;
+        person = { id: `personnel-disbursement-${now instanceof Date ? now.getTime() : Date.now()}-${createdSerial}`, created_at: nowIso(now), identityStatus: '待补充' };
+        fillResidentFromDisbursement(person, item, nextBatch, now);
+        nextPersonnel.push(person);
+      }
       if (!item || !person) continue;
       const beforeCard = defaultBankCard(person); item.personId = personId(person); item.recipientKind = 'resident'; item.residentSnapshot = { personId: personId(person), name: personName(person), groupName: personGroup(person), bankCard: normalizeBankCard(item.bankCard) || beforeCard };
       const decision = entry.bankCardDecision === 'sync' ? 'default' : (entry.bankCardDecision || 'default');
@@ -663,13 +1204,12 @@
       let nextCard = beforeCard; const changedFields = [];
       if (incomingCard && decision === 'default') { setDefaultBankCard(person, incomingCard, { source: 'disbursement-complete', now }); nextCard = defaultBankCard(person); if (beforeCard !== nextCard) changedFields.push('默认银行卡'); }
       else if (incomingCard && decision === 'add') { addBankAccount(person, { cardNumber: incomingCard, bankName: item.bankName, accountName: item.name }, { source: 'disbursement-complete', now }); changedFields.push('备用银行卡'); }
-      appendDisbursementResidentHistory(person, disbursementResidentHistory(nextBatch, item, now));
+      appendDisbursementResidentHistory(person, disbursementResidentHistory(nextBatch, { ...item, paymentStatus: 'paid' }, now));
       const operation = appendResidentOperation(person, { action: '发放完成并写入个人记录', description: `${text(nextBatch.categoryName) || '资金发放'}：${text(item.workItem || item.role || nextBatch.period || '已完成')}`, sourceType: 'disbursement-complete', batchId: nextBatch.id, recordId: item.id, operator, changedFields: ['资金与工作记录', ...changedFields] }, { now });
       operationEntries.push({ ...operation, personId: personId(person), residentName: personName(person) });
       syncResults.push({ itemId: item.id, personId: personId(person), status: entry.status, bankCardDecision: decision, previousCard: beforeCard, nextCard, syncedAt: nowIso(now), changedFields });
     }
-    nextBatch.status = 'completed'; nextBatch.completedAt = nowIso(now); nextBatch.updatedAt = nowIso(now); nextBatch.residentSyncResults = syncResults;
-    nextBatch.items.forEach((item) => { item.paymentStatus = 'paid'; item.paidAt = nowIso(now); });
+    nextBatch.status = allPaid ? 'completed' : 'partial'; nextBatch.completedAt = allPaid ? nowIso(now) : null; nextBatch.updatedAt = nowIso(now); nextBatch.residentSyncResults = [...(batch.residentSyncResults || []), ...syncResults];
     return { batch: nextBatch, personnel: nextPersonnel, results: syncResults, operationEntries };
   }
 
@@ -774,7 +1314,7 @@
       const groupConflict = text(personGroup(person)) && text(record.groupName) && text(personGroup(person)) !== text(record.groupName);
       const conflicts = [];
       if (nameConflict) conflicts.push({ field: '姓名', residentValue: personName(person), subsidyValue: text(record.name) });
-      if (groupConflict) conflicts.push({ field: '村民组', residentValue: personGroup(person), subsidyValue: text(record.groupName) });
+      if (groupConflict) conflicts.push({ field: "居民组", residentValue: personGroup(person), subsidyValue: text(record.groupName) });
       const incomingPhone = normalizedPhone(record.phone); const currentPhone = residentPhone(person);
       if (incomingPhone && currentPhone && incomingPhone !== currentPhone) conflicts.push({ field: '手机号', residentValue: currentPhone, subsidyValue: incomingPhone });
       const incomingCard = normalizeBankCard(record.bankCard); const accounts = bankAccounts(person); const hasIncomingCard = incomingCard && accounts.some((item) => normalizeBankCard(item.cardNumber) === incomingCard);
@@ -879,9 +1419,15 @@
 
   const api = {
     amountToCents, centsToYuan, numberValue, normalizeBankCard, personName, personGroup, personStatus, personId,
-    bankAccounts, defaultBankCard, setDefaultBankCard, addBankAccount, appendResidentOperation, calculateAmount, matchImportedRows, createContract, createLedger,
+    bankAccounts, isCurrentBankAccount, defaultBankCard, setDefaultBankCard, addBankAccount, updateBankAccount, deactivateBankAccount, appendResidentOperation, calculateAmount, matchImportedRows, createContract, createLedger,
     copyLedger, replaceLedgerPerson, createBatch, summarizeBatch, validateBatch, deriveBatchStatus, reviewBatch,
     markBatchExported, updatePaymentResults, createReceipt, createAdvance, reimburseAdvance,
+    CONTRACT_FEE_ALLOCATION_TYPES, CONTRACT_FEE_FIELD_TYPES, CONTRACT_FEE_FORMULA_OPERATORS, decimalToScaledInteger,
+    normalizeFormulaExpression, normalizeContractFeeFieldDefinition, normalizeContractFeeFieldDefinitions, validateContractFeeFieldDefinitions,
+    contractFeeDistributionItem, normalizeContractFeeGroup, normalizeContractFeeDistributionPlan, createContractFeeDistributionPlan, validateContractFeeDistributionPlan,
+    evaluateContractFeeItemFields, contractFeeOutputColumns, contractFeeOutputValue, removeContractFeeField,
+    recalculateContractFeeBatchGroup, createContractFeeDistributionBatch, summarizeContractFeeDistributionBatch, contractFeePlanDuplicateRecipients, contractFeeBatchDuplicateRecipients,
+    setContractFeeBatchItemParticipation, adjustContractFeeBatchItem, assignContractFeeBatchGroupTail, validateContractFeeDistributionBatch, copyContractFeeDistributionPlan,
     defaultDisbursementCategories, defaultDisbursementTemplates, normalizeDisbursementTemplate, createDisbursementTemplate, normalizeDisbursementCollections, createDisbursementCategory, createDisbursementBatch,
     summarizeDisbursementBatch, reviewDisbursementBatch, markDisbursementBatchPaid, summarizeDisbursementDashboard, recycleDisbursementBatch, restoreDisbursementBatch, copyDisbursementBatch, disbursementBatchIssues, disbursementBatchSyncStatus,
     DISBURSEMENT_TEMPLATE_KEYS, normalizeTemplateColumns, normalizeProfile, templateItem, createTemplateDisbursementBatch, prepareTemplateDisbursementBatch, markTemplateDisbursementPrinted,

@@ -12,7 +12,7 @@
     <key>BundleOverwriteAction</key>
     <string>upgrade</string>
     <key>RootRelativeBundlePath</key>
-    <string>Applications/社区AI管理系统.app</string>
+    <string>Applications/村居AI管理系统.app</string>
   </dict>
 </array>
 </plist>
