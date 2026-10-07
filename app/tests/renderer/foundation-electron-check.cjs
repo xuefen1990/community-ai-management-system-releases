@@ -15,7 +15,7 @@ const root = process.env.FOUNDATION_ELECTRON_TEST_DIR;
 if (!root || !path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep) && !path.resolve(root).startsWith('/private/tmp/community-foundation-electron-')) throw new Error('Disposable test directory required');
 app.setPath('userData', path.join(root, 'isolated-user-data'));
 protocol.registerSchemesAsPrivileged([{ scheme: 'community-file', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }]);
-const timer = setTimeout(() => app.exit(2), 45000);
+const timer = setTimeout(() => app.exit(2), 150000);
 app.whenReady().then(async () => {
   let window;
   try {
@@ -28,13 +28,17 @@ app.whenReady().then(async () => {
     const archived = await files.request({ action: 'archive', sourceFilePath: source, name: '合成图片.png', links: [{ targetType: 'person', personId: 'test-0' }] });
     assert.equal(archived.success, true);
     let signedIn = true;
-    const authService = { getStatus: async () => ({ authenticated: signedIn, entitlement: { type: signedIn ? 'licensed' : 'none' }, account: signedIn ? { role: 'unit_admin', name: '合成账号', phone: '10000000000' } : null }),
+    const authService = { request: async () => ({}), getStatus: async () => ({ authenticated: signedIn, entitlement: { type: signedIn ? 'licensed' : 'none' }, account: signedIn ? { role: 'unit_admin', name: '合成账号', phone: '10000000000' } : null }),
       logout: async () => { signedIn = false; return { ok: true }; },
       getLoginPrefill: async () => ({phone:'13800138000',password:'synthetic-secret',rememberPreference:true}), clearLoginPrefill: async()=>({ok:true}), getServerConfig: async () => ({ baseUrl: 'http://127.0.0.1:1' }) };
     registerCompatibilityHandlers({ app, ipcMain, dialog, databaseStore: store, authService, shell: { openPath: async () => '' } });
+    ipcMain.handle('get-ai-assistant-conversation', async () => ({ messages: [] }));
+    ipcMain.handle('list-ai-assistant-files', async () => []);
+    ipcMain.handle('list-ai-assistant-operations', async () => []);
+    ipcMain.handle('get-ai-settings', async () => ({ mode: 'online', online: { enabled: false, providers: [] }, local: { enabled: false } }));
     registerFoundationFileProtocol({ protocol, net, store, authService });
     const visible = process.env.FOUNDATION_VISIBLE_QA === '1';
-    window = new BrowserWindow({ show: visible, width: 1600, height: 1000, webPreferences: { offscreen: !visible, backgroundThrottling: false, contextIsolation: true,
+    window = new BrowserWindow({ show: visible, width: 1600, height: 1000, titleBarStyle: 'hiddenInset', webPreferences: { offscreen: !visible, backgroundThrottling: false, contextIsolation: true,
       sandbox: false, nodeIntegration: false, webSecurity: true, preload: path.resolve(__dirname, '../../src/preload/index.js') } });
     await window.loadFile(path.resolve(__dirname, '../../src/renderer/foundation/index.html'));
     const result = await window.webContents.executeJavaScript(`(${async function run() {
@@ -86,18 +90,31 @@ app.whenReady().then(async () => {
     assert.equal(upload.status, 200);
     result.mobileInboxVisible = await window.webContents.executeJavaScript(`(async()=>{for(let i=0;i<100;i++){if(document.querySelector('[data-testid="sorting-file-list"]')?.textContent.includes('手机合成照片.png'))return true;await new Promise(resolve=>setTimeout(resolve,25));}return false})()`);
     assert.equal(result.mobileInboxVisible, true);
-    await window.webContents.executeJavaScript(`(async()=>{const {foundation}=await import(new URL('./bootstrap.mjs',location.href).href);[...document.querySelectorAll('.menu-item')].find(item=>item.textContent.trim()==='居民一户一档').click();await new Promise(resolve=>setTimeout(resolve,600));for(let i=0;i<100;i++){if(document.querySelectorAll('.el-table__body tbody tr').length===15&&[...document.querySelectorAll('.el-table__body tbody tr')].some(row=>row.getBoundingClientRect().height>0)){await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return;}await new Promise(resolve=>setTimeout(resolve,25));}throw new Error('Resident page did not settle before capture')})()`);
+    await window.webContents.executeJavaScript(`(async()=>{const {foundation}=await import(new URL('./bootstrap.mjs',location.href).href);[...document.querySelectorAll('.menu-item')].find(item=>item.textContent.trim()==='居民档案').click();await new Promise(resolve=>setTimeout(resolve,600));for(let i=0;i<100;i++){if(document.querySelectorAll('.el-table__body tbody tr').length===15&&[...document.querySelectorAll('.el-table__body tbody tr')].some(row=>row.getBoundingClientRect().height>0)){await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));return;}await new Promise(resolve=>setTimeout(resolve,25));}throw new Error('Resident page did not settle before capture')})()`);
     const screenshot = path.join(root, 'electron-foundation.png'); await fs.writeFile(screenshot, (await window.webContents.capturePage()).toPNG()); result.screenshot = screenshot;
     const reloaded = once(window.webContents, 'did-finish-load'); window.webContents.reload(); await reloaded;
     result.reloadKeepsFoundation = await window.webContents.executeJavaScript(`(async()=>{await import(new URL('./bootstrap.mjs',location.href).href);return location.pathname.endsWith('/foundation/index.html')})()`);
     assert.equal(result.reloadKeepsFoundation, true);
     result.statistics = await window.webContents.executeJavaScript(`(async()=>{const {foundation}=await import(new URL('./bootstrap.mjs',location.href).href);await foundation.router.push('/statistics');for(let i=0;i<100&&!document.querySelector('.statistics-finance-controls');i++)await new Promise(r=>setTimeout(r,30));const section=document.querySelector('.statistics-finance-group');if(!section)throw Error('Statistics chart controls missing');const buttons=section.querySelectorAll('button');buttons[1].click();await new Promise(r=>setTimeout(r,100));if(!section.textContent.includes('收入类别'))throw Error('Income switch failed');const select=section.querySelector('select');select.value='summary';select.dispatchEvent(new Event('change',{bubbles:true}));await new Promise(r=>setTimeout(r,100));if(!section.textContent.includes('汇总大类'))throw Error('Grouping mode failed');section.scrollIntoView({block:'center'});await new Promise(r=>setTimeout(r,800));return {incomeSwitch:true,summaryMode:true};})()`);
     await fs.writeFile(path.join(root,'statistics.png'),(await window.webContents.capturePage()).toPNG());
+    result.greenSkin = { environment: 'disposable native Electron with synthetic data', layouts: [] };
+    for (const [width, height, zoom] of [[1600, 900, 1], [1080, 680, 1], [1600, 900, 1.25], [1600, 900, 1.5]]) {
+      window.setContentSize(width, height);
+      window.webContents.setZoomFactor(zoom);
+      const layout = await window.webContents.executeJavaScript(`(async()=>{for(let i=0;i<150&&(Math.abs(innerWidth-${width/zoom})>1.5||Math.abs(innerHeight-${height/zoom})>1.5);i++)await new Promise(r=>setTimeout(r,30));if(Math.abs(innerWidth-${width/zoom})>1.5||Math.abs(innerHeight-${height/zoom})>1.5)throw Error('Native zoom did not settle');const checks=await import(new URL('../../../tests/renderer/green-skin-scenarios.mjs',location.href).href);return checks.checkGreenSkinLayout(innerWidth,innerHeight)})()`);
+      result.greenSkin.layouts.push({ contentWidth: width, contentHeight: height, zoom: window.webContents.getZoomFactor(), ...layout });
+      console.log(JSON.stringify({ checkpoint: 'green-layout', zoom, pages: layout.pages.length }));
+    }
+    window.webContents.setZoomFactor(1);
+    window.setContentSize(1600, 900);
+    result.greenSkin.compatibility = await window.webContents.executeJavaScript(`import(new URL('../../../tests/renderer/green-skin-scenarios.mjs',location.href).href).then(checks=>checks.checkGreenSkinCompatibility())`);
     const loggedOut = once(window.webContents, 'did-finish-load');
     await window.webContents.executeJavaScript(`import(new URL('./vendor/assets/foundation-runtime.mjs',location.href).href).then(({useAuthStore})=>{void useAuthStore().logout()})`);
     await loggedOut;
     result.logoutClearsBusiness = await window.webContents.executeJavaScript(`(async()=>{for(let i=0;i<100;i++){if(document.querySelector('#login-phone'))return !document.querySelector('[data-testid="business-shell"]')&&!document.querySelector('#resident-subsidy-profile-overlay');await new Promise(resolve=>setTimeout(resolve,25));}return false})()`);
     assert.equal(result.logoutClearsBusiness, true); result.visibleDesktopWindow = visible;
+    result.titlebarRemovedOnLogout = await window.webContents.executeJavaScript(`!document.querySelector('#community-skin-titlebar')&&!document.body.classList.contains('community-skin-shell-ready')`);
+    assert.equal(result.titlebarRemovedOnLogout, true);
     result.loginRememberDefault = await window.webContents.executeJavaScript(`document.querySelector('.account-gate input[type=checkbox]')?.checked ?? document.querySelector('input[type=checkbox]')?.checked`);
     assert.equal(result.loginRememberDefault, true);
     result.loginPrefill = await window.webContents.executeJavaScript(`({phone:document.querySelector('#login-phone').value,password:document.querySelector('#login-password').value,hidden:document.querySelector('#login-password').type==='password'})`);

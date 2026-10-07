@@ -10,6 +10,7 @@ const childScenario = new URLSearchParams(location.search).has('child');
 const lanActions = [];
 let signedIn = !authScenario;
 let submittedApplication = null;
+let testPreferences = {};
 let testAiSettings = { mode: 'online', localModelPath: '', online: { baseUrl: 'https://synthetic.invalid/v1', model: 'synthetic', hasApiKey: false } };
 let testBackups = [];
 let importGrid = null;
@@ -55,7 +56,8 @@ window.api = {
   getLocalAuthStatus: async () => ({ authenticated: true, account: childScenario
     ? { name: '合成子账号', phone: '10000000000', role: 'member', permissions: {} }
     : { name: '合成账号', phone: '10000000000', role: 'unit_admin' }, entitlement: { type: 'licensed' } }),
-  getAccountPreferences: async () => ({}),
+  getAccountPreferences: async () => structuredClone(testPreferences),
+  saveAccountPreferences: async value => { testPreferences = structuredClone(value); return structuredClone(testPreferences); },
   getRemoteServerConfig: async () => ({ baseUrl: 'http://127.0.0.1:3000' }),
   converseWithAiAssistant: async () => ({ content: '合成数据测试回复', provider: 'system' }),
   printCertificateDocument: async () => ({ ok: true, data: { ok: true, preview: true } }),

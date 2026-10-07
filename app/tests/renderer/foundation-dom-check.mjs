@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { FoundationBusinessService } = require('../../src/main/foundation-business-service');
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+const root = process.env.FOUNDATION_UI_BASELINE || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 let data = { settings: { villageName: '合成数据测试社区' }, personnel: Array.from({ length: 10000 }, (_, i) => ({
   id: `synthetic-${i}`, name: `测试居民${i}`, idCard: `SYNTHETIC-${String(i).padStart(6, '0')}`,
   birth_date: '1980-01-01', gender: i % 2 ? '男' : '女', village_group: `测试${i % 8}组`,
@@ -50,7 +50,7 @@ const profile = await mkdtemp(path.join(tmpdir(), 'community-foundation-ui-'));
 const screenshot = path.join(profile, 'foundation.png');
 const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 {
-  const mode = ['performance', 'inventory', 'auth', 'forms', 'settings', 'menu', 'navigation', 'imports', 'interaction', 'certificate', 'drafting', 'child'].find(value => process.argv.includes(value)) || 'base';
+  const mode = ['skin', 'performance', 'inventory', 'auth', 'forms', 'settings', 'menu', 'navigation', 'imports', 'interaction', 'certificate', 'drafting', 'child'].find(value => process.argv.includes(value)) || 'base';
   const child = spawn(chrome, ['--headless', '--use-mock-keychain', '--password-store=basic', '--disable-background-networking',
     `--user-data-dir=${profile}`, '--no-first-run', '--no-default-browser-check', '--window-size=1600,1000', '--remote-debugging-pipe', 'about:blank'],
     { stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe'] });
@@ -67,7 +67,7 @@ const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Conte
     }
   });
   child.on('exit', () => { for (const wait of pending.values()) wait.reject(new Error('Chrome exited before completing performance test')); });
-  const timer = setTimeout(() => child.kill('SIGTERM'), 45000);
+  const timer = setTimeout(() => child.kill('SIGTERM'), mode === 'skin' ? 120000 : 45000);
   try {
     const { targetId } = await call('Target.createTarget', { url: 'about:blank' });
     const { sessionId } = await call('Target.attachToTarget', { targetId, flatten: true });
@@ -79,6 +79,29 @@ const chrome = process.env.TEST_CHROME || '/Applications/Google Chrome.app/Conte
       try { const response = await call('Runtime.evaluate', { expression: 'document.body?.dataset.testResult', returnByValue: true }, sessionId); if (response.result?.value) { result = JSON.parse(response.result.value); break; } } catch {}
     }
     if (!result) throw new Error('Performance test did not finish');
+    if (mode === 'skin' && result.ok) {
+      const evaluate = async expression => {
+        const response = await call('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true }, sessionId);
+        if (response.exceptionDetails) throw new Error(response.exceptionDetails.exception?.description || response.exceptionDetails.text);
+        return response.result.value;
+      };
+      result.skin = { environment: 'isolated headless Chrome, synthetic data', layouts: [], screenshots: [] };
+      for (const [width, height, scale] of [[1600, 900, 1], [1080, 680, 1], [1280, 720, 1.25], [1067, 600, 1.5]]) {
+        await call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: scale, mobile: false }, sessionId);
+        const layout = await evaluate(`import('/app/tests/renderer/green-skin-scenarios.mjs').then(module => module.checkGreenSkinLayout(${width}, ${height}))`);
+        result.skin.layouts.push(layout);
+        for (const route of ['/overview', '/personnel', '/village-duty', '/drafting']) {
+          await evaluate(`import('/app/tests/renderer/green-skin-scenarios.mjs').then(module => module.openGreenSkinRoute(${JSON.stringify(route)}))`);
+          const capture = await call('Page.captureScreenshot', { format: 'png' }, sessionId);
+          const target = path.join(profile, `skin-${width}x${height}-${route.slice(1)}.png`);
+          await writeFile(target, Buffer.from(capture.data, 'base64'));
+          result.skin.screenshots.push(target);
+        }
+      }
+      await call('Emulation.setDeviceMetricsOverride', { width: 1600, height: 900, deviceScaleFactor: 1, mobile: false }, sessionId);
+      result.skin.compatibility = await evaluate("import('/app/tests/renderer/green-skin-scenarios.mjs').then(module => module.checkGreenSkinCompatibility())");
+      await evaluate("import('/app/tests/renderer/green-skin-scenarios.mjs').then(module => module.openGreenSkinRoute('/overview'))");
+    }
     if(mode==='interaction'&&result.ok){
       const evaluate=async expression=>{const response=await call('Runtime.evaluate',{expression,returnByValue:true,awaitPromise:true},sessionId);if(response.exceptionDetails)throw Error(response.exceptionDetails.text);return response.result.value;};
       const rect=await evaluate("(()=>{const r=document.querySelector('#aiCopilotToggleBtn').getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height,right:innerWidth-r.right,bottom:innerHeight-r.bottom}})()");

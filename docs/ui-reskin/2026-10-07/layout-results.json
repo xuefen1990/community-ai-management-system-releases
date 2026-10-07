@@ -1,0 +1,462 @@
+{
+  "ok": true,
+  "syntheticResidents": 10000,
+  "layouts": [
+    {
+      "width": 1600,
+      "height": 900,
+      "pages": [
+        {
+          "label": "工作台",
+          "route": "/overview",
+          "mainWidth": 1394,
+          "mainScrollWidth": 1394,
+          "clickableControl": "刷新数据"
+        },
+        {
+          "label": "数据统计",
+          "route": "/statistics",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400
+        },
+        {
+          "label": "居民档案",
+          "route": "/personnel",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "党员管理",
+          "route": "/party",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "收起统计 ▴"
+        },
+        {
+          "label": "公文拟写",
+          "route": "/drafting",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "我的写作偏好"
+        },
+        {
+          "label": "证明管理",
+          "route": "/certificate-workspace",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400
+        },
+        {
+          "label": "民情记录",
+          "route": "/visits",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "资金发放中心",
+          "route": "/funds",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "办理首页"
+        },
+        {
+          "label": "村务值班",
+          "route": "/village-duty",
+          "mainWidth": 1394,
+          "mainScrollWidth": 1394,
+          "clickableControl": "⚙ 值班任务"
+        },
+        {
+          "label": "财务收支",
+          "route": "/finance",
+          "mainWidth": 1394,
+          "mainScrollWidth": 1394
+        },
+        {
+          "label": "工作事项",
+          "route": "/work",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "＋ 新建工作"
+        },
+        {
+          "label": "土地承包确权",
+          "route": "/land",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "电子档案柜",
+          "route": "/documents",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "📁 全部档案0"
+        },
+        {
+          "label": "AI 操作记录",
+          "route": "/assistant-records",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "系统设置",
+          "route": "/settings",
+          "mainWidth": 1400,
+          "mainScrollWidth": 1400,
+          "clickableControl": "🔄 刷新配置"
+        }
+      ],
+      "reverseNavigation": true
+    },
+    {
+      "width": 1080,
+      "height": 680,
+      "pages": [
+        {
+          "label": "工作台",
+          "route": "/overview",
+          "mainWidth": 890,
+          "mainScrollWidth": 890,
+          "clickableControl": "刷新数据"
+        },
+        {
+          "label": "数据统计",
+          "route": "/statistics",
+          "mainWidth": 896,
+          "mainScrollWidth": 896
+        },
+        {
+          "label": "居民档案",
+          "route": "/personnel",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "党员管理",
+          "route": "/party",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "收起统计 ▴"
+        },
+        {
+          "label": "公文拟写",
+          "route": "/drafting",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "我的写作偏好"
+        },
+        {
+          "label": "证明管理",
+          "route": "/certificate-workspace",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "开具证明"
+        },
+        {
+          "label": "民情记录",
+          "route": "/visits",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "资金发放中心",
+          "route": "/funds",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "办理首页"
+        },
+        {
+          "label": "村务值班",
+          "route": "/village-duty",
+          "mainWidth": 890,
+          "mainScrollWidth": 890,
+          "clickableControl": "⚙ 值班任务"
+        },
+        {
+          "label": "财务收支",
+          "route": "/finance",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "工作事项",
+          "route": "/work",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "＋ 新建工作"
+        },
+        {
+          "label": "土地承包确权",
+          "route": "/land",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "电子档案柜",
+          "route": "/documents",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "📁 全部档案0"
+        },
+        {
+          "label": "AI 操作记录",
+          "route": "/assistant-records",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "系统设置",
+          "route": "/settings",
+          "mainWidth": 896,
+          "mainScrollWidth": 896,
+          "clickableControl": "🔄 刷新配置"
+        }
+      ],
+      "reverseNavigation": true
+    },
+    {
+      "width": 1280,
+      "height": 720,
+      "pages": [
+        {
+          "label": "工作台",
+          "route": "/overview",
+          "mainWidth": 1074,
+          "mainScrollWidth": 1074,
+          "clickableControl": "刷新数据"
+        },
+        {
+          "label": "数据统计",
+          "route": "/statistics",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080
+        },
+        {
+          "label": "居民档案",
+          "route": "/personnel",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "党员管理",
+          "route": "/party",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "收起统计 ▴"
+        },
+        {
+          "label": "公文拟写",
+          "route": "/drafting",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "我的写作偏好"
+        },
+        {
+          "label": "证明管理",
+          "route": "/certificate-workspace",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "开具证明"
+        },
+        {
+          "label": "民情记录",
+          "route": "/visits",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "资金发放中心",
+          "route": "/funds",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "办理首页"
+        },
+        {
+          "label": "村务值班",
+          "route": "/village-duty",
+          "mainWidth": 1074,
+          "mainScrollWidth": 1074,
+          "clickableControl": "⚙ 值班任务"
+        },
+        {
+          "label": "财务收支",
+          "route": "/finance",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "工作事项",
+          "route": "/work",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "＋ 新建工作"
+        },
+        {
+          "label": "土地承包确权",
+          "route": "/land",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "电子档案柜",
+          "route": "/documents",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "📁 全部档案0"
+        },
+        {
+          "label": "AI 操作记录",
+          "route": "/assistant-records",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "系统设置",
+          "route": "/settings",
+          "mainWidth": 1080,
+          "mainScrollWidth": 1080,
+          "clickableControl": "🔄 刷新配置"
+        }
+      ],
+      "reverseNavigation": true
+    },
+    {
+      "width": 1067,
+      "height": 600,
+      "pages": [
+        {
+          "label": "工作台",
+          "route": "/overview",
+          "mainWidth": 877,
+          "mainScrollWidth": 877,
+          "clickableControl": "刷新数据"
+        },
+        {
+          "label": "数据统计",
+          "route": "/statistics",
+          "mainWidth": 883,
+          "mainScrollWidth": 883
+        },
+        {
+          "label": "居民档案",
+          "route": "/personnel",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "党员管理",
+          "route": "/party",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "收起统计 ▴"
+        },
+        {
+          "label": "公文拟写",
+          "route": "/drafting",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "我的写作偏好"
+        },
+        {
+          "label": "证明管理",
+          "route": "/certificate-workspace",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "开具证明"
+        },
+        {
+          "label": "民情记录",
+          "route": "/visits",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "资金发放中心",
+          "route": "/funds",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "办理首页"
+        },
+        {
+          "label": "村务值班",
+          "route": "/village-duty",
+          "mainWidth": 877,
+          "mainScrollWidth": 877,
+          "clickableControl": "⚙ 值班任务"
+        },
+        {
+          "label": "财务收支",
+          "route": "/finance",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "工作事项",
+          "route": "/work",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "＋ 新建工作"
+        },
+        {
+          "label": "土地承包确权",
+          "route": "/land",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "新手引导"
+        },
+        {
+          "label": "电子档案柜",
+          "route": "/documents",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "📁 全部档案0"
+        },
+        {
+          "label": "AI 操作记录",
+          "route": "/assistant-records",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "刷新"
+        },
+        {
+          "label": "系统设置",
+          "route": "/settings",
+          "mainWidth": 883,
+          "mainScrollWidth": 883,
+          "clickableControl": "🔄 刷新配置"
+        }
+      ],
+      "reverseNavigation": true
+    }
+  ],
+  "compatibility": {
+    "residentDialog": true,
+    "formFocus": true,
+    "aiOpenClose": true,
+    "a4Editor": true,
+    "darkThemePreserved": true
+  },
+  "errors": [],
+  "failedRequests": [],
+  "vendor": {
+    "files": 19,
+    "changes": [],
+    "unchanged": true
+  }
+}

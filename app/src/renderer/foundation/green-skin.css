@@ -48,13 +48,15 @@
   body[data-skin-platform="win32"] .community-skin-titlebar,
   body[data-skin-platform="linux"] .community-skin-titlebar { padding-right: 160px; }
 
-  body.community-green-skin .app-sidebar { flex: 0 0 200px; width: 200px; min-width: 0; }
+  body.community-green-skin .app-sidebar { flex: 0 0 200px; width: 200px; min-width: 0; min-height: 0; height: 100vh; box-sizing: border-box; overflow: hidden; }
+  body.community-skin-shell-ready .app-sidebar { height: calc(100vh - var(--skin-titlebar-height)); }
   body.community-green-skin.light-theme .app-sidebar { background: #fff; border-right: 1px solid var(--border-color); }
   body.community-green-skin .sidebar-header { padding: 17px 12px 13px !important; min-height: 62px; box-sizing: border-box; }
   body.community-green-skin .sidebar-logo { letter-spacing: 0; gap: 8px !important; }
   body.community-green-skin .sidebar-logo img { width: 28px !important; height: 28px !important; }
   body.community-green-skin .sidebar-logo > div > span { font-size: 14px !important; max-width: 142px !important; }
-  body.community-green-skin .sidebar-menu { padding: 10px 8px; scrollbar-width: thin; }
+  body.community-green-skin .sidebar-menu { padding: 10px 8px; scrollbar-width: thin; min-height: 0; flex: 1 1 0; }
+  body.community-green-skin :is(.sidebar-header, .sidebar-footer) { flex-shrink: 0; }
   body.community-green-skin .sidebar-menu .menu-item {
     min-height: 33px;
     height: auto;
@@ -81,7 +83,12 @@
   }
   body.community-green-skin .sidebar-footer { padding: 9px 10px; }
   body.community-green-skin .admin-profile-card { padding: 8px; border-radius: 8px; }
-  body.community-green-skin .app-main { min-width: 0; padding: 18px 18px 76px; scroll-padding-bottom: 76px; }
+  /* A dedicated lower gutter keeps the default floating launcher clear of all
+     scrolling business controls, including intermediate rows and reminders. */
+  body.community-green-skin .app-wrapper { background: var(--bg-main); }
+  body.community-green-skin.light-theme .dashboard-view { background: var(--bg-main); }
+  body.community-green-skin .app-main { min-width: 0; padding: 18px; height: calc(100vh - 68px); box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
+  body.community-skin-shell-ready .app-main { height: calc(100vh - var(--skin-titlebar-height) - 68px); }
 
   /* Shared business surfaces; selectors exclude document paper/editor content. */
   body.community-green-skin.light-theme :is(.detail-panel, .main-table-card, .file-list-card, .dropzone-card, .settings-card,
@@ -129,6 +136,10 @@
   body.community-green-skin.light-theme .app-main .glass-filter-panel { background: #fff; border-color: var(--border-color); box-shadow: var(--shadow-sm); border-radius: 10px; }
   body.community-green-skin .glass-filter-panel { padding: 12px; gap: 12px; flex-wrap: wrap; }
   body.community-green-skin .table-wrapper { min-width: 0; }
+  /* Summary cards must not consume the resident table's entire viewport at
+     the minimum window size. The main area can scroll to the remaining rows. */
+  body.community-green-skin #tab-personnel .personnel-content-card { flex: 1 0 340px; min-height: 340px; }
+  body.community-green-skin #tab-personnel .el-table__body-wrapper { min-height: 160px; }
   body.community-green-skin.light-theme .data-table thead th {
     background: #f8fafb !important;
     color: var(--text-secondary) !important;
@@ -283,7 +294,7 @@
 
   @media (max-width: 1250px) {
     body.community-green-skin .app-sidebar { flex-basis: 184px; width: 184px; }
-    body.community-green-skin .app-main { padding: 14px 14px 76px; }
+    body.community-green-skin .app-main { padding: 14px; }
     body.community-green-skin .workbench-details { grid-template-columns: minmax(0, 1fr) 280px !important; }
     body.community-green-skin .wb-stat-value,
     body.community-green-skin .community-overview-balance strong { font-size: 18px; }

@@ -37,7 +37,7 @@ export function sortMenuItems(menus, config = {}, defaults = menus) {
     const rankA = Number.isInteger(positionA) && positionA > 0 ? positionA : originalA + 1;
     const rankB = Number.isInteger(positionB) && positionB > 0 ? positionB : originalB + 1;
     return rankA - rankB || originalA - originalB;
-  });
+  }).map(withDefaultLabel);
 }
 
 export function moveMenuRow(rows, key, target) {
