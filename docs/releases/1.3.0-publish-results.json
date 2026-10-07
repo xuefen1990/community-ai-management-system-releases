@@ -1,0 +1,32 @@
+{
+  "health": {
+    "status": "ok",
+    "service": "community-ai-backend",
+    "version": "1.0.0",
+    "timestamp": "2026-10-07T14:19:58.492Z"
+  },
+  "platforms": [
+    {
+      "platform": "darwin-arm64",
+      "version": "1.3.0",
+      "oldClientHasUpdate": true,
+      "currentHasUpdate": false,
+      "bytes": 160500462,
+      "sha256": "c80e6f8d6c8a9268553759ee5c4ff263ef8d9b8d11de19106c43ba93b08e8dea",
+      "range206": true,
+      "blockmapBytes": 164011
+    },
+    {
+      "platform": "win32-x64",
+      "version": "1.3.0",
+      "oldClientHasUpdate": true,
+      "currentHasUpdate": false,
+      "bytes": 144478039,
+      "sha256": "18a3c93c22b38af8500fd9c776185a910cc3da7c29ab977e3f318c95c03db9c6",
+      "range206": true,
+      "blockmapBytes": 149938
+    }
+  ],
+  "githubRelease": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/tag/v1.3.0",
+  "sourceCommit": "c3505023cb5999ea1dadc78d17e1873b39f50222"
+}
