@@ -44,6 +44,7 @@ export async function checkGreenSkinLayout(width, height) {
   assert(document.body.classList.contains('community-green-skin'), '覆盖皮肤未加载');
   assert(getComputedStyle(sidebar).backgroundColor === 'rgb(255, 255, 255)', '侧栏应为白色');
   assert(document.querySelectorAll('#community-skin-titlebar').length === 1, '标题栏必须唯一');
+  assert(getComputedStyle(document.querySelector('.app-wrapper')).backgroundImage === 'none', '旧背景图在底部露出');
   assert(getComputedStyle(document.querySelector('#community-skin-titlebar')).webkitAppRegion === 'drag', '标题栏不能拖动窗口');
   assert([...document.querySelectorAll('.sidebar-menu .menu-item')].map(item => item.textContent.trim()).join('|') === menus.map(item => item[0]).join('|'), '15 项默认菜单名称或顺序不正确');
   const results = [];

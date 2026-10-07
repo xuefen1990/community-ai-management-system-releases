@@ -22,9 +22,9 @@
     --shadow-sm: 0 3px 12px rgba(30, 60, 50, .045);
     --shadow-color: rgba(30, 60, 50, .045);
     --skin-active: #e1f4ec;
-    --skin-titlebar-height: 34px;
+    --skin-titlebar-height: 44px;
   }
-  body.community-desktop-skin { --skin-titlebar-height: 34px; }
+  body.community-desktop-skin { --skin-titlebar-height: 44px; }
   .community-skin-titlebar {
     position: fixed;
     inset: 0 0 auto;
@@ -86,7 +86,10 @@
   /* A dedicated lower gutter keeps the default floating launcher clear of all
      scrolling business controls, including intermediate rows and reminders. */
   body.community-green-skin .app-wrapper { background: var(--bg-main); }
-  body.community-green-skin.light-theme .dashboard-view { background: var(--bg-main); }
+  body.community-green-skin .app-wrapper.dashboard-view {
+    background-image: none !important;
+    background-color: var(--bg-main) !important;
+  }
   body.community-green-skin .app-main { min-width: 0; padding: 18px; height: calc(100vh - 68px); box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
   body.community-skin-shell-ready .app-main { height: calc(100vh - var(--skin-titlebar-height) - 68px); }
 
