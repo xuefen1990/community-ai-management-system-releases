@@ -12,7 +12,7 @@ test('foundation loads the account gate before the application shell', async () 
   const bootstrap = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'bootstrap.mjs'), 'utf8');
   const gate = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'foundation', 'account-gate.mjs'), 'utf8');
   assert.match(bootstrap, /installCommunityAccountGate/u);
-  assert.match(gate, /loginLocalAccount|auth\.login/u);
+  assert.match(gate, /loginProductAuth|loginLocalAccount|auth\.login/u);
 });
 
 test('local authentication UI uses only the preload bridge', async () => {

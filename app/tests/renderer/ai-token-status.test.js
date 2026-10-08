@@ -34,3 +34,21 @@ test('积分模式显示一次任务结算值并保留余额尾数', async () =>
  await status.refresh();assert.equal(remaining.textContent,'余量 499.1235 积分');
  await status.record({billingUnit:'credits',chargedCredits:2,actualTokens:100,remainingCredits:499.1235});assert.equal(used.textContent,'本次消耗 2 积分');assert.equal(remaining.textContent,'余量 499.1235 积分');
 });
+
+
+test('failed quota refresh preserves known credits and local replies reset their cost to zero', async () => {
+  const { createAiTokenStatus } = await import('../../src/renderer/foundation/ai-token-status.mjs');
+  const used = {}, remaining = {};
+  let fail = false;
+  const status = createAiTokenStatus({ documentRef: { querySelectorAll: () => [{ querySelector: s => s === '[data-ai-token-used]' ? used : remaining }] },
+    api: { getAiQuota: async () => fail ? ({ ok: false, error: '暂不可用' }) : ({ quota: { billingUnit: 'credits', remainingCredits: 499.1235 } }) } });
+  await status.refresh();
+  await status.record({ billingUnit: 'credits', chargedCredits: 2, actualTokens: 100 });
+  fail = true;
+  await status.refresh();
+  assert.equal(used.textContent, '本次消耗 2 积分');
+  assert.equal(remaining.textContent, '余量 499.1235 积分');
+  await status.record({ actualTokens: 0 });
+  assert.equal(used.textContent, '本次消耗 0 积分');
+  assert.equal(remaining.textContent, '余量 499.1235 积分');
+});

@@ -1,7 +1,7 @@
 'use strict';
 // Run only inside the disposable Electron app created by the runner. Production
 // auth, backend startup, update service and userData are never instantiated.
-const { app, BrowserWindow, ipcMain, protocol, net, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, protocol, net, dialog, safeStorage } = require('electron');
 const { once } = require('node:events');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -11,6 +11,8 @@ const { JsonDatabaseStore } = require('../../src/main/database-store');
 const { registerCompatibilityHandlers } = require('../../src/main/ipc-handlers');
 const { registerFoundationFileProtocol } = require('../../src/main/foundation-file-protocol');
 const { FoundationDocumentService } = require('../../src/main/foundation-document-service');
+const { RememberedLoginStore } = require('../../src/main/remembered-login-store');
+const { DocumentDraftingService } = require('../../src/main/document-drafting-service');
 const root = process.env.FOUNDATION_ELECTRON_TEST_DIR;
 if (!root || !path.resolve(root).startsWith(path.resolve(os.tmpdir()) + path.sep) && !path.resolve(root).startsWith('/private/tmp/community-foundation-electron-')) throw new Error('Disposable test directory required');
 app.setPath('userData', path.join(root, 'isolated-user-data'));
@@ -27,11 +29,22 @@ app.whenReady().then(async () => {
     const files = new FoundationDocumentService({ store, authorize: async () => {} });
     const archived = await files.request({ action: 'archive', sourceFilePath: source, name: '合成图片.png', links: [{ targetType: 'person', personId: 'test-0' }] });
     assert.equal(archived.success, true);
-    let signedIn = true;
+    // Record native autostart requests without registering this disposable app.
+    app.setLoginItemSettings = () => {};
+    let signedIn = true, loginCalls = 0, loginRemember = true, loginPhone = '13800138000';
+    const remembered = new RememberedLoginStore({ userDataPath: path.join(root, 'isolated-login'), safeStorage });
     const authService = { request: async () => ({}), getStatus: async () => ({ authenticated: signedIn, entitlement: { type: signedIn ? 'licensed' : 'none' }, account: signedIn ? { role: 'unit_admin', name: '合成账号', phone: '10000000000' } : null }),
       logout: async () => { signedIn = false; return { ok: true }; },
-      getLoginPrefill: async () => ({phone:'13800138000',password:'synthetic-secret',rememberPreference:true}), clearLoginPrefill: async()=>({ok:true}), getServerConfig: async () => ({ baseUrl: 'http://127.0.0.1:1' }) };
-    registerCompatibilityHandlers({ app, ipcMain, dialog, databaseStore: store, authService, shell: { openPath: async () => '' } });
+      login: async ({phone,password,remember}) => {
+        loginCalls++; loginRemember = remember; loginPhone = phone;
+        if (remember) await remembered.save({phone,password,serverUrl:'https://synthetic.test'});
+        else await remembered.clear({serverUrl:'https://synthetic.test'});
+        signedIn = true; return authService.getStatus();
+      },
+      getLoginPrefill: async () => loginCalls ? {...await remembered.load({serverUrl:'https://synthetic.test'}),phone:loginPhone,rememberPreference:loginRemember} : ({phone:'13800138000',password:'synthetic-secret',rememberPreference:true}),
+      clearLoginPrefill: async()=>{await remembered.clear();return {ok:true};}, getServerConfig: async () => ({ baseUrl: 'http://127.0.0.1:1' }) };
+    const documentDraftingService = new DocumentDraftingService({ databaseStore: store, getCurrentAccount: async () => ({ id: 'synthetic-author' }) });
+    registerCompatibilityHandlers({ app, ipcMain, dialog, databaseStore: store, authService, documentDraftingService, shell: { openPath: async () => '' } });
     ipcMain.handle('get-ai-assistant-conversation', async () => ({ messages: [] }));
     ipcMain.handle('list-ai-assistant-files', async () => []);
     ipcMain.handle('list-ai-assistant-operations', async () => []);
@@ -108,6 +121,7 @@ app.whenReady().then(async () => {
     window.webContents.setZoomFactor(1);
     window.setContentSize(1600, 900);
     result.greenSkin.compatibility = await window.webContents.executeJavaScript(`import(new URL('../../../tests/renderer/green-skin-scenarios.mjs',location.href).href).then(checks=>checks.checkGreenSkinCompatibility())`);
+    result.feedbackDefaults = await window.webContents.executeJavaScript(`import(new URL('../../../tests/renderer/green-skin-scenarios.mjs',location.href).href).then(checks=>checks.checkFeedbackDefaults())`);
     const loggedOut = once(window.webContents, 'did-finish-load');
     await window.webContents.executeJavaScript(`import(new URL('./vendor/assets/foundation-runtime.mjs',location.href).href).then(({useAuthStore})=>{void useAuthStore().logout()})`);
     await loggedOut;
@@ -122,6 +136,32 @@ app.whenReady().then(async () => {
     const cleared = await window.webContents.executeJavaScript(`(async()=>{[...document.querySelectorAll('button')].find(b=>b.textContent.includes('清除已保存账号密码')).click();await new Promise(r=>setTimeout(r,100));return !document.querySelector('#login-phone').value&&!document.querySelector('#login-password').value;})()`);
     assert.equal(cleared,true); result.savedLoginCleared=true;
 
+
+    // Exercise the real account gate, existing IPC and OS-encrypted credential
+    // store; a dropped remember flag must fail this regression check.
+    result.passwordSaving = {};
+    for (const remember of [true, false]) {
+      await window.webContents.executeJavaScript(`(async()=>{
+        const phone=document.querySelector('#login-phone'),password=document.querySelector('#login-password');
+        phone.value='13800138000';phone.dispatchEvent(new Event('input',{bubbles:true}));
+        password.value='synthetic-remember-secret';password.dispatchEvent(new Event('input',{bubbles:true}));
+        const checkbox=document.querySelector('.remember-phone input');checkbox.checked=${remember};checkbox.dispatchEvent(new Event('change',{bubbles:true}));
+        document.querySelector('.login-form').dispatchEvent(new Event('submit',{bubbles:true,cancelable:true}));
+        for(let i=0;i<150;i++){if(document.querySelector('[data-testid="business-shell"]'))return;await new Promise(r=>setTimeout(r,30));}
+        throw Error('Login did not enter business shell');
+      })()`);
+      assert.equal(loginRemember, remember);
+      const saved=await remembered.load({serverUrl:'https://synthetic.test'});
+      assert.equal(saved.password,remember?'synthetic-remember-secret':'');
+      if(remember)assert.equal((await fs.readFile(remembered.filePath,'utf8')).includes('synthetic-remember-secret'),false);
+      const finished=once(window.webContents,'did-finish-load');
+      await window.webContents.executeJavaScript(`import(new URL('./vendor/assets/foundation-runtime.mjs',location.href).href).then(({useAuthStore})=>{void useAuthStore().logout()})`);
+      await finished;
+      const recovered=await window.webContents.executeJavaScript(`(async()=>{for(let i=0;i<150;i++){const p=document.querySelector('#login-password');if(p&&document.querySelector('#login-phone').value==='13800138000')return {password:p.value,checked:document.querySelector('.remember-phone input').checked};await new Promise(r=>setTimeout(r,30));}throw Error('Prefill did not recover')})()`);
+      assert.equal(recovered.password,remember?'synthetic-remember-secret':'');assert.equal(recovered.checked,remember);
+      result.passwordSaving[remember?'savedAndRecovered':'uncheckedClearsPassword']=true;
+    }
+    assert.equal(loginCalls,2);
 
     await fs.writeFile(path.join(root, 'result.json'), JSON.stringify(result));
     console.log(JSON.stringify(result));

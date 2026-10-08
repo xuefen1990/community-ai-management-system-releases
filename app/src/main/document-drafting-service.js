@@ -96,6 +96,9 @@ function latestLayoutFor(database, accountId, fallbackPreset, issuedDate = '') {
     .filter((item) => item.ownerUserId === accountId && item.layout)
     .sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)))[0];
   const layout = normalizeDocumentLayout(latest?.layout, fallbackPreset, issuedDate);
+  // New documents inherit formatting, but their default signature always
+  // comes from the current unit setting. Opening saved documents is unchanged.
+  layout.signatureUnit = cleanText(database.settings?.villageName ?? database.foundationSettings?.village_name);
   if (normalizeDateInput(issuedDate)) layout.issuedDate = normalizeDateInput(issuedDate);
   return layout;
 }

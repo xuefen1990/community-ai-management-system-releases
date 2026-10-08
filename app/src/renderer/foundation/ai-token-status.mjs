@@ -32,10 +32,10 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
     refreshPromise = Promise.resolve(api.getAiQuota())
       .then((response) => {
         const quota = quotaFromResponse(response);
+        if (response?.ok === false) throw new Error(response.error || '额度暂不可用');
         creditsMode=quota.billingUnit==='credits';
         if(creditsMode&&Number.isFinite(Number(quota.remainingCredits)))remainingCredits=Number(quota.remainingCredits);
         const available = Number(quota.remainingTokens ?? quota.availableTokens);
-        if (response?.ok === false) throw new Error(response.error || '额度暂不可用');
         if (Number.isFinite(available) && available >= 0) remainingTokens = available;
         sync();
         return quota;
@@ -47,6 +47,7 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
 
   function record({ actualTokens, chargedCredits, remainingCredits:nextCredits, billingUnit, remainingTokens: nextRemainingTokens } = {}) {
     if(billingUnit==='credits')creditsMode=true;
+    if (creditsMode && chargedCredits == null && Number(actualTokens) === 0 && actualTokens != null) lastUsedCredits = 0;
     if(chargedCredits!==null&&chargedCredits!==undefined&&Number.isFinite(Number(chargedCredits)))lastUsedCredits=Number(chargedCredits);
     if(nextCredits!==null&&nextCredits!==undefined&&Number.isFinite(Number(nextCredits)))remainingCredits=Number(nextCredits);
     const used = Number(actualTokens);

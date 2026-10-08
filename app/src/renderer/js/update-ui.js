@@ -181,6 +181,17 @@
   function initialize() {
     api.onAppUpdateStatus(handleStatus);
     addManualCheckButton();
+    // Subscribe first, then check once per desktop-window session. Reloads and
+    // logout keep this marker; a new launch checks again. Installation still
+    // requires the user's existing "立即更新" action.
+    let alreadyChecked = false;
+    try {
+      alreadyChecked = sessionStorage.getItem('community-startup-update-checked') === '1';
+      sessionStorage.setItem('community-startup-update-checked', '1');
+    } catch { /* Restricted storage must not block the manual update flow. */ }
+    if (!alreadyChecked) setTimeout(() => {
+      api.checkForAppUpdate().catch(() => {});
+    }, 1200);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize);

@@ -154,7 +154,7 @@ if (typeof module !== 'undefined' && module.exports) {
         <button id="communityAiImportModel" class="btn btn-outline">📥 导入 GGUF</button><button id="communityAiSave" class="btn btn-primary">保存配置</button><button id="communityAiTestOnline" class="btn btn-outline">测试在线 AI（消耗少量额度）</button>
       </div>
       <div id="communityAiTestStatus" class="community-ai-test-status" hidden aria-live="polite"></div>
-      <p style="margin:10px 0 0;font-size:11px;color:var(--text-secondary);">本地模式不联网；在线模式通过账号后端调用，单位内账号共用永久 Token 额度。桌面端不填写 API 密钥。</p>`;
+      <p style="margin:10px 0 0;font-size:11px;color:var(--text-secondary);">本地模式不联网；在线模式通过账号后端调用，单位内账号共用永久 AI 额度，实际消耗和余额按服务器计费单位显示。桌面端不填写 API 密钥。</p>`;
     cardBody.prepend(panel);
 
     panel.querySelector('#communityAiImportModel').addEventListener('click', async () => {

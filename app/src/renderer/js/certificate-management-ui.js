@@ -126,8 +126,19 @@
     return template.versions?.find(item => item.versionNumber === state.draft?.templateVersion) || template.versions?.at(-1) || template;
   }
 
-  function selectTemplate(id, preserveSubjects = false) {
+  async function refreshOrganizationName() {
+    const settings = await api('GET', '/system-settings').catch(() => null);
+    const configuredName = settings?.items?.find(item => item.key === 'village_name');
+    if (configuredName) state.organizationName = text(configuredName.value).trim();
+    else {
+      const profile = await api('GET', '/dashboard/profile');
+      state.organizationName = text(profile?.profile?.villageName).trim();
+    }
+  }
+
+  async function selectTemplate(id, preserveSubjects = false) {
     const template = state.templates.find(item => item.id === id); if (!template) return;
+    await refreshOrganizationName();
     const oldSubjects = preserveSubjects ? state.draft?.subjects || {} : {};
     state.selectedTemplate = template; state.draft = model().createCertificateDraft(template, {
       subjects: oldSubjects, values: {}, system: { issuedDate: today(), organizationName: state.organizationName, operatorName: state.operatorName }
@@ -342,6 +353,7 @@
     if (action === 'ai-send') { await sendAiCertificateMessage(); return; }
     if (action === 'ai-new') {
       if ((state.aiDraft?.messages?.length || state.aiDraft?.content) && !confirm('新建后会清空当前未完成的 AI 对话和草稿，确认继续吗？')) return;
+      await refreshOrganizationName();
       await api('DELETE', '/certificate-ai-draft', {}); clearTimeout(scheduleAiSave.timer); state.aiDraft = freshAiDraft(); state.aiCompletedRecord = null; render(); return;
     }
     if (action === 'ai-regenerate') {
@@ -360,7 +372,7 @@
     if (action === 'ai-conflict-update') { state.aiTemplateConflict = null; await issueAiCertificate(true, 'update', button.dataset.id); return; }
     if (action === 'select-template') {
       const preserve = Boolean(state.draft && Object.keys(state.draft.subjects || {}).length && confirm('保留已经选择的居民资料吗？'));
-      selectTemplate(button.dataset.id, preserve); return;
+      await selectTemplate(button.dataset.id, preserve); return;
     }
     if (action === 'reselect-resident') { state.draft = model().replaceSubject(state.draft, button.dataset.subject, null); render(); return; }
     if (action === 'open-resident') { root.communityFoundationOpenResident?.(button.dataset.id); return; }
@@ -487,9 +499,13 @@
   async function mount(host) {
     state.host = host; bind(); state.loading = true; render();
     try {
-      const [profile, account] = await Promise.all([api('GET', '/dashboard/profile').catch(() => ({})), root.api.getLocalAuthStatus?.().catch(() => ({}))]);
-      const communityName = text(profile?.profile?.villageName).trim();
-      state.organizationName = communityName ? (/(?:居民委员会|村民委员会)$/u.test(communityName) ? communityName : `${communityName}居民委员会`) : '';
+      const [, account] = await Promise.all([
+        refreshOrganizationName(), root.api.getLocalAuthStatus?.().catch(() => ({}))
+      ]);
+      // Fill only an empty, unfinished form; keep manually edited signatures.
+      if (state.draft && !text(state.draft.system?.organizationName).trim() && !state.issuedRecord) {
+        state.draft.system = { ...state.draft.system, organizationName: state.organizationName };
+      }
       state.operatorName = account?.account?.name || account?.account?.phone || '当前操作员';
       await Promise.all([loadTemplates(), loadRecords(), loadAiDraft()]);
     } catch (error) { state.message = error.message; state.messageType = 'error'; }

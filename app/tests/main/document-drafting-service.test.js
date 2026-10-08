@@ -6,8 +6,9 @@ const test = require('node:test');
 const { createEmptyDatabase } = require('../../src/main/empty-database');
 const { DocumentDraftingService, sanitizeDocumentHtml, structuredDocumentHtml } = require('../../src/main/document-drafting-service');
 
-function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiResponses = null } = {}) {
+function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiResponses = null, settings = {}, foundationSettings = {} } = {}) {
   let database = createEmptyDatabase();
+  database.settings = settings; database.foundationSettings = foundationSettings;
   let currentAccountId = accountId;
   let sequence = 0;
   const store = {
@@ -315,4 +316,27 @@ test('empty conversation output preserves the empty draft version', async () => 
   await assert.rejects(() => harness.service.converse({ message: '写一份完整的工作报告' }), /未返回完整公文正文/u);
   assert.equal(harness.database.documentVersions.length, 1);
   assert.equal(harness.database.documentVersions[0].contentText, '');
+});
+
+
+test('new report and request signatures use the exact current village name', async () => {
+  const harness = makeHarness({ settings: { villageName: '陆庄社区' } });
+  const first = await harness.service.createDraft({ templateId: 'report-request', fields: validReportFields });
+  assert.equal(first.document.layout.signatureUnit, '陆庄社区');
+  await harness.service.saveDraft({ documentId: first.document.id, layout: { ...first.document.layout, signatureUnit: '人工署名', bodyFont: 'kaiti' } });
+  const defaults = await harness.service.getLayoutDefaults({ templateId: 'report-work-summary' });
+  assert.equal(defaults.signatureUnit, '陆庄社区');
+  assert.equal(defaults.bodyFont, 'kaiti');
+  const next = await harness.service.createDraft({ templateId: 'report-work-summary', fields: validReportFields });
+  assert.equal(next.document.layout.signatureUnit, '陆庄社区');
+  assert.equal((await harness.service.getDocument(first.document.id)).document.layout.signatureUnit, '人工署名');
+  const explicit = await harness.service.createDraft({ templateId: 'report-request', fields: validReportFields, layout: { ...defaults, signatureUnit: '用户自定署名' } });
+  assert.equal(explicit.document.layout.signatureUnit, '用户自定署名');
+});
+
+test('new document signatures support legacy unit settings without inventing a name', async () => {
+  const legacy = makeHarness({ foundationSettings: { village_name: '测试村' } });
+  assert.equal((await legacy.service.getLayoutDefaults()).signatureUnit, '测试村');
+  const cleared = makeHarness({ settings: { villageName: '' }, foundationSettings: { village_name: '旧村名' } });
+  assert.equal((await cleared.service.getLayoutDefaults()).signatureUnit, '');
 });

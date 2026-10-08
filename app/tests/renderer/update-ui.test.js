@@ -35,3 +35,35 @@ test('manual update check shows a loading state and always restores the button',
   assert.match(source, /button\.setAttribute\('aria-busy', String\(checking\)\)/u);
   assert.match(source, /try\s*\{[\s\S]*api\.checkForAppUpdate\(\)[\s\S]*\}\s*finally\s*\{[\s\S]*setManualCheckButtonState\(button, false\)/u);
 });
+
+test('startup update check subscribes first, checks once per launch and never installs automatically', async () => {
+  const vm = require('node:vm');
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'update-ui.js'), 'utf8');
+  const values = new Map(); let checks = 0, subscribed = false, downloads = 0, installs = 0;
+  const run = async storage => {
+    const callbacks = [];
+    vm.runInNewContext(source, {
+      window: { api: { onAppUpdateStatus: () => { subscribed = true; }, checkForAppUpdate: async () => { assert.equal(subscribed, true); checks++; return {ok:true,hasUpdate:true}; }, downloadAppUpdate: () => downloads++, installAppUpdate: () => installs++ } },
+      document: {readyState:'complete',getElementById:()=>null,querySelector:()=>null},
+      sessionStorage: storage, setTimeout: callback => callbacks.push(callback),
+    });
+    for (const callback of callbacks) callback();
+    await new Promise(resolve => setImmediate(resolve));
+  };
+  const storage = {getItem:key=>values.get(key),setItem:(key,value)=>values.set(key,value)};
+  await run(storage); await run(storage); assert.equal(checks,1);
+  values.clear(); subscribed=false; await run(storage); assert.equal(checks,2);
+  assert.equal(downloads,0); assert.equal(installs,0);
+});
+
+test('startup check failure leaves manual updating available', async () => {
+  const vm = require('node:vm');
+  const source = await fs.readFile(path.join(appRoot, 'src', 'renderer', 'js', 'update-ui.js'), 'utf8');
+  let subscriptions=0,checks=0;
+  vm.runInNewContext(source, {
+    window:{api:{onAppUpdateStatus:()=>subscriptions++,checkForAppUpdate:async()=>{checks++;throw Error('synthetic offline');}}},
+    document:{readyState:'complete',getElementById:()=>null,querySelector:()=>null},
+    sessionStorage:{getItem:()=>null,setItem:()=>{}},setTimeout:callback=>callback(),
+  });
+  await new Promise(resolve=>setImmediate(resolve));assert.equal(subscriptions,1);assert.equal(checks,1);
+});

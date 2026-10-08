@@ -165,7 +165,7 @@ export function installCommunitySettings() {
         h('div', { class: 'foundation-ai-quota-card is-primary' }, [h('span', {}, '当前可用'), h('strong', {}, `${quotaAmount("remaining")} ${unit()}`)]),
         h('div', { class: 'foundation-ai-quota-card' }, [h('span', {}, '预留中'), h('strong', {}, `${quotaAmount("reserved")} ${unit()}`)]),
       ]) : null,
-      quota.value ? h('div', { class: 'foundation-ai-quota-progress' }, [h('div', { class: 'foundation-ai-quota-progress-head' }, [h('span', {}, '本单位在线 AI 用量'), h('span', {}, `${formatTokens(quota.value.usedTokens)} / ${quotaAmount("total")} ${unit()}`)]), h('div', { class: 'foundation-ai-quota-progress-track' }, [h('span', { style: { width: `${Math.min(100, Math.round((quota.value.usedTokens / Math.max(1, quota.value.totalTokens)) * 100))}%` } })])]) : null,
+      quota.value ? h('div', { class: 'foundation-ai-quota-progress' }, [h('div', { class: 'foundation-ai-quota-progress-head' }, [h('span', {}, '本单位在线 AI 用量'), h('span', {}, `${quotaAmount("used")} / ${quotaAmount("total")} ${unit()}`)]), h('div', { class: 'foundation-ai-quota-progress-track' }, [h('span', { style: { width: `${Math.min(100, Math.round((quota.value.usedTokens / Math.max(1, quota.value.totalTokens)) * 100))}%` } })])]) : null,
       h('div', { class: 'foundation-setting-actions' }, [
         button('保存设置', () => run(save), busy.value, 'community-ai-save'),
         button('测试在线 AI（会消耗少量额度）', () => run(async () => { await window.api.testOnlineAi(); await refreshQuota(); status.value = '在线 AI 连接成功'; }), busy.value),

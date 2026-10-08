@@ -43,16 +43,16 @@ export async function checkGreenSkinLayout(width, height) {
   const main = document.querySelector('.app-main');
   assert(document.body.classList.contains('community-green-skin'), '覆盖皮肤未加载');
   assert(getComputedStyle(sidebar).backgroundColor === 'rgb(255, 255, 255)', '侧栏应为白色');
-  assert(document.querySelectorAll('#community-skin-titlebar').length === 1, '标题栏必须唯一');
+  assert(document.querySelectorAll('#community-skin-titlebar').length === 0, '独立标题栏应已移除');
   assert(getComputedStyle(document.querySelector('.app-wrapper')).backgroundImage === 'none', '旧背景图在底部露出');
-  assert(getComputedStyle(document.querySelector('#community-skin-titlebar')).webkitAppRegion === 'drag', '标题栏不能拖动窗口');
+  assert(getComputedStyle(document.querySelector('.sidebar-header')).webkitAppRegion === 'drag', '品牌区域不能拖动窗口');
   assert([...document.querySelectorAll('.sidebar-menu .menu-item')].map(item => item.textContent.trim()).join('|') === menus.map(item => item[0]).join('|'), '15 项默认菜单名称或顺序不正确');
   assert([...document.querySelectorAll('[data-skin-group-start]')].map(item => item.dataset.skinGroupStart).join('|') === '常用|居民服务|办公文书|资金土地|值班事项|智能与系统', '侧栏分类缺失或重复');
   const results = [];
   for (const [label, route] of menus) {
     await openGreenSkinRoute(route);
     assert(!document.querySelector('.foundation-extension-error'), `${label} 扩展错误`);
-    assert(main.getBoundingClientRect().top >= 34, `${label} 内容与标题栏重叠 top=${main.getBoundingClientRect().top} scrollY=${scrollY} body=${document.body.className}`);
+    assert(Math.abs(main.getBoundingClientRect().top) <= 1, `${label} 内容没有上移到窗口顶部 top=${main.getBoundingClientRect().top} scrollY=${scrollY} body=${document.body.className}`);
     assert(document.documentElement.scrollWidth <= width + 1, `${label} 窗口横向溢出`);
     assert(main.scrollWidth <= main.clientWidth + 2, `${label} 主区域横向溢出：${main.scrollWidth}/${main.clientWidth}`);
     const active = document.querySelector('.sidebar-menu .menu-item.active');
@@ -108,7 +108,7 @@ export async function checkGreenSkinLayout(width, height) {
     results.push({ label, route, mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, clickableControl: control?.textContent.trim() });
   }
   for (const [, route] of [...menus].reverse()) await openGreenSkinRoute(route);
-  assert(document.querySelectorAll('#community-skin-titlebar').length === 1, '切换后标题栏重复');
+  assert(document.querySelectorAll('#community-skin-titlebar').length === 0, '切换后独立标题栏重新出现');
   return { width, height, pages: results, reverseNavigation: true };
 }
 
@@ -143,4 +143,45 @@ export async function checkGreenSkinCompatibility() {
   assert(getComputedStyle(document.querySelector('.app-sidebar')).backgroundColor !== 'rgb(255, 255, 255)', '皮肤覆盖了深色主题');
   document.body.className = className;
   return { residentDialog: true, formFocus: true, aiOpenClose: true, a4Editor: true, darkThemePreserved: true };
+}
+
+
+export async function checkFeedbackDefaults() {
+  await openGreenSkinRoute('/certificate-workspace');
+  const settings = await window.api.businessRequest({ path: '/api/v3/system-settings' });
+  const name = settings.data.items.find(row => row.key === 'village_name').value;
+  const template = document.querySelector('[data-action="select-template"]');
+  assert(template, '证明模板未载入');
+  template.click();
+  await pause(100);
+  const signature = document.querySelector('[data-system-field="organizationName"]');
+  assert(signature?.value === name, '证明署名没有使用系统设置中的原名称');
+  assert(document.querySelector('[data-preview-organization]').textContent === name, '证明预览署名不一致');
+  signature.value = '人工修改署名';
+  signature.dispatchEvent(new Event('input', { bubbles: true }));
+  assert(document.querySelector('[data-preview-organization]').textContent === '人工修改署名', '证明署名不能手动修改');
+  await openGreenSkinRoute('/drafting');
+  const reportSignature = document.querySelector('#documentSignatureUnit');
+  for (let i = 0; i < 50 && reportSignature?.value !== name; i++) await pause(50);
+  assert(reportSignature?.value === name, '公文默认署名没有使用系统设置中的原名称');
+  const { createAiTokenStatus } = await import('../../src/renderer/foundation/ai-token-status.mjs');
+  const creditStatus = createAiTokenStatus({ documentRef: document, api: { getAiQuota: async () => ({ quota: { billingUnit: 'credits', remainingCredits: 499.1235 } }) } });
+  await creditStatus.record({ billingUnit: 'credits', chargedCredits: 2, actualTokens: 100 });
+  const fields = [...document.querySelectorAll('[data-ai-token-used]')];
+  assert(fields.length >= 2 && fields.every(field => field.textContent === '本次消耗 2 积分'), 'AI 对话窗口没有显示实际结算积分');
+  assert([...document.querySelectorAll('[data-ai-token-remaining]')].every(field => field.textContent === '余量 499.1235 积分'), 'AI 积分余额不一致或丢失尾数');
+  const renamed = '更名后的合成社区';
+  const saved = await window.api.businessRequest({ method: 'PATCH', path: '/api/v3/system-settings', body: { changes: { village_name: renamed } } });
+  assert(saved.ok, '隔离设置更名失败');
+  await openGreenSkinRoute('/certificate-workspace');
+  document.querySelector('[data-action="select-template"]').click();
+  for (let i = 0; i < 80 && document.querySelector('[data-system-field="organizationName"]')?.value !== renamed; i++) await pause(25);
+  assert(document.querySelector('[data-system-field="organizationName"]')?.value === renamed, '缓存的证明页面新建时仍使用旧村居名称');
+  await openGreenSkinRoute('/drafting');
+  document.querySelector('#documentNewDraftBtn').click();
+  for (let i = 0; i < 80 && document.querySelector('#documentSignatureUnit')?.value !== renamed; i++) await pause(25);
+  assert(document.querySelector('#documentSignatureUnit')?.value === renamed, '设置更名后新公文仍使用旧署名');
+  return { certificateDefault: name, certificatePreview: true, manualSignature: true, draftingDefault: name, cachedPagesUseCurrentSetting: true, sharedCredits: true };
+
+
 }

@@ -27,16 +27,8 @@ export function installGreenSkin(document, platform) {
       document.body.classList.remove('community-skin-shell-ready');
       return;
     }
-    if (!existing) {
-      const titlebar = document.createElement('header');
-      titlebar.id = TITLEBAR_ID;
-      titlebar.className = 'community-skin-titlebar';
-      const title = document.createElement('span');
-      title.textContent = document.title;
-      titlebar.append(title);
-      // Keep the decoration outside the framework-owned tree.
-      document.body.append(titlebar);
-    }
+    // Remove the old presentation bar on hot reload; native controls remain.
+    existing?.remove();
     document.body.classList.add('community-skin-shell-ready');
     alignShell();
     const buttons = [...shell.querySelectorAll('.sidebar-menu .menu-item')];

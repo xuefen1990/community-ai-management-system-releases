@@ -91,7 +91,12 @@ export function installCommunityAccountGate() {
       try {
         if (!/^1\d{10}$/.test(phone.value.trim()) || !password.value) throw new Error('请填写 11 位手机号和密码');
         if (mode.value === 'login') {
-          await auth.login({ phone: phone.value.trim(), password: password.value, remember: remember.value });
+          // The locked foundation auth store accepts rememberPhone only and
+          // drops the native password-saving flag. Use the existing account IPC
+          // then refresh that same store so its guards and routes stay intact.
+          const login = await window.api.loginProductAuth({ phone: phone.value.trim(), password: password.value, remember: remember.value });
+          if (login?.ok === false) throw new Error(login.error?.message || '登录失败，请重试');
+          await auth.refresh();
           try {
             const saved = await window.api.getLoginPrefill();
             if (saved.warning) window.showToast?.(saved.warning, 'warning');

@@ -22,39 +22,22 @@
     --shadow-sm: 0 3px 12px rgba(30, 60, 50, .045);
     --shadow-color: rgba(30, 60, 50, .045);
     --skin-active: #e1f4ec;
-    --skin-titlebar-height: 44px;
+    --skin-titlebar-height: 0px;
   }
-  body.community-desktop-skin { --skin-titlebar-height: 44px; }
+  body.community-desktop-skin { --skin-titlebar-height: 0px; }
   /* Focus may scroll overflowing descendants, but must never shift the
-     desktop shell underneath its fixed native titlebar. */
+     desktop shell out of the viewport. */
   html:has(body.community-skin-shell-ready), body.community-skin-shell-ready { overflow: clip; }
-  .community-skin-titlebar {
-    position: fixed;
-    inset: 0 0 auto;
-    height: var(--skin-titlebar-height);
-    box-sizing: border-box;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0 150px;
-    z-index: 100;
-    background: var(--bg-sidebar, #fff);
-    border-bottom: 1px solid var(--border-color, #e0e8ee);
-    color: var(--text-secondary, #627286);
-    font: 600 12px/1.2 -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
-    -webkit-app-region: drag;
-    user-select: none;
-  }
-  .community-skin-titlebar span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-  body.community-skin-shell-ready .app-wrapper { top: var(--skin-titlebar-height); }
-  /* Leave Windows/Linux native caption controls their own drag/click region. */
-  body[data-skin-platform="win32"] .community-skin-titlebar,
-  body[data-skin-platform="linux"] .community-skin-titlebar { padding-right: 160px; }
+  /* The shell starts at the top; native caption controls share the brand area. */
+  body.community-skin-shell-ready .app-wrapper { top: 0; }
+  body.community-desktop-skin .sidebar-header { -webkit-app-region: drag; }
+  body.community-desktop-skin .sidebar-header :is(button, a, input, select, textarea) { -webkit-app-region: no-drag; }
 
   body.community-green-skin .app-sidebar { flex: 0 0 200px; width: 200px; min-width: 0; min-height: 0; height: 100vh; box-sizing: border-box; overflow: hidden; }
   body.community-skin-shell-ready .app-sidebar { height: calc(100vh - var(--skin-titlebar-height)); }
   body.community-green-skin.light-theme .app-sidebar { background: #fff; border-right: 1px solid var(--border-color); }
   body.community-green-skin .sidebar-header { padding: 17px 12px 13px !important; min-height: 62px; box-sizing: border-box; }
+  body[data-skin-platform="darwin"] .sidebar-header { padding-top: 30px !important; min-height: 80px; }
   body.community-green-skin .sidebar-logo { letter-spacing: 0; gap: 8px !important; }
   body.community-green-skin .sidebar-logo img { width: 28px !important; height: 28px !important; }
   body.community-green-skin .sidebar-logo > div > span { font-size: 14px !important; max-width: 142px !important; }
@@ -104,7 +87,7 @@
     background-image: none !important;
     background-color: var(--bg-main) !important;
   }
-  body.community-green-skin .app-main { min-width: 0; padding: 18px 18px 4px; height: 100vh; box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
+  body.community-green-skin .app-main { min-width: 0; padding: 10px 18px 4px; height: 100vh; box-sizing: border-box; align-self: flex-start; scroll-padding-bottom: 18px; }
   body.community-skin-shell-ready .app-main { height: calc(100vh - var(--skin-titlebar-height)); }
   body.community-green-skin .foundation-ai-launcher { bottom: 6px; }
   /* Long pages without pagination can scroll their last controls above the
@@ -185,7 +168,16 @@
   body.community-green-skin .el-table .cell { line-height: 20px; }
   body.community-green-skin :is(.el-dialog, .modal-card, .foundation-cadre-modal) { border-radius: 12px; }
   body.community-green-skin.light-theme :is(.el-dialog, .modal-card, .foundation-cadre-modal) { border: 1px solid var(--border-color); box-shadow: 0 18px 56px #193f3026; }
-  body.community-green-skin :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  body.community-green-skin :is(button, a, input[type="checkbox"], input[type="radio"]):focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  /* Text controls already own their border: focus it without drawing a second
+     square outline around the component's inner native input. */
+  body.community-green-skin :is(input, select, textarea):not([type="checkbox"], [type="radio"], .el-input__inner, .el-select__input, .el-range-input, .el-textarea__inner):focus-visible {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+  }
+  body.community-green-skin :is(.el-input__inner, .el-select__input, .el-range-input):focus-visible { outline: none !important; box-shadow: none !important; }
+  body.community-green-skin :is(.el-input__wrapper.is-focus, .el-select__wrapper.is-focused) { box-shadow: 0 0 0 1px var(--primary) inset !important; }
   body.community-green-skin :is(.stats-grid, .cf-stats, .fw-stats) { gap: 10px; }
   body.community-green-skin.light-theme .stats-grid .stat-card { background: #fff; box-shadow: var(--shadow-sm); border-radius: 9px; padding: 11px 12px; }
   body.community-green-skin .stats-grid .stat-card .stat-label { white-space: normal; overflow: visible; line-height: 1.4; }
@@ -301,6 +293,9 @@
   body.community-green-skin.light-theme .work-stats article:nth-child(2) { border-top-color: #f59e0b; }
   body.community-green-skin.light-theme .work-stats article:nth-child(3) { border-top-color: #3b82f6; }
   body.community-green-skin.light-theme .work-stats article:nth-child(4) { border-top-color: #8b5cf6; }
+  /* Keep report actions clear of the launcher when a long page reaches it. */
+  body.community-green-skin .fin-workspace .fin-panel-title { padding-right: 112px; }
+  body.community-green-skin .cf-pending-panel .cf-panel-link { margin-right: 112px; }
   body.community-green-skin.light-theme .fin-workspace { color: var(--text-primary); padding: 0; }
   body.community-green-skin.light-theme :is(.fin-panel, .fin-datebar, .fin-stats article) { border-color: var(--border-color); border-radius: 10px; box-shadow: var(--shadow-sm); }
   body.community-green-skin.light-theme .fin-stats strong { color: var(--text-primary); }
@@ -318,7 +313,7 @@
 
   @media (max-width: 1250px) {
     body.community-green-skin .app-sidebar { flex-basis: 184px; width: 184px; }
-    body.community-green-skin .app-main { padding: 14px 14px 4px; }
+    body.community-green-skin .app-main { padding: 10px 14px 4px; }
     body.community-green-skin .workbench-details { grid-template-columns: minmax(0, 1fr) 280px !important; }
     body.community-green-skin .wb-stat-value,
     body.community-green-skin .community-overview-balance strong { font-size: 18px; }
@@ -340,7 +335,4 @@
   @media (prefers-reduced-motion: reduce) {
     body.community-green-skin :is(.menu-item, .wb-stat-card, .action-card) { transition: none; }
   }
-}
-@media print {
-  .community-skin-titlebar { display: none !important; }
 }
