@@ -12,4 +12,6 @@
 
 旧客户端实测未完成：本机正式 1.3.0 后台进程存在，但没有可访问窗口；明确更新按钮的自动化未能定位。自动审批拒绝全窗口读取及正式会话调试端口重启，未执行这些动作。Windows 暂无实机或虚拟机。新包启动和服务器注册不代替旧版自动安装、重开及版本确认。
 
-GitHub 发布进行中，结果将补充。无关 website 工具文件保留，未上传凭据或业务数据。
+GitHub 分支 codex/macos-installer-update-repair 已推送，标签 v1.3.1 指向已构建源码 fbd893393c0bf45d8ede6082527ce7638dc2847f，Release 已正式发布。七个资产大小及 GitHub SHA256 与本地一致；发布时临时停用重复标签构建，完成后已恢复 active。发布地址：https://github.com/xuefen1990/community-ai-management-system-releases/releases/tag/v1.3.1。无关 website 工具文件保留，未上传凭据或业务数据。
+
+追加核验：旧额度授予值及全部旧流水保留；两个旧额度记录仍在，测试账号已产生幂等迁移标记，迁移前备份存在。当前预留为零，AI_CREDITS_ENABLED=1 已持久保存。仅六个之前已有的 website 预览说明/工具文件未提交，均不在确认的交付清单内。

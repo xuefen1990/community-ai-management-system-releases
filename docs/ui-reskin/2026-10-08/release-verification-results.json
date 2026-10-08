@@ -87,5 +87,75 @@
   "creditsBackup": "C:/community-ai/deploy-backups/2026-10-08-release-1.3.1-100421",
   "macOldClientUpdate": "pending; installed 1.3.0 has no accessible window",
   "windowsOldClientUpdate": "pending actual Windows device",
-  "github": "pending source push and release assets"
+  "github": {
+    "releaseId": 406335361,
+    "tag": "v1.3.1",
+    "allAssetsSha256Match": true,
+    "assets": [
+      {
+        "path": "app/release/community-ai-management-system-1.3.1-mac-arm64.dmg",
+        "name": "community-ai-management-system-1.3.1-mac-arm64.dmg",
+        "bytes": 199596840,
+        "sha256": "e891b9d0253f228bad09ecb49bde1218036efdca3576b7a891633fac5e3da11d"
+      },
+      {
+        "path": "app/release/community-ai-management-system-1.3.1-arm64.zip",
+        "name": "community-ai-management-system-1.3.1-arm64.zip",
+        "bytes": 160501185,
+        "sha256": "28a5b116b7ea8d40cf43a82c328e4c55361bdf6fe767b472db0da7dd803a547d"
+      },
+      {
+        "path": "app/release/community-ai-management-system-1.3.1-arm64.zip.blockmap",
+        "name": "community-ai-management-system-1.3.1-arm64.zip.blockmap",
+        "bytes": 163965,
+        "sha256": "75c1cbae5b55848150febb67c1aa93d63a3bc8b4d7246bd5bdced71ecd71e8a8"
+      },
+      {
+        "path": "app/release/latest-mac.yml",
+        "name": "latest-mac.yml",
+        "bytes": 387,
+        "sha256": "ffc9b909eca0213491a5eeb31b97e91781e13a4f0e65b790e169b20a4168861b"
+      },
+      {
+        "path": "app/release/win-x64/community-ai-management-system-1.3.1-win-x64.exe",
+        "name": "community-ai-management-system-1.3.1-win-x64.exe",
+        "bytes": 144479034,
+        "sha256": "5e2a2b2e37db52464a6696e76833b7e568c7c8d65a8c687bcc4f1a7896a6c5f5"
+      },
+      {
+        "path": "app/release/win-x64/community-ai-management-system-1.3.1-win-x64.exe.blockmap",
+        "name": "community-ai-management-system-1.3.1-win-x64.exe.blockmap",
+        "bytes": 149933,
+        "sha256": "f68bb0306cb2eed02b0f4bab27aacb3ec21c9c4fabded4193264136412527082"
+      },
+      {
+        "path": "app/release/win-x64/latest.yml",
+        "name": "latest.yml",
+        "bytes": 393,
+        "sha256": "f554ccf5984da4d45b3d09ac976bb12b61b72689a67ce1c68ba63ac7617910a7"
+      }
+    ],
+    "sourceCommit": "fbd893393c0bf45d8ede6082527ce7638dc2847f",
+    "url": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/tag/v1.3.1",
+    "published": true,
+    "workflowRestored": "active"
+  },
+  "creditHistory": {
+    "oldLedgersPreserved": true,
+    "grantsPreserved": true,
+    "oldQuotas": 2,
+    "currentQuotas": 2,
+    "migrationBackupExists": true,
+    "migratedQuotas": 1,
+    "reserved": 0,
+    "creditsConfigured": true
+  },
+  "remainingUntrackedFiles": [
+    "website/README.md",
+    "website/tools/capture-demo.mjs",
+    "website/tools/check-preview.mjs",
+    "website/tools/demo-fixture.html",
+    "website/tools/demo-fixture.mjs",
+    "website/打开网站预览.command"
+  ]
 }
