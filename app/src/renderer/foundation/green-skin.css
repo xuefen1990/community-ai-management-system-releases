@@ -217,9 +217,21 @@
   body.community-green-skin .community-overview-balance small { font-size: 10.5px; line-height: 1.5; }
   body.community-green-skin .community-overview-balance button { padding: 0; border: 0; background: transparent; color: var(--primary); font-size: 10.5px; line-height: 1.5; }
 
-  /* CSS grid places existing reactive widgets; never moves framework DOM nodes. */
+  /* The dashboard scrolls above the floating assistant's small bottom dock. */
+  body.community-green-skin .app-main:has(> #tab-overview) { overflow: hidden; }
+  body.community-green-skin .app-main > #tab-overview {
+    display: block;
+    height: calc(100% - 44px);
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-bottom: 8px;
+    box-sizing: border-box;
+    scroll-padding-bottom: 8px;
+  }
+  /* Keep the framework-owned widgets and events; only change their grid placement. */
   body.community-green-skin .workbench-details {
-    grid-template-columns: minmax(0, 1fr) 310px !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
     grid-auto-flow: row;
     gap: 12px !important;
     align-items: start !important;
@@ -228,17 +240,16 @@
   body.community-green-skin .workbench-details > .detail-panel > .wb-unified-card-body { display: contents !important; }
   body.community-green-skin .workbench-details .panel-header {
     grid-row: 1;
-    grid-column: 1;
+    grid-column: 1 / span 2;
     margin: 0;
     gap: 8px;
     flex-wrap: wrap;
     min-height: 30px;
   }
-  body.community-green-skin .workbench-details > .detail-panel:nth-child(2) > .panel-header { grid-column: 2; }
+  body.community-green-skin .workbench-details > .detail-panel:nth-child(2) > .panel-header { grid-column: 3; }
   body.community-green-skin .workbench-details .panel-header h3 { font-size: 12px; }
   body.community-green-skin .workbench-details .wb-section-block {
     min-width: 0;
-    grid-column: 1;
     padding: 13px;
     border: 1px solid var(--border-color);
     border-radius: 10px;
@@ -246,13 +257,15 @@
     box-shadow: var(--shadow-sm);
     gap: 10px;
   }
-  body.community-green-skin .workbench-details .wb-section-block:has(.wb-duty-matrix-grid) { grid-row: 2; }
-  body.community-green-skin .workbench-details .wb-section-block:has(.wb-pending-visits-box) { grid-row: 3; }
-  body.community-green-skin .workbench-details .wb-section-block:has(.wb-quick-buttons-row) { grid-row: 4; }
-  body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-reminder-grid) { grid-column: 2; grid-row: 3; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-quick-buttons-row) { grid-column: 1 / -1; grid-row: 2; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-duty-matrix-grid) { grid-column: 1 / span 2; grid-row: 3; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-pending-visits-box) { grid-column: 3; grid-row: 3; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-reminder-grid) { grid-column: 1; grid-row: 4; }
   body.community-green-skin .workbench-details .wb-section-block:has(.wb-expiring-lands-box) { grid-column: 2; grid-row: 4; }
-  body.community-green-skin .workbench-details > .detail-panel:nth-child(2) .wb-section-block { grid-column: 2; }
-  body.community-green-skin .workbench-details > .detail-panel:nth-child(2) .wb-section-block:first-child { grid-row: 2; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.cadre-directory-list) { grid-column: 3; grid-row: 4; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-h360-stats-grid) { grid-column: 1; grid-row: 5; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-group-breakdown-list) { grid-column: 2; grid-row: 5; }
+  body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-structure-box) { grid-column: 3; grid-row: 5; }
   body.community-green-skin .wb-sub-title-left { font-size: 12px; line-height: 1.5; }
   body.community-green-skin .wb-section-sub-header { gap: 8px; flex-wrap: wrap; }
   body.community-green-skin .wb-duty-matrix-grid { grid-template-rows: repeat(2, 74px); gap: 6px; }
@@ -261,11 +274,13 @@
   body.community-green-skin .wb-age-reminder-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   body.community-green-skin .wb-expiring-lands-box { grid-template-columns: 1fr !important; }
   body.community-green-skin .wb-land-alert-item { flex-wrap: wrap; }
-  body.community-green-skin .wb-quick-buttons-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  body.community-green-skin .wb-quick-buttons-row { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
   body.community-green-skin .wb-quick-buttons-row .action-card { min-height: 58px; padding: 11px; border-radius: 8px; }
   body.community-green-skin.light-theme .wb-quick-buttons-row .action-card { background: #fff; border: 1px solid var(--border-color); box-shadow: none; }
   body.community-green-skin .wb-quick-buttons-row .quick-action-label { font-size: 12px; white-space: normal; }
   body.community-green-skin .wb-group-breakdown-list { grid-template-columns: 1fr !important; }
+  body.community-green-skin .workbench-details :is(.cadre-directory-list, .wb-h360-stats-grid, .wb-group-breakdown-list, .wb-expiring-lands-box, .wb-pending-visits-box) { max-height: 220px !important; overflow-y: auto; min-width: 0; }
+  body.community-green-skin .workbench-details .wb-empty-tip { min-height: 0; padding: 10px 12px !important; }
 
   /* Extension pages keep their existing controls and underlying workflow. */
   body.community-green-skin .foundation-extension-page > #tab-document-drafting { padding: 0; }
@@ -314,23 +329,39 @@
   @media (max-width: 1250px) {
     body.community-green-skin .app-sidebar { flex-basis: 184px; width: 184px; }
     body.community-green-skin .app-main { padding: 10px 14px 4px; }
-    body.community-green-skin .workbench-details { grid-template-columns: minmax(0, 1fr) 280px !important; }
+    body.community-green-skin .workbench-details { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+    body.community-green-skin .workbench-details .panel-header { grid-column: 1 / -1; grid-row: 1; }
+    body.community-green-skin .workbench-details > .detail-panel:nth-child(2) > .panel-header { grid-column: 1 / -1; grid-row: 2; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-quick-buttons-row) { grid-column: 1 / -1; grid-row: 3; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-duty-matrix-grid) { grid-column: 1 / -1; grid-row: 4; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-pending-visits-box) { grid-column: 1 / -1; grid-row: 5; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-reminder-grid) { grid-column: 1; grid-row: 6; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-expiring-lands-box) { grid-column: 2; grid-row: 6; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.cadre-directory-list) { grid-column: 1; grid-row: 7; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-h360-stats-grid) { grid-column: 2; grid-row: 7; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-group-breakdown-list) { grid-column: 1; grid-row: 8; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-structure-box) { grid-column: 2; grid-row: 8; }
     body.community-green-skin .wb-stat-value,
     body.community-green-skin .community-overview-balance strong { font-size: 18px; }
     body.community-green-skin .wb-quick-buttons-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 1000px) {
-    body.community-green-skin .workbench-details { grid-template-columns: 1fr !important; }
-    body.community-green-skin .workbench-details .panel-header,
-    body.community-green-skin .workbench-details .wb-section-block { grid-column: 1 !important; grid-row: auto !important; }
     body.community-green-skin .wb-compact-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     body.community-green-skin .cm-template-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 760px) {
+    body.community-green-skin .workbench-details { grid-template-columns: 1fr !important; }
+    body.community-green-skin .workbench-details .panel-header,
+    body.community-green-skin .workbench-details .wb-section-block { grid-column: 1 !important; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-expiring-lands-box) { grid-row: 7; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.cadre-directory-list) { grid-row: 8; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-h360-stats-grid) { grid-row: 9; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-group-breakdown-list) { grid-row: 10; }
+    body.community-green-skin .workbench-details .wb-section-block:has(.wb-age-structure-box) { grid-row: 11; }
     body.community-green-skin .app-sidebar { flex-basis: 166px; width: 166px; }
     body.community-green-skin .wb-compact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     body.community-green-skin .wb-duty-matrix-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: auto; }
-    body.community-green-skin .wb-quick-buttons-row { grid-template-columns: 1fr; }
+    body.community-green-skin .wb-quick-buttons-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (prefers-reduced-motion: reduce) {
     body.community-green-skin :is(.menu-item, .wb-stat-card, .action-card) { transition: none; }

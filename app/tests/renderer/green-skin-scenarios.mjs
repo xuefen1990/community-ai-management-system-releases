@@ -77,8 +77,16 @@ export async function checkGreenSkinLayout(width, height) {
     for (const target of main.querySelectorAll('button, input, select, textarea, .el-pagination, .pagination-info')) {
       if (!visible(target)) continue;
       const bounds = target.getBoundingClientRect();
-      const left = Math.max(rect.left, bounds.left), right = Math.min(rect.right, bounds.right);
-      const top = Math.max(rect.top, bounds.top), bottom = Math.min(rect.bottom, bounds.bottom);
+      // A partially visible control may extend past an inner scroll viewport.
+      // Only its painted portion can actually be covered by the launcher.
+      const painted = { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+      for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), clip = parent.getBoundingClientRect();
+        if (/(hidden|clip|auto|scroll)/.test(style.overflowX)) { painted.left = Math.max(painted.left, clip.left); painted.right = Math.min(painted.right, clip.right); }
+        if (/(hidden|clip|auto|scroll)/.test(style.overflowY)) { painted.top = Math.max(painted.top, clip.top); painted.bottom = Math.min(painted.bottom, clip.bottom); }
+      }
+      const left = Math.max(rect.left, painted.left), right = Math.min(rect.right, painted.right);
+      const top = Math.max(rect.top, painted.top), bottom = Math.min(rect.bottom, painted.bottom);
       const pager = main.querySelector('.pagination-bar');
       const pagerBounds = pager?.getBoundingClientRect();
       // Sticky pagination already covers rows underneath its own opaque strip.
@@ -133,6 +141,15 @@ export async function checkGreenSkinCompatibility() {
   assert(launcher.getAttribute('aria-expanded') === 'true', 'AI 助理不能打开');
   document.querySelector('#aiCopilotCloseBtn').click();
   assert(launcher.getAttribute('aria-expanded') === 'false', 'AI 助理不能关闭');
+  await openGreenSkinRoute('/overview');
+  const certificateQuickEntry = document.querySelector('[data-testid="quick-cert"]');
+  assert(certificateQuickEntry, '工作台证明入口缺失');
+  certificateQuickEntry.click();
+  const { foundation } = await import(new URL('./bootstrap.mjs', location.href));
+  for (let i = 0; i < 100 && foundation.router.currentRoute.value.path !== '/certificate-workspace'; i++) await pause(30);
+  assert(foundation.router.currentRoute.value.path === '/certificate-workspace', '工作台证明入口未打开现行证明页面');
+  for (let i = 0; i < 100 && !document.querySelector('[data-action="select-template"]'); i++) await pause(30);
+  assert(visible(document.querySelector('[data-action="select-template"]')), '工作台证明入口未载入真实证明模板');
   await openGreenSkinRoute('/drafting');
   assert(visible(document.querySelector('#documentEditor')), 'A4 编辑器不可见');
   assert(visible(document.querySelector('#documentSignatureUnit')), '署名表单不可见');
@@ -142,7 +159,7 @@ export async function checkGreenSkinCompatibility() {
   await pause(50);
   assert(getComputedStyle(document.querySelector('.app-sidebar')).backgroundColor !== 'rgb(255, 255, 255)', '皮肤覆盖了深色主题');
   document.body.className = className;
-  return { residentDialog: true, formFocus: true, aiOpenClose: true, a4Editor: true, darkThemePreserved: true };
+  return { residentDialog: true, formFocus: true, aiOpenClose: true, workbenchCertificateEntry: true, a4Editor: true, darkThemePreserved: true };
 }
 
 

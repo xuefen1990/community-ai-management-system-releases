@@ -185,8 +185,8 @@ export function installExtensions({ router, shell }) {
     if (router.hasRoute(name)) router.removeRoute(name);
   }
   if (router.hasRoute('finance')) router.removeRoute('finance');
-  router.addRoute({ path: '/certificate', redirect: '/certificate-workspace' });
-  router.addRoute({ path: '/certificate-management', redirect: '/certificate-workspace' });
+  router.addRoute({ name: 'certificate', path: '/certificate', redirect: '/certificate-workspace' });
+  router.addRoute({ name: 'certificate-management', path: '/certificate-management', redirect: '/certificate-workspace' });
   // Vue Router may have resolved the remembered hash before this extension is
   // installed. Replace that already-active legacy route once startup settles.
   void router.isReady().then(() => {

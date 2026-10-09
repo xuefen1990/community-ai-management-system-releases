@@ -1,0 +1,1883 @@
+{
+  "environment": "disposable native Electron with synthetic data",
+  "workbench": {
+    "layouts": [
+      {
+        "width": 1600,
+        "height": 900,
+        "zoom": 1,
+        "main": {
+          "x": 200,
+          "y": 0,
+          "width": 1400,
+          "height": 900,
+          "top": 0,
+          "right": 1600,
+          "bottom": 900,
+          "left": 200
+        },
+        "section": {
+          "x": 218,
+          "y": 10,
+          "width": 1364,
+          "height": 842,
+          "top": 10,
+          "right": 1582,
+          "bottom": 852,
+          "left": 218
+        },
+        "sectionHeight": "842px",
+        "sectionOverflow": "auto",
+        "launcher": {
+          "x": 1492.125,
+          "y": 857.5,
+          "width": 83.875,
+          "height": 36.5,
+          "top": 857.5,
+          "right": 1576,
+          "bottom": 894,
+          "left": 1492.125
+        },
+        "columns": "444px 444px 444px",
+        "quickButtons": 8,
+        "summaryCards": 5,
+        "blocks": [
+          {
+            "key": ".wb-quick-buttons-row",
+            "rect": {
+              "x": 218,
+              "y": 245.34375,
+              "width": 1356,
+              "height": 166,
+              "top": 245.34375,
+              "right": 1574,
+              "bottom": 411.34375,
+              "left": 218
+            },
+            "inner": {
+              "x": 232,
+              "y": 293.34375,
+              "width": 1328,
+              "height": 104,
+              "top": 293.34375,
+              "right": 1560,
+              "bottom": 397.34375,
+              "left": 232
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-duty-matrix-grid",
+            "rect": {
+              "x": 218,
+              "y": 423.34375,
+              "width": 900,
+              "height": 210,
+              "top": 423.34375,
+              "right": 1118,
+              "bottom": 633.34375,
+              "left": 218
+            },
+            "inner": {
+              "x": 232,
+              "y": 465.34375,
+              "width": 872,
+              "height": 154,
+              "top": 465.34375,
+              "right": 1104,
+              "bottom": 619.34375,
+              "left": 232
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-pending-visits-box",
+            "rect": {
+              "x": 1130,
+              "y": 423.34375,
+              "width": 444,
+              "height": 94,
+              "top": 423.34375,
+              "right": 1574,
+              "bottom": 517.34375,
+              "left": 1130
+            },
+            "inner": {
+              "x": 1144,
+              "y": 465.34375,
+              "width": 416,
+              "height": 38,
+              "top": 465.34375,
+              "right": 1560,
+              "bottom": 503.34375,
+              "left": 1144
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-reminder-grid",
+            "rect": {
+              "x": 218,
+              "y": 645.34375,
+              "width": 444,
+              "height": 161.1875,
+              "top": 645.34375,
+              "right": 662,
+              "bottom": 806.53125,
+              "left": 218
+            },
+            "inner": {
+              "x": 232,
+              "y": 687.34375,
+              "width": 416,
+              "height": 105.1875,
+              "top": 687.34375,
+              "right": 648,
+              "bottom": 792.53125,
+              "left": 232
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-expiring-lands-box",
+            "rect": {
+              "x": 674,
+              "y": 645.34375,
+              "width": 444,
+              "height": 98,
+              "top": 645.34375,
+              "right": 1118,
+              "bottom": 743.34375,
+              "left": 674
+            },
+            "inner": {
+              "x": 688,
+              "y": 691.34375,
+              "width": 416,
+              "height": 38,
+              "top": 691.34375,
+              "right": 1104,
+              "bottom": 729.34375,
+              "left": 688
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".cadre-directory-list",
+            "rect": {
+              "x": 1130,
+              "y": 645.34375,
+              "width": 444,
+              "height": 100,
+              "top": 645.34375,
+              "right": 1574,
+              "bottom": 745.34375,
+              "left": 1130
+            },
+            "inner": {
+              "x": 1144,
+              "y": 693.34375,
+              "width": 416,
+              "height": 38,
+              "top": 693.34375,
+              "right": 1560,
+              "bottom": 731.34375,
+              "left": 1144
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-h360-stats-grid",
+            "rect": {
+              "x": 218,
+              "y": 818.53125,
+              "width": 444,
+              "height": 173,
+              "top": 818.53125,
+              "right": 662,
+              "bottom": 991.53125,
+              "left": 218
+            },
+            "inner": {
+              "x": 232,
+              "y": 860.53125,
+              "width": 416,
+              "height": 117,
+              "top": 860.53125,
+              "right": 648,
+              "bottom": 977.53125,
+              "left": 232
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-group-breakdown-list",
+            "rect": {
+              "x": 674,
+              "y": 818.53125,
+              "width": 444,
+              "height": 280,
+              "top": 818.53125,
+              "right": 1118,
+              "bottom": 1098.53125,
+              "left": 674
+            },
+            "inner": {
+              "x": 688,
+              "y": 864.53125,
+              "width": 416,
+              "height": 220,
+              "top": 864.53125,
+              "right": 1104,
+              "bottom": 1084.53125,
+              "left": 688
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-structure-box",
+            "rect": {
+              "x": 1130,
+              "y": 818.53125,
+              "width": 444,
+              "height": 173,
+              "top": 818.53125,
+              "right": 1574,
+              "bottom": 991.53125,
+              "left": 1130
+            },
+            "inner": {
+              "x": 1144,
+              "y": 864.53125,
+              "width": 416,
+              "height": 113,
+              "top": 864.53125,
+              "right": 1560,
+              "bottom": 977.53125,
+              "left": 1144
+            },
+            "overflow": "visible"
+          }
+        ]
+      },
+      {
+        "width": 1080,
+        "height": 680,
+        "zoom": 1,
+        "main": {
+          "x": 184,
+          "y": 0,
+          "width": 896,
+          "height": 680,
+          "top": 0,
+          "right": 1080,
+          "bottom": 680,
+          "left": 184
+        },
+        "section": {
+          "x": 198,
+          "y": 10,
+          "width": 868,
+          "height": 622,
+          "top": 10,
+          "right": 1066,
+          "bottom": 632,
+          "left": 198
+        },
+        "sectionHeight": "622px",
+        "sectionOverflow": "auto",
+        "launcher": {
+          "x": 972.125,
+          "y": 637.5,
+          "width": 83.875,
+          "height": 36.5,
+          "top": 637.5,
+          "right": 1056,
+          "bottom": 674,
+          "left": 972.125
+        },
+        "columns": "424px 424px",
+        "quickButtons": 8,
+        "summaryCards": 5,
+        "blocks": [
+          {
+            "key": ".wb-quick-buttons-row",
+            "rect": {
+              "x": 198,
+              "y": -120.90625,
+              "width": 860,
+              "height": 278,
+              "top": -120.90625,
+              "right": 1058,
+              "bottom": 157.09375,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": -72.90625,
+              "width": 832,
+              "height": 216,
+              "top": -72.90625,
+              "right": 1044,
+              "bottom": 143.09375,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-duty-matrix-grid",
+            "rect": {
+              "x": 198,
+              "y": 169.09375,
+              "width": 860,
+              "height": 210,
+              "top": 169.09375,
+              "right": 1058,
+              "bottom": 379.09375,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 211.09375,
+              "width": 832,
+              "height": 154,
+              "top": 211.09375,
+              "right": 1044,
+              "bottom": 365.09375,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-pending-visits-box",
+            "rect": {
+              "x": 198,
+              "y": 391.09375,
+              "width": 860,
+              "height": 94,
+              "top": 391.09375,
+              "right": 1058,
+              "bottom": 485.09375,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 433.09375,
+              "width": 832,
+              "height": 38,
+              "top": 433.09375,
+              "right": 1044,
+              "bottom": 471.09375,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-reminder-grid",
+            "rect": {
+              "x": 198,
+              "y": 497.09375,
+              "width": 424,
+              "height": 161.1875,
+              "top": 497.09375,
+              "right": 622,
+              "bottom": 658.28125,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 539.09375,
+              "width": 396,
+              "height": 105.1875,
+              "top": 539.09375,
+              "right": 608,
+              "bottom": 644.28125,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-expiring-lands-box",
+            "rect": {
+              "x": 634,
+              "y": 497.09375,
+              "width": 424,
+              "height": 98,
+              "top": 497.09375,
+              "right": 1058,
+              "bottom": 595.09375,
+              "left": 634
+            },
+            "inner": {
+              "x": 648,
+              "y": 543.09375,
+              "width": 396,
+              "height": 38,
+              "top": 543.09375,
+              "right": 1044,
+              "bottom": 581.09375,
+              "left": 648
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".cadre-directory-list",
+            "rect": {
+              "x": 198,
+              "y": 670.28125,
+              "width": 424,
+              "height": 100,
+              "top": 670.28125,
+              "right": 622,
+              "bottom": 770.28125,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 718.28125,
+              "width": 396,
+              "height": 38,
+              "top": 718.28125,
+              "right": 608,
+              "bottom": 756.28125,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-h360-stats-grid",
+            "rect": {
+              "x": 634,
+              "y": 670.28125,
+              "width": 424,
+              "height": 173,
+              "top": 670.28125,
+              "right": 1058,
+              "bottom": 843.28125,
+              "left": 634
+            },
+            "inner": {
+              "x": 648,
+              "y": 712.28125,
+              "width": 396,
+              "height": 117,
+              "top": 712.28125,
+              "right": 1044,
+              "bottom": 829.28125,
+              "left": 648
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-group-breakdown-list",
+            "rect": {
+              "x": 198,
+              "y": 855.28125,
+              "width": 424,
+              "height": 280,
+              "top": 855.28125,
+              "right": 622,
+              "bottom": 1135.28125,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 901.28125,
+              "width": 396,
+              "height": 220,
+              "top": 901.28125,
+              "right": 608,
+              "bottom": 1121.28125,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-structure-box",
+            "rect": {
+              "x": 634,
+              "y": 855.28125,
+              "width": 424,
+              "height": 173,
+              "top": 855.28125,
+              "right": 1058,
+              "bottom": 1028.28125,
+              "left": 634
+            },
+            "inner": {
+              "x": 648,
+              "y": 901.28125,
+              "width": 396,
+              "height": 113,
+              "top": 901.28125,
+              "right": 1044,
+              "bottom": 1014.28125,
+              "left": 648
+            },
+            "overflow": "visible"
+          }
+        ]
+      },
+      {
+        "width": 1280,
+        "height": 720,
+        "zoom": 1.25,
+        "main": {
+          "x": 200,
+          "y": 0,
+          "width": 1080,
+          "height": 720,
+          "top": 0,
+          "right": 1280,
+          "bottom": 720,
+          "left": 200
+        },
+        "section": {
+          "x": 218,
+          "y": 10,
+          "width": 1044,
+          "height": 662,
+          "top": 10,
+          "right": 1262,
+          "bottom": 672,
+          "left": 218
+        },
+        "sectionHeight": "662px",
+        "sectionOverflow": "auto",
+        "launcher": {
+          "x": 1172.518798828125,
+          "y": 677.6000366210938,
+          "width": 83.48125457763672,
+          "height": 36.400001525878906,
+          "top": 677.6000366210938,
+          "right": 1256.0000534057617,
+          "bottom": 714.0000381469727,
+          "left": 1172.518798828125
+        },
+        "columns": "337.331px 337.331px 337.331px",
+        "quickButtons": 8,
+        "summaryCards": 5,
+        "blocks": [
+          {
+            "key": ".wb-quick-buttons-row",
+            "rect": {
+              "x": 218,
+              "y": 266.3999938964844,
+              "width": 1035.9937744140625,
+              "height": 165.60000610351562,
+              "top": 266.3999938964844,
+              "right": 1253.9937744140625,
+              "bottom": 432,
+              "left": 218
+            },
+            "inner": {
+              "x": 231.8000030517578,
+              "y": 314.20001220703125,
+              "width": 1008.3937377929688,
+              "height": 104,
+              "top": 314.20001220703125,
+              "right": 1240.1937408447266,
+              "bottom": 418.20001220703125,
+              "left": 231.8000030517578
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-duty-matrix-grid",
+            "rect": {
+              "x": 218,
+              "y": 444,
+              "width": 686.6625366210938,
+              "height": 209.60000610351562,
+              "top": 444,
+              "right": 904.6625366210938,
+              "bottom": 653.6000061035156,
+              "left": 218
+            },
+            "inner": {
+              "x": 231.8000030517578,
+              "y": 485.8000183105469,
+              "width": 659.0625,
+              "height": 154,
+              "top": 485.8000183105469,
+              "right": 890.8625030517578,
+              "bottom": 639.8000183105469,
+              "left": 231.8000030517578
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-pending-visits-box",
+            "rect": {
+              "x": 916.6625366210938,
+              "y": 444,
+              "width": 337.3312683105469,
+              "height": 93.20000457763672,
+              "top": 444,
+              "right": 1253.9938049316406,
+              "bottom": 537.2000045776367,
+              "left": 916.6625366210938
+            },
+            "inner": {
+              "x": 930.4625244140625,
+              "y": 485.8000183105469,
+              "width": 309.73126220703125,
+              "height": 37.60000228881836,
+              "top": 485.8000183105469,
+              "right": 1240.1937866210938,
+              "bottom": 523.4000205993652,
+              "left": 930.4625244140625
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-reminder-grid",
+            "rect": {
+              "x": 218,
+              "y": 665.6000366210938,
+              "width": 337.3312683105469,
+              "height": 160,
+              "top": 665.6000366210938,
+              "right": 555.3312683105469,
+              "bottom": 825.6000366210938,
+              "left": 218
+            },
+            "inner": {
+              "x": 231.8000030517578,
+              "y": 707.4000244140625,
+              "width": 309.73126220703125,
+              "height": 104.4000015258789,
+              "top": 707.4000244140625,
+              "right": 541.5312652587891,
+              "bottom": 811.8000259399414,
+              "left": 231.8000030517578
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-expiring-lands-box",
+            "rect": {
+              "x": 567.3312377929688,
+              "y": 665.6000366210938,
+              "width": 337.3312683105469,
+              "height": 97.20000457763672,
+              "top": 665.6000366210938,
+              "right": 904.6625061035156,
+              "bottom": 762.8000411987305,
+              "left": 567.3312377929688
+            },
+            "inner": {
+              "x": 581.1312866210938,
+              "y": 711.4000244140625,
+              "width": 309.73126220703125,
+              "height": 37.60000228881836,
+              "top": 711.4000244140625,
+              "right": 890.862548828125,
+              "bottom": 749.0000267028809,
+              "left": 581.1312866210938
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".cadre-directory-list",
+            "rect": {
+              "x": 916.6625366210938,
+              "y": 665.6000366210938,
+              "width": 337.3312683105469,
+              "height": 99.20000457763672,
+              "top": 665.6000366210938,
+              "right": 1253.9938049316406,
+              "bottom": 764.8000411987305,
+              "left": 916.6625366210938
+            },
+            "inner": {
+              "x": 930.4625244140625,
+              "y": 713.4000244140625,
+              "width": 309.73126220703125,
+              "height": 37.60000228881836,
+              "top": 713.4000244140625,
+              "right": 1240.1937866210938,
+              "bottom": 751.0000267028809,
+              "left": 930.4625244140625
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-h360-stats-grid",
+            "rect": {
+              "x": 218,
+              "y": 837.6000366210938,
+              "width": 337.3312683105469,
+              "height": 233.60000610351562,
+              "top": 837.6000366210938,
+              "right": 555.3312683105469,
+              "bottom": 1071.2000427246094,
+              "left": 218
+            },
+            "inner": {
+              "x": 231.8000030517578,
+              "y": 879.4000244140625,
+              "width": 309.73126220703125,
+              "height": 178,
+              "top": 879.4000244140625,
+              "right": 541.5312652587891,
+              "bottom": 1057.4000244140625,
+              "left": 231.8000030517578
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-group-breakdown-list",
+            "rect": {
+              "x": 567.3312377929688,
+              "y": 837.6000366210938,
+              "width": 337.3312683105469,
+              "height": 279.6000061035156,
+              "top": 837.6000366210938,
+              "right": 904.6625061035156,
+              "bottom": 1117.2000427246094,
+              "left": 567.3312377929688
+            },
+            "inner": {
+              "x": 581.1312866210938,
+              "y": 883.4000244140625,
+              "width": 309.73126220703125,
+              "height": 220,
+              "top": 883.4000244140625,
+              "right": 890.862548828125,
+              "bottom": 1103.4000244140625,
+              "left": 581.1312866210938
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-structure-box",
+            "rect": {
+              "x": 916.6625366210938,
+              "y": 837.6000366210938,
+              "width": 337.3312683105469,
+              "height": 172.1999969482422,
+              "top": 837.6000366210938,
+              "right": 1253.9938049316406,
+              "bottom": 1009.8000335693359,
+              "left": 916.6625366210938
+            },
+            "inner": {
+              "x": 930.4625244140625,
+              "y": 883.4000244140625,
+              "width": 309.73126220703125,
+              "height": 112.5999984741211,
+              "top": 883.4000244140625,
+              "right": 1240.1937866210938,
+              "bottom": 996.0000228881836,
+              "left": 930.4625244140625
+            },
+            "overflow": "visible"
+          }
+        ]
+      },
+      {
+        "width": 1066,
+        "height": 600,
+        "zoom": 1.5,
+        "main": {
+          "x": 184,
+          "y": 0,
+          "width": 882.6666870117188,
+          "height": 600,
+          "top": 0,
+          "right": 1066.6666870117188,
+          "bottom": 600,
+          "left": 184
+        },
+        "section": {
+          "x": 198,
+          "y": 10,
+          "width": 854.6666870117188,
+          "height": 542,
+          "top": 10,
+          "right": 1052.6666870117188,
+          "bottom": 552,
+          "left": 198
+        },
+        "sectionHeight": "542px",
+        "sectionOverflow": "auto",
+        "launcher": {
+          "x": 958.7916870117188,
+          "y": 557.3333740234375,
+          "width": 83.875,
+          "height": 36.66666793823242,
+          "top": 557.3333740234375,
+          "right": 1042.6666870117188,
+          "bottom": 594.0000419616699,
+          "left": 958.7916870117188
+        },
+        "columns": "417.333px 417.333px",
+        "quickButtons": 8,
+        "summaryCards": 5,
+        "blocks": [
+          {
+            "key": ".wb-quick-buttons-row",
+            "rect": {
+              "x": 198,
+              "y": 301.43231201171875,
+              "width": 846.6666870117188,
+              "height": 278,
+              "top": 301.43231201171875,
+              "right": 1044.6666870117188,
+              "bottom": 579.4323120117188,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 349.43231201171875,
+              "width": 818.6666870117188,
+              "height": 216,
+              "top": 349.43231201171875,
+              "right": 1030.6666870117188,
+              "bottom": 565.4323120117188,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-duty-matrix-grid",
+            "rect": {
+              "x": 198,
+              "y": 591.4323120117188,
+              "width": 846.6666870117188,
+              "height": 210,
+              "top": 591.4323120117188,
+              "right": 1044.6666870117188,
+              "bottom": 801.4323120117188,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 633.4323120117188,
+              "width": 818.6666870117188,
+              "height": 154,
+              "top": 633.4323120117188,
+              "right": 1030.6666870117188,
+              "bottom": 787.4323120117188,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-pending-visits-box",
+            "rect": {
+              "x": 198,
+              "y": 813.4323120117188,
+              "width": 846.6666870117188,
+              "height": 94.33333587646484,
+              "top": 813.4323120117188,
+              "right": 1044.6666870117188,
+              "bottom": 907.7656478881836,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 855.4323120117188,
+              "width": 818.6666870117188,
+              "height": 38.333335876464844,
+              "top": 855.4323120117188,
+              "right": 1030.6666870117188,
+              "bottom": 893.7656478881836,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-reminder-grid",
+            "rect": {
+              "x": 198,
+              "y": 919.765625,
+              "width": 417.3333435058594,
+              "height": 161.1979217529297,
+              "top": 919.765625,
+              "right": 615.3333435058594,
+              "bottom": 1080.9635467529297,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 961.765625,
+              "width": 389.3333435058594,
+              "height": 105.19792175292969,
+              "top": 961.765625,
+              "right": 601.3333435058594,
+              "bottom": 1066.9635467529297,
+              "left": 212
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-expiring-lands-box",
+            "rect": {
+              "x": 627.3333740234375,
+              "y": 919.765625,
+              "width": 417.3333435058594,
+              "height": 98.33333587646484,
+              "top": 919.765625,
+              "right": 1044.6667175292969,
+              "bottom": 1018.0989608764648,
+              "left": 627.3333740234375
+            },
+            "inner": {
+              "x": 641.3333740234375,
+              "y": 965.765625,
+              "width": 389.3333435058594,
+              "height": 38.333335876464844,
+              "top": 965.765625,
+              "right": 1030.6667175292969,
+              "bottom": 1004.0989608764648,
+              "left": 641.3333740234375
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".cadre-directory-list",
+            "rect": {
+              "x": 198,
+              "y": 1092.963623046875,
+              "width": 417.3333435058594,
+              "height": 100.33333587646484,
+              "top": 1092.963623046875,
+              "right": 615.3333435058594,
+              "bottom": 1193.2969589233398,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 1140.963623046875,
+              "width": 389.3333435058594,
+              "height": 38.333335876464844,
+              "top": 1140.963623046875,
+              "right": 601.3333435058594,
+              "bottom": 1179.2969589233398,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-h360-stats-grid",
+            "rect": {
+              "x": 627.3333740234375,
+              "y": 1092.963623046875,
+              "width": 417.3333435058594,
+              "height": 172.6666717529297,
+              "top": 1092.963623046875,
+              "right": 1044.6667175292969,
+              "bottom": 1265.6302947998047,
+              "left": 627.3333740234375
+            },
+            "inner": {
+              "x": 641.3333740234375,
+              "y": 1134.963623046875,
+              "width": 389.3333435058594,
+              "height": 116.66667175292969,
+              "top": 1134.963623046875,
+              "right": 1030.6667175292969,
+              "bottom": 1251.6302947998047,
+              "left": 641.3333740234375
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-group-breakdown-list",
+            "rect": {
+              "x": 198,
+              "y": 1277.6302490234375,
+              "width": 417.3333435058594,
+              "height": 280,
+              "top": 1277.6302490234375,
+              "right": 615.3333435058594,
+              "bottom": 1557.6302490234375,
+              "left": 198
+            },
+            "inner": {
+              "x": 212,
+              "y": 1323.6302490234375,
+              "width": 389.3333435058594,
+              "height": 220,
+              "top": 1323.6302490234375,
+              "right": 601.3333435058594,
+              "bottom": 1543.6302490234375,
+              "left": 212
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-structure-box",
+            "rect": {
+              "x": 627.3333740234375,
+              "y": 1277.6302490234375,
+              "width": 417.3333435058594,
+              "height": 174,
+              "top": 1277.6302490234375,
+              "right": 1044.6667175292969,
+              "bottom": 1451.6302490234375,
+              "left": 627.3333740234375
+            },
+            "inner": {
+              "x": 641.3333740234375,
+              "y": 1323.6302490234375,
+              "width": 389.3333435058594,
+              "height": 114,
+              "top": 1323.6302490234375,
+              "right": 1030.6667175292969,
+              "bottom": 1437.6302490234375,
+              "left": 641.3333740234375
+            },
+            "overflow": "visible"
+          }
+        ]
+      },
+      {
+        "width": 720,
+        "height": 453,
+        "zoom": 1.5,
+        "main": {
+          "x": 166,
+          "y": 0,
+          "width": 554,
+          "height": 453.3333435058594,
+          "top": 0,
+          "right": 720,
+          "bottom": 453.3333435058594,
+          "left": 166
+        },
+        "section": {
+          "x": 180,
+          "y": 10,
+          "width": 526,
+          "height": 395.3333435058594,
+          "top": 10,
+          "right": 706,
+          "bottom": 405.3333435058594,
+          "left": 180
+        },
+        "sectionHeight": "395.333px",
+        "sectionOverflow": "auto",
+        "launcher": {
+          "x": 612.125,
+          "y": 410.66668701171875,
+          "width": 83.875,
+          "height": 36.66666793823242,
+          "top": 410.66668701171875,
+          "right": 696,
+          "bottom": 447.3333549499512,
+          "left": 612.125
+        },
+        "columns": "518px",
+        "quickButtons": 8,
+        "summaryCards": 5,
+        "blocks": [
+          {
+            "key": ".wb-quick-buttons-row",
+            "rect": {
+              "x": 180,
+              "y": 555.9323120117188,
+              "width": 518,
+              "height": 278,
+              "top": 555.9323120117188,
+              "right": 698,
+              "bottom": 833.9323120117188,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 603.9323120117188,
+              "width": 490,
+              "height": 216,
+              "top": 603.9323120117188,
+              "right": 684,
+              "bottom": 819.9323120117188,
+              "left": 194
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-duty-matrix-grid",
+            "rect": {
+              "x": 180,
+              "y": 845.9323120117188,
+              "width": 518,
+              "height": 370,
+              "top": 845.9323120117188,
+              "right": 698,
+              "bottom": 1215.9323120117188,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 887.9323120117188,
+              "width": 490,
+              "height": 314,
+              "top": 887.9323120117188,
+              "right": 684,
+              "bottom": 1201.9323120117188,
+              "left": 194
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-pending-visits-box",
+            "rect": {
+              "x": 180,
+              "y": 1227.932373046875,
+              "width": 518,
+              "height": 94.33333587646484,
+              "top": 1227.932373046875,
+              "right": 698,
+              "bottom": 1322.2657089233398,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1269.932373046875,
+              "width": 490,
+              "height": 38.333335876464844,
+              "top": 1269.932373046875,
+              "right": 684,
+              "bottom": 1308.2657089233398,
+              "left": 194
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-reminder-grid",
+            "rect": {
+              "x": 180,
+              "y": 1334.265625,
+              "width": 518,
+              "height": 161.1979217529297,
+              "top": 1334.265625,
+              "right": 698,
+              "bottom": 1495.4635467529297,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1376.265625,
+              "width": 490,
+              "height": 105.19792175292969,
+              "top": 1376.265625,
+              "right": 684,
+              "bottom": 1481.4635467529297,
+              "left": 194
+            },
+            "overflow": "visible"
+          },
+          {
+            "key": ".wb-expiring-lands-box",
+            "rect": {
+              "x": 180,
+              "y": 1507.463623046875,
+              "width": 518,
+              "height": 98.33333587646484,
+              "top": 1507.463623046875,
+              "right": 698,
+              "bottom": 1605.7969589233398,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1553.463623046875,
+              "width": 490,
+              "height": 38.333335876464844,
+              "top": 1553.463623046875,
+              "right": 684,
+              "bottom": 1591.7969589233398,
+              "left": 194
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".cadre-directory-list",
+            "rect": {
+              "x": 180,
+              "y": 1617.796875,
+              "width": 518,
+              "height": 100.33333587646484,
+              "top": 1617.796875,
+              "right": 698,
+              "bottom": 1718.1302108764648,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1665.796875,
+              "width": 490,
+              "height": 38.333335876464844,
+              "top": 1665.796875,
+              "right": 684,
+              "bottom": 1704.1302108764648,
+              "left": 194
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-h360-stats-grid",
+            "rect": {
+              "x": 180,
+              "y": 1730.1302490234375,
+              "width": 518,
+              "height": 172.6666717529297,
+              "top": 1730.1302490234375,
+              "right": 698,
+              "bottom": 1902.7969207763672,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1772.1302490234375,
+              "width": 490,
+              "height": 116.66667175292969,
+              "top": 1772.1302490234375,
+              "right": 684,
+              "bottom": 1888.7969207763672,
+              "left": 194
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-group-breakdown-list",
+            "rect": {
+              "x": 180,
+              "y": 1914.796875,
+              "width": 518,
+              "height": 280,
+              "top": 1914.796875,
+              "right": 698,
+              "bottom": 2194.796875,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 1960.796875,
+              "width": 490,
+              "height": 220,
+              "top": 1960.796875,
+              "right": 684,
+              "bottom": 2180.796875,
+              "left": 194
+            },
+            "overflow": "auto"
+          },
+          {
+            "key": ".wb-age-structure-box",
+            "rect": {
+              "x": 180,
+              "y": 2206.796875,
+              "width": 518,
+              "height": 174,
+              "top": 2206.796875,
+              "right": 698,
+              "bottom": 2380.796875,
+              "left": 180
+            },
+            "inner": {
+              "x": 194,
+              "y": 2252.796875,
+              "width": 490,
+              "height": 114,
+              "top": 2252.796875,
+              "right": 684,
+              "bottom": 2366.796875,
+              "left": 194
+            },
+            "overflow": "visible"
+          }
+        ]
+      }
+    ],
+    "stress": {
+      "lists": [
+        {
+          "key": ".cadre-directory-list",
+          "height": 220,
+          "scrollHeight": 2074
+        },
+        {
+          "key": ".wb-group-breakdown-list",
+          "height": 220,
+          "scrollHeight": 1534
+        },
+        {
+          "key": ".wb-expiring-lands-box",
+          "height": 220,
+          "scrollHeight": 1692
+        },
+        {
+          "key": ".wb-pending-visits-box",
+          "height": 220,
+          "scrollHeight": 1594
+        }
+      ],
+      "cards": 9,
+      "nonOverlapping": true
+    },
+    "empty": {
+      "cards": 9,
+      "emptyTips": 4,
+      "quickButtons": 8
+    },
+    "entries": [
+      {
+        "id": "quick-add-person",
+        "label": "录入新居民",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-supplement-person",
+        "label": "补充人员资料",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-add-land",
+        "label": "登记新地块",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-add-finance",
+        "label": "登记收支凭证",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-add-visit",
+        "label": "登记群众来访",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-add-work",
+        "label": "记录干部工作",
+        "route": "/overview",
+        "dialogs": 2,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-cert",
+        "label": "证明管理",
+        "route": "/overview",
+        "dialogs": 0,
+        "clicked": true,
+        "opened": false,
+        "legacyCertificateRoutePresent": false
+      },
+      {
+        "id": "quick-duty",
+        "label": "村务值班",
+        "route": "/village-duty",
+        "dialogs": 0,
+        "clicked": true,
+        "opened": true,
+        "legacyCertificateRoutePresent": false
+      }
+    ]
+  },
+  "navigationAndCompatibility": {
+    "environment": "disposable native Electron with synthetic data",
+    "layouts": [
+      {
+        "contentWidth": 1600,
+        "contentHeight": 900,
+        "zoom": 1,
+        "width": 1600,
+        "height": 900,
+        "pages": [
+          {
+            "label": "工作台",
+            "route": "/overview",
+            "mainWidth": 1400,
+            "mainScrollWidth": 1400,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "数据统计",
+            "route": "/statistics",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "居民档案",
+            "route": "/personnel",
+            "mainWidth": 1400,
+            "mainScrollWidth": 1400,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "党员管理",
+            "route": "/party",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "收起统计 ▴"
+          },
+          {
+            "label": "民情记录",
+            "route": "/visits",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "公文拟写",
+            "route": "/drafting",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "我的写作偏好"
+          },
+          {
+            "label": "证明管理",
+            "route": "/certificate-workspace",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "开具证明"
+          },
+          {
+            "label": "电子档案柜",
+            "route": "/documents",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "立即查找"
+          },
+          {
+            "label": "资金发放中心",
+            "route": "/funds",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "办理首页"
+          },
+          {
+            "label": "财务收支",
+            "route": "/finance",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "土地承包确权",
+            "route": "/land",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "村务值班",
+            "route": "/village-duty",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "⚙ 值班任务"
+          },
+          {
+            "label": "工作事项",
+            "route": "/work",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "＋ 新建工作"
+          },
+          {
+            "label": "AI 操作记录",
+            "route": "/assistant-records",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "系统设置",
+            "route": "/settings",
+            "mainWidth": 1394,
+            "mainScrollWidth": 1394,
+            "clickableControl": "🔄 刷新配置"
+          }
+        ],
+        "reverseNavigation": true
+      },
+      {
+        "contentWidth": 1080,
+        "contentHeight": 680,
+        "zoom": 1,
+        "width": 1080,
+        "height": 680,
+        "pages": [
+          {
+            "label": "工作台",
+            "route": "/overview",
+            "mainWidth": 896,
+            "mainScrollWidth": 896,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "数据统计",
+            "route": "/statistics",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "居民档案",
+            "route": "/personnel",
+            "mainWidth": 896,
+            "mainScrollWidth": 896,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "党员管理",
+            "route": "/party",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "收起统计 ▴"
+          },
+          {
+            "label": "民情记录",
+            "route": "/visits",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "公文拟写",
+            "route": "/drafting",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "我的写作偏好"
+          },
+          {
+            "label": "证明管理",
+            "route": "/certificate-workspace",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "开具证明"
+          },
+          {
+            "label": "电子档案柜",
+            "route": "/documents",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "立即查找"
+          },
+          {
+            "label": "资金发放中心",
+            "route": "/funds",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "办理首页"
+          },
+          {
+            "label": "财务收支",
+            "route": "/finance",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "土地承包确权",
+            "route": "/land",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "村务值班",
+            "route": "/village-duty",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "⚙ 值班任务"
+          },
+          {
+            "label": "工作事项",
+            "route": "/work",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "＋ 新建工作"
+          },
+          {
+            "label": "AI 操作记录",
+            "route": "/assistant-records",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "系统设置",
+            "route": "/settings",
+            "mainWidth": 890,
+            "mainScrollWidth": 890,
+            "clickableControl": "🔄 刷新配置"
+          }
+        ],
+        "reverseNavigation": true
+      },
+      {
+        "contentWidth": 1600,
+        "contentHeight": 900,
+        "zoom": 1.25,
+        "width": 1280,
+        "height": 720,
+        "pages": [
+          {
+            "label": "工作台",
+            "route": "/overview",
+            "mainWidth": 1080,
+            "mainScrollWidth": 1080,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "数据统计",
+            "route": "/statistics",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "居民档案",
+            "route": "/personnel",
+            "mainWidth": 1080,
+            "mainScrollWidth": 1080,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "党员管理",
+            "route": "/party",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "收起统计 ▴"
+          },
+          {
+            "label": "民情记录",
+            "route": "/visits",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "公文拟写",
+            "route": "/drafting",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "我的写作偏好"
+          },
+          {
+            "label": "证明管理",
+            "route": "/certificate-workspace",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "开具证明"
+          },
+          {
+            "label": "电子档案柜",
+            "route": "/documents",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "立即查找"
+          },
+          {
+            "label": "资金发放中心",
+            "route": "/funds",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "办理首页"
+          },
+          {
+            "label": "财务收支",
+            "route": "/finance",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "土地承包确权",
+            "route": "/land",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "村务值班",
+            "route": "/village-duty",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "⚙ 值班任务"
+          },
+          {
+            "label": "工作事项",
+            "route": "/work",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "＋ 新建工作"
+          },
+          {
+            "label": "AI 操作记录",
+            "route": "/assistant-records",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "系统设置",
+            "route": "/settings",
+            "mainWidth": 1074,
+            "mainScrollWidth": 1074,
+            "clickableControl": "🔄 刷新配置"
+          }
+        ],
+        "reverseNavigation": true
+      },
+      {
+        "contentWidth": 1600,
+        "contentHeight": 900,
+        "zoom": 1.5,
+        "width": 1066,
+        "height": 600,
+        "pages": [
+          {
+            "label": "工作台",
+            "route": "/overview",
+            "mainWidth": 883,
+            "mainScrollWidth": 883,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "数据统计",
+            "route": "/statistics",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "刷新数据"
+          },
+          {
+            "label": "居民档案",
+            "route": "/personnel",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "党员管理",
+            "route": "/party",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "收起统计 ▴"
+          },
+          {
+            "label": "民情记录",
+            "route": "/visits",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "公文拟写",
+            "route": "/drafting",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "我的写作偏好"
+          },
+          {
+            "label": "证明管理",
+            "route": "/certificate-workspace",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "开具证明"
+          },
+          {
+            "label": "电子档案柜",
+            "route": "/documents",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "立即查找"
+          },
+          {
+            "label": "资金发放中心",
+            "route": "/funds",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "办理首页"
+          },
+          {
+            "label": "财务收支",
+            "route": "/finance",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "土地承包确权",
+            "route": "/land",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "新手引导"
+          },
+          {
+            "label": "村务值班",
+            "route": "/village-duty",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "⚙ 值班任务"
+          },
+          {
+            "label": "工作事项",
+            "route": "/work",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "＋ 新建工作"
+          },
+          {
+            "label": "AI 操作记录",
+            "route": "/assistant-records",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "刷新"
+          },
+          {
+            "label": "系统设置",
+            "route": "/settings",
+            "mainWidth": 877,
+            "mainScrollWidth": 877,
+            "clickableControl": "🔄 刷新配置"
+          }
+        ],
+        "reverseNavigation": true
+      }
+    ],
+    "compatibility": {
+      "residentDialog": true,
+      "formFocus": true,
+      "aiOpenClose": true,
+      "a4Editor": true,
+      "darkThemePreserved": true
+    }
+  },
+  "vendor": {
+    "files": 19,
+    "changed": []
+  },
+  "knownExistingIssue": {
+    "entry": "quick-cert",
+    "reason": "Vendor QuickActions pushes named certificate-management route; existing extensions.mjs removes that named route and registers only path redirects. Sidebar certificate-workspace works. No route changes made."
+  },
+  "verificationLimit": "Full native runner reached four layout checkpoints but later encrypted-login scenario failed waiting for business shell. Scoped layout and compatibility runner passed. Windows native environment not used for this CSS preview."
+}
