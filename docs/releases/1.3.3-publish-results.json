@@ -1,0 +1,135 @@
+{
+  "version": "1.3.3",
+  "sourceCommit": "0faa2f348591bfb9f271a55f8e885f2397827942",
+  "tests": {
+    "applicationPassed": 806,
+    "backendPassed": 33,
+    "nativePackaged": {
+      "ok": true,
+      "loadedSyntheticPeople": 10000,
+      "layoutConfigurations": 4,
+      "compatibility": {
+        "residentDialog": true,
+        "formFocus": true,
+        "aiOpenClose": true,
+        "workbenchCertificateEntry": true,
+        "a4Editor": true,
+        "darkThemePreserved": true
+      },
+      "defaults": {
+        "certificateDefault": "桌面隔离测试社区",
+        "certificatePreview": true,
+        "manualSignature": true,
+        "draftingDefault": "桌面隔离测试社区",
+        "cachedPagesUseCurrentSetting": true,
+        "sharedCredits": true
+      }
+    }
+  },
+  "bundles": {
+    "criticalAndVendorFilesMatched": 31,
+    "windowsArchiveEntries": 4494,
+    "privateDataAbsent": true,
+    "vendorFilesUnchanged": 19
+  },
+  "production": {
+    "updates": [
+      {
+        "platform": "darwin-arm64",
+        "version": "1.3.3",
+        "sha256": "97860db2f1ee0aff9076d114e7e5931db9b017229c5ee94637e754c70fd4c19f",
+        "bytes": 160501762,
+        "rangeStatus": 206,
+        "manifestMatches": true
+      },
+      {
+        "platform": "win32-x64",
+        "version": "1.3.3",
+        "sha256": "112fbbbb16e2a266cc44bcf247c99d9c5fc123f2f76eb098733b5c39216edc9d",
+        "bytes": 144479581,
+        "rangeStatus": 206,
+        "manifestMatches": true
+      }
+    ],
+    "website": [
+      {
+        "name": "community-ai-management-system-1.3.3-mac-arm64.dmg",
+        "status": 200,
+        "bytes": 200739130,
+        "sha256": "3cdfb6403a640ce48161ca4a3eb031f1abcbfde9792ef43cbd0217ba54fe059e"
+      },
+      {
+        "name": "community-ai-management-system-1.3.3-win-x64.exe",
+        "status": 200,
+        "bytes": 144479581,
+        "sha256": "112fbbbb16e2a266cc44bcf247c99d9c5fc123f2f76eb098733b5c39216edc9d"
+      }
+    ],
+    "health": {
+      "status": "ok",
+      "service": "community-ai-backend",
+      "version": "1.0.0",
+      "timestamp": "2026-10-09T00:39:22.925Z"
+    },
+    "buttonsVersion": "1.3.3"
+  },
+  "macDevice": {
+    "fromVersion": "1.3.2",
+    "toVersion": "1.3.3",
+    "automaticInstallAndReopen": true,
+    "displayedVersionVerified": true,
+    "businessWorkbenchVerified": true,
+    "certificateQuickEntryVerified": true,
+    "criticalInstalledSourceFilesMatch": true,
+    "networkBytes": 17206874,
+    "events": [
+      {
+        "time": "2026-10-09T00:38:48.614Z",
+        "type": "download-started",
+        "fromVersion": "1.3.2"
+      },
+      {
+        "time": "2026-10-09T00:38:48.788Z",
+        "type": "download-mode",
+        "mode": "differential",
+        "summary": "Full: 156,740 KB, To download: 16,620.21 KB (11%)"
+      },
+      {
+        "time": "2026-10-09T00:38:50.779Z",
+        "type": "download-complete",
+        "version": "1.3.3",
+        "networkBytes": 17206874,
+        "networkRequests": 2
+      },
+      {
+        "time": "2026-10-09T00:38:50.781Z",
+        "type": "install-requested",
+        "fromVersion": "1.3.2",
+        "version": "1.3.3",
+        "networkBytes": 17206874
+      },
+      {
+        "time": "2026-10-09T00:39:11.234Z",
+        "type": "startup-verified",
+        "version": "1.3.3",
+        "expectedVersion": "1.3.3"
+      }
+    ]
+  },
+  "windowsDevice": {
+    "verified": false,
+    "reason": "No available Windows old-version client or VM; build, bundle, update feed, blockmap and range download verified only."
+  },
+  "github": {
+    "repository": "https://github.com/xuefen1990/community-ai-management-system-releases",
+    "branch": "codex/macos-installer-update-repair",
+    "tagCreated": false,
+    "githubReleaseCreated": false
+  },
+  "websitePreviousConfigBackup": "C:/community-ai/website/downloads-before-1.3.3.js",
+  "excluded": [
+    "website/README.md",
+    "website/tools",
+    "website/打开网站预览.command"
+  ]
+}

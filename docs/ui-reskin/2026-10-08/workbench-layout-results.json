@@ -1877,7 +1877,9 @@
   },
   "knownExistingIssue": {
     "entry": "quick-cert",
-    "reason": "Vendor QuickActions pushes named certificate-management route; existing extensions.mjs removes that named route and registers only path redirects. Sidebar certificate-workspace works. No route changes made."
+    "reason": "Vendor QuickActions pushes named certificate-management route; existing extensions.mjs removes that named route and registers only path redirects. Sidebar certificate-workspace works. No route changes made.",
+    "resolvedInVersion": "1.3.3",
+    "resolvedVerification": "Native packaged fixture and Mac installed client both loaded certificate-workspace through actual quick entry."
   },
   "verificationLimit": "Full native runner reached four layout checkpoints but later encrypted-login scenario failed waiting for business shell. Scoped layout and compatibility runner passed. Windows native environment not used for this CSS preview."
 }
