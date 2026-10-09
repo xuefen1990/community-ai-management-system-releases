@@ -163,6 +163,51 @@ test('远程登录在账号服务器无响应时会超时返回', async () => {
   );
 });
 
+test('AI 生成超过普通账号请求时限仍可取得结果，且只发送一次', async () => {
+  let calls = 0;
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com', machineId: 'slow-ai',
+    requestTimeoutMs: 10, aiRequestTimeoutMs: 100,
+    store: { read: async () => ({}), write: async () => {} },
+    fetchImpl: (_url, { signal }) => new Promise((resolve, reject) => {
+      calls++;
+      const timer = setTimeout(() => resolve(response(200, { choices: [{ message: { content: '证明草稿' } }] })), 30);
+      signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('net::ERR_ABORTED')); }, { once: true });
+    }),
+  });
+  const result = await service.request('/ai/chat', { method: 'POST', body: { messages: [] } });
+  assert.equal(result.choices[0].message.content, '证明草稿');
+  assert.equal(calls, 1);
+});
+
+test('Electron 立即响应 abort 时仍报告 AI 超时，而非无法连接', async () => {
+  let aborted = false;
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com', machineId: 'aborted-ai',
+    requestTimeoutMs: 10, aiRequestTimeoutMs: 20,
+    store: { read: async () => ({}), write: async () => {} },
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => { aborted = true; reject(new Error('net::ERR_ABORTED')); }, { once: true });
+    }),
+  });
+  await assert.rejects(service.request('/ai/chat', { method: 'POST' }), /AI 响应超时/u);
+  assert.equal(aborted, true);
+});
+
+test('延长 AI 等待不会延长账号请求，网络断开仍准确报告连接错误', async () => {
+  const service = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com', machineId: 'account-timeout',
+    requestTimeoutMs: 10, aiRequestTimeoutMs: 100,
+    store: { read: async () => ({}), write: async () => {} },
+    fetchImpl: (_url, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener('abort', () => reject(new Error('net::ERR_ABORTED')), { once: true });
+    }),
+  });
+  await assert.rejects(service.request('/auth/profile'), /账号服务器响应超时/u);
+  service.fetchImpl = async () => { throw new Error('net::ERR_CONNECTION_REFUSED'); };
+  await assert.rejects(service.request('/ai/chat', { method: 'POST' }), /无法连接账号服务/u);
+});
+
 test('已在线登录的账号可在服务器断开后用密码离线重开，错误密码不得进入', async () => {
   let state = { version: 2, accounts: [], remoteServerUrl: '' };
   let online = true;

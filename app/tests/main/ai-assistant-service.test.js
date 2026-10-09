@@ -1255,6 +1255,46 @@ test('uses the configured AI only for non-system conversations and adds a no-gue
   assert.match(received.messages[0].content, /不得编造/u);
 });
 
+test('慢速 AI 证明结果完整返回并立即结算，不留下预留积分', async () => {
+  const { RemoteAuthService } = require('../../src/main/remote-auth-service');
+  const { AiRouter } = require('../../src/main/ai-router');
+  const calls = [];
+  const authService = new RemoteAuthService({
+    baseUrl: 'https://backend.example.com', machineId: 'certificate-timeout-regression',
+    requestTimeoutMs: 10, aiRequestTimeoutMs: 100,
+    store: { read: async () => ({}), write: async () => {} },
+    fetchImpl: async (url, { signal, body }) => {
+      const path = new URL(url).pathname;
+      calls.push({ path, body: body && JSON.parse(body) });
+      let payload;
+      if (path === '/api/auth/profile') payload = { user: { id: 'test-owner', role: 'main_account' } };
+      else if (path.endsWith('/estimate')) payload = { billingUnit: 'credits', estimatedCredits: 1, remainingCredits: 500 };
+      else if (path === '/api/ai/credit-tasks') payload = { id: 'test-task' };
+      else if (path.endsWith('/finish')) payload = { chargedCredits: 1, remainingCredits: 499 };
+      else if (path === '/api/ai/chat') {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(resolve, 30);
+          signal.addEventListener('abort', () => { clearTimeout(timer); reject(new Error('net::ERR_ABORTED')); }, { once: true });
+        });
+        payload = { choices: [{ message: { content: JSON.stringify({ reply: '请核对草稿。', needsMoreInfo: false,
+          draftMode: 'temporary', title: '测试证明', content: '兹证明{居民姓名}的有关情况。', manualValues: {} }) } }] };
+      } else throw new Error(`Unexpected route: ${path}`);
+      return { ok: true, status: 200, json: async () => payload };
+    },
+  });
+  authService.session = { token: 'test-session', user: { id: 'test-owner', role: 'main_account' } };
+  const aiRouter = new AiRouter({ authService, settingsStore: { readRaw: async () => ({ mode: 'online' }) },
+    localRuntime: { getStatus: () => ({ running: false }) } });
+  const assistant = service({}, { aiRouter, authService });
+  const result = await assistant.draftCertificateWithAi({ messages: [{ role: 'user', content: '起草通用测试证明' }], templates: [] });
+  assert.equal(result.title, '测试证明');
+  assert.equal(result.content, '兹证明{居民姓名}的有关情况。');
+  assert.equal(result.routing.chargedCredits, 1);
+  assert.equal(calls.filter(call => call.path === '/api/ai/chat').length, 1);
+  assert.equal(calls.filter(call => call.path.endsWith('/finish')).length, 1);
+  assert.equal(calls.at(-1).path, '/api/ai/credit-tasks/test-task/finish');
+});
+
 test('AI 证明起草只发送模板结构并返回可核对的结构化草稿', async () => {
   let received = null;
   const assistant = service({}, { aiRouter: { onlineChat: async (messages, options) => {

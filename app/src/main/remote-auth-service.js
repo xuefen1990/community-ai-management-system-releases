@@ -43,7 +43,7 @@ function rememberedWorkspace(state, user) {
 }
 
 class RemoteAuthService {
-  constructor({ store, machineId, baseUrl, legacyBaseUrls = [], rememberedLoginStore = null, fetchImpl = globalThis.fetch, requestTimeoutMs = 12000 }) {
+  constructor({ store, machineId, baseUrl, legacyBaseUrls = [], rememberedLoginStore = null, fetchImpl = globalThis.fetch, requestTimeoutMs = 12000, aiRequestTimeoutMs = 180000 }) {
     if (typeof fetchImpl !== 'function') throw new Error('当前运行环境不支持网络请求');
     this.store = store;
     this.machineId = machineId;
@@ -53,21 +53,24 @@ class RemoteAuthService {
     this.rememberedLoginStore = rememberedLoginStore;
     this.fetchImpl = fetchImpl;
     this.requestTimeoutMs = requestTimeoutMs;
+    this.aiRequestTimeoutMs = aiRequestTimeoutMs;
     this.session = null;
     this.entitlementCache = null;
     this.entitlementRequest = null;
     this.localWorkspaceService = null;
   }
 
-  async fetchWithTimeout(url, options, timeoutMessage) {
+  async fetchWithTimeout(url, options, timeoutMessage, timeoutMs = this.requestTimeoutMs) {
     const controller = new AbortController();
     let timer = null;
     try {
       const timeout = new Promise((_, reject) => {
         timer = setTimeout(() => {
-          controller.abort();
+          // Electron's net.fetch can reject immediately on abort. Settle the
+          // timeout first so that it is not reported as a connection failure.
           reject(new Error(timeoutMessage));
-        }, this.requestTimeoutMs);
+          controller.abort();
+        }, timeoutMs);
       });
       return await Promise.race([
         this.fetchImpl(url, { ...options, signal: controller.signal }),
@@ -182,13 +185,19 @@ class RemoteAuthService {
     const { baseUrl } = await this.getServerConfig();
     const workspaceBaseUrl = useWorkspace && path.startsWith('/unit/workspace/') ? await this.getWorkspaceBaseUrl() : '';
     const requestBaseUrl = workspaceBaseUrl || baseUrl;
+    // Model generation is slower than account/health requests. The server's
+    // provider timeout is 120 seconds; allow time for its response to arrive.
+    const isAiGeneration = path === '/ai/chat';
+    const timeoutMessage = isAiGeneration
+      ? 'AI 响应超时，服务器可能仍在处理；请先检查调用记录后再重试'
+      : workspaceBaseUrl ? '连接主电脑超时，请确认主电脑开机且处于同一局域网' : '账号服务器响应超时，请检查地址、网络和服务状态后重试';
     let response;
     try {
       response = await this.fetchWithTimeout(`${requestBaseUrl}/api${path}`, {
         method,
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      }, workspaceBaseUrl ? '连接主电脑超时，请确认主电脑开机且处于同一局域网' : '账号服务器响应超时，请检查地址、网络和服务状态后重试');
+      }, timeoutMessage, isAiGeneration ? this.aiRequestTimeoutMs : this.requestTimeoutMs);
     } catch (error) {
       if (/超时/u.test(error?.message || '')) throw error;
       throw new Error(workspaceBaseUrl ? '无法连接主电脑，请在连接页面重新扫描或核对 IP' : '无法连接账号服务，请检查网络或后端地址');
