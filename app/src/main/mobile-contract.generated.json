@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "businessVersion": "1.3.10",
+  "protocolRevision": 1,
+  "mainRoles": [
+    "main_account",
+    "unit_admin"
+  ],
+  "resourceCategories": [
+    "人员",
+    "机械",
+    "材料",
+    "车辆"
+  ],
+  "resourceUnits": {
+    "人员": "人",
+    "机械": "台",
+    "材料": "吨",
+    "车辆": "辆"
+  },
+  "limits": {
+    "attachmentBytes": 20971520,
+    "attachmentsPerRecord": 12,
+    "offlineHours": 24,
+    "chunkBytes": 262144
+  },
+  "features": [
+    "home.overview",
+    "residents.search",
+    "residents.pinyin",
+    "residents.tags",
+    "residents.details",
+    "residents.household",
+    "residents.customFields",
+    "residents.attachments",
+    "work.search",
+    "work.details",
+    "work.progress",
+    "work.totals",
+    "work.report",
+    "work.photos",
+    "work.drafts",
+    "work.pendingEdit",
+    "work.durableOutbox",
+    "work.retry",
+    "finance.mainOnly",
+    "finance.records",
+    "finance.filters",
+    "finance.balance",
+    "finance.attachments",
+    "connection.accountLogin",
+    "connection.initialPassword",
+    "connection.pair",
+    "connection.discovery",
+    "connection.manualReconnect",
+    "connection.sync",
+    "connection.offline",
+    "connection.accountIsolation",
+    "profile.largeText"
+  ],
+  "platformDifferences": {
+    "android": [
+      "Keystore/SQLCipher",
+      "HTTPS certificate pin",
+      "OS scheduled background sync",
+      "CameraX high-resolution QR analysis with focus/auto zoom and independent offline Java fallback",
+      "Verified APK update download and Android system installation; WeChat continues its own publication flow"
+    ],
+    "wechat": [
+      "encrypted WeChat storage and encrypted files",
+      "QR-bound authenticated LAN channel",
+      "foreground and network-change sync; background requests may be interrupted"
+    ]
+  },
+  "accountModes": [
+    "cloud",
+    "standalone"
+  ]
+}

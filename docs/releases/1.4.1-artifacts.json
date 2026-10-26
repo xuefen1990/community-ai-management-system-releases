@@ -1,0 +1,17 @@
+{
+  "version": "1.4.1",
+  "artifacts": [
+    {
+      "name": "村居AI管理系统-1.4.1-arm64.dmg",
+      "bytes": 201464025,
+      "sha256": "07add59f9c5c2266b61b4fc24b2b7a47838f890dd46d7eea16ef324d2e1c0a54",
+      "platform": "darwin-arm64"
+    },
+    {
+      "name": "community-ai-management-system-1.4.1-win-x64.exe",
+      "bytes": 143500642,
+      "sha256": "bbc92e4e5ed44b64d7446cd487e53e403af68a218bda630f54b00b86f8b45480",
+      "platform": "win32-x64"
+    }
+  ]
+}

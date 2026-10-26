@@ -25,7 +25,7 @@ async function request(base, pathname, { method = 'GET', token, body } = {}) {
   return { status: response.status, data: await response.json() };
 }
 
-test('平台管理员可以管理自己的完整工作区和子账号，不能读取其他主账号工作区', async t => {
+test('平台管理员管理自己的非财务工作区和子账号，财务入口只允许实际主账号', async t => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'platform-admin-workspace-'));
   const port = await freePort();
   const base = `http://127.0.0.1:${port}`;
@@ -58,15 +58,19 @@ test('平台管理员可以管理自己的完整工作区和子账号，不能�
   const workspace = await request(base, '/unit/workspace/data', { token: admin.data.token });
   assert.equal(workspace.status, 200);
   assert.deepEqual(workspace.data.data, {});
-  const written = await request(base, '/unit/workspace/data', { method: 'PUT', token: admin.data.token, body: {
+  const financeDenied = await request(base, '/unit/workspace/data', { method: 'PUT', token: admin.data.token, body: {
     version: workspace.data.version,
     data: { personnel: [{ id: 'resident-1', name: '测试居民' }], finances: [{ id: 'entry-1', amount: 75 }] },
+  } });
+  assert.equal(financeDenied.status, 403);
+  const written = await request(base, '/unit/workspace/data', { method: 'PUT', token: admin.data.token, body: {
+    version: workspace.data.version, data: { personnel: [{ id: 'resident-1', name: '测试居民' }] },
   } });
   assert.equal(written.status, 200);
   assert.equal(written.data.mainAccountId, admin.data.user.id);
   const reread = await request(base, '/unit/workspace/data', { token: admin.data.token });
   assert.deepEqual(reread.data.data.personnel, [{ id: 'resident-1', name: '测试居民' }]);
-  assert.deepEqual(reread.data.data.finances, [{ id: 'entry-1', amount: 75 }]);
+  assert.equal(reread.data.data.finances, undefined);
 
   const member = await request(base, '/auth/unit/members', { method: 'POST', token: admin.data.token, body: {
     phone: '13700000031', name: '测试子账号', preset: 'readonly',

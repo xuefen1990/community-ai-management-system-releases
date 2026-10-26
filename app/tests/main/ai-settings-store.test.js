@@ -83,3 +83,29 @@ test('reports an unreadable saved key without throwing when macOS secure storage
     baseUrl: 'https://api.openai.com/v1', model: '', encryptedApiKey: 'unreadable-key', apiKey: '', credentialStatus: 'secure-storage-unavailable',
   });
 });
+
+test('saving after secure storage recovers replaces the session key and survives restart', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-settings-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const store = new AiSettingsStore({ userDataPath: root, safeStorage: unavailableSafeStorage() });
+  await store.save({ mode: 'online', online: { apiKey: 'session-before-recovery' } });
+  store.safeStorage = fakeSafeStorage();
+  const saved = await store.save({ mode: 'online', online: { apiKey: 'new-secure-key' } });
+  assert.equal(saved.online.keyStorage, 'secure');
+  assert.equal((await store.getOnlineCredentials()).apiKey, 'new-secure-key');
+  const restarted = new AiSettingsStore({ userDataPath: root, safeStorage: fakeSafeStorage() });
+  assert.equal((await restarted.getOnlineCredentials()).apiKey, 'new-secure-key');
+  assert.doesNotMatch(await fs.readFile(store.filePath, 'utf8'), /session-before-recovery|new-secure-key/);
+});
+
+test('failed persistence keeps the previously working session credential', async (t) => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'community-ai-settings-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const store = new AiSettingsStore({ userDataPath: root, safeStorage: unavailableSafeStorage() });
+  await store.save({ mode: 'online', online: { apiKey: 'working-session-key' } });
+  const before = await fs.readFile(store.filePath, 'utf8');
+  await fs.mkdir(`${store.filePath}.tmp-${process.pid}`);
+  await assert.rejects(store.save({ mode: 'online', online: { apiKey: 'unsaved-session-key' } }));
+  assert.equal((await store.getOnlineCredentials()).apiKey, 'working-session-key');
+  assert.equal(await fs.readFile(store.filePath, 'utf8'), before);
+});

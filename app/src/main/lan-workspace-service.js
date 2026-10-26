@@ -12,6 +12,7 @@ const { startLanDiscoveryResponder } = require('./lan-discovery');
 const { LanAiState, normalizeImportedState } = require('./lan-ai-state');
 const { assertLocalDataPath } = require('./local-file-boundary');
 const { hashFile } = require('./foundation-backup-service');
+const { MobileWorkspaceService, mainOwner } = require('./mobile-workspace-service');
 
 const PORT = 3000;
 const MAX_BODY_BYTES = 50 * 1024 * 1024;
@@ -85,7 +86,7 @@ function actionsFor(before, after) {
 }
 
 class LanWorkspaceService {
-  constructor({ userDataPath, fetchImpl = globalThis.fetch, port = PORT, host = '0.0.0.0', discovery = true }) {
+  constructor({ userDataPath, fetchImpl = globalThis.fetch, port = PORT, host = '0.0.0.0', discovery = true, mobilePort, miniProgramPort }) {
     this.userDataPath = userDataPath;
     this.filesDirectory = path.join(userDataPath, 'data', 'foundation-archives');
     this.directory = path.join(userDataPath, 'lan-workspace');
@@ -99,6 +100,7 @@ class LanWorkspaceService {
     this.server = null; this.startPromise = null; this.preparePromise = null; this.queue = Promise.resolve(); this.config = null;
     this.grantWriteQueue = Promise.resolve();
     this.discoveryResponder = null;
+    this.mobile = new MobileWorkspaceService(this, { port: mobilePort ?? (port === 0 ? 0 : 3002), miniProgramPort });
   }
 
   async readConfig() {
@@ -282,8 +284,10 @@ class LanWorkspaceService {
       server.listen(this.config?.shareEnabled === false ? 0 : this.port, this.host, () => { this.server = server; resolve(); });
     }).finally(() => { this.startPromise = null; });
     await this.startPromise;
+    await this.mobile.start();
     if (this.discovery && this.host === '0.0.0.0' && !this.discoveryResponder) {
-      try { this.discoveryResponder = await startLanDiscoveryResponder({ httpPort: this.server.address().port }); }
+      try { this.discoveryResponder = await startLanDiscoveryResponder({ httpPort: this.server.address().port,
+        mobileInfo: () => { const info = this.mobile.info(); return info ? { mobilePort: info.port, miniProgramPort: this.mobile.miniProgram.info()?.port, workspaceId: info.workspaceId } : {}; } }); }
       catch (error) { console.warn('[LAN discovery]', error.message); }
     }
   }
@@ -294,35 +298,54 @@ class LanWorkspaceService {
     const enabled = Boolean(this.server?.listening && this.config?.shareEnabled !== false);
     return { enabled, localReady: Boolean(this.server?.listening), discoveryEnabled: Boolean(this.discoveryResponder), role: this.config ? enabled ? 'host' : 'local' : 'none', ips,
       url: enabled && ips.length ? `http://${ips[0]}:${port}` : null, port,
-      ownerId: this.config?.ownerId || null };
+      ownerId: this.config?.ownerId || null, mobile: this.mobile.info() };
   }
 
-  async authorize(req) {
+  async mobilePairing(address) { return this.mobile.pairing(address || localAddresses()[0] || '127.0.0.1'); }
+
+  async authorize(req, { refreshAfterMs = Infinity, maxOfflineAgeMs = Infinity } = {}) {
     const match = /^Bearer (\S+)$/u.exec(req.headers.authorization || '');
     if (!match) throw Object.assign(new Error('请先登录子账号'), { status: 401 });
+    let tokenExpiry = Infinity;
+    if (Number.isFinite(maxOfflineAgeMs)) {
+      try { const claims = JSON.parse(Buffer.from(match[1].split('.')[1], 'base64url').toString('utf8')); if (Number.isFinite(claims.exp)) tokenExpiry = claims.exp * 1000; } catch { /* Opaque test/legacy tokens still require online profile validation. */ }
+      if (tokenExpiry <= Date.now()) throw Object.assign(new Error('登录已到期，请重新联网登录'), { status: 401 });
+    }
     const key = createHash('sha256').update(match[1]).digest('hex');
     const saved = await this.readGrants();
     let grant = saved[key];
-    if (!grant) {
+    const age = grant ? Date.now() - Date.parse(grant.savedAt || '') : Infinity;
+    if (this.config.authMode === 'standalone' || !grant || Number.isFinite(refreshAfterMs) && (!Number.isFinite(age) || age >= refreshAfterMs)) {
       let response, entitlementResponse;
       try {
         [response, entitlementResponse] = await Promise.all(['/api/auth/profile', '/api/auth/entitlement'].map(route => this.fetchImpl(`${this.config.cloudBaseUrl}${route}`, {
           headers: { Authorization: `Bearer ${match[1]}`, Accept: 'application/json' }, signal: AbortSignal.timeout(8000),
         })));
-      } catch { throw Object.assign(new Error('此账号首次连接主电脑需要服务器在线核验'), { status: 503 }); }
-      if (!response.ok || !entitlementResponse.ok) throw Object.assign(new Error('账号验证失败，请重新联网登录'), { status: 401 });
-      const [{ user }, entitlement] = await Promise.all([response.json(), entitlementResponse.json()]);
-      grant = { user, entitlement, savedAt: new Date().toISOString() };
-      await this.saveGrant(key, grant);
+      } catch {
+        if (this.config.authMode === 'standalone' || !grant || !Number.isFinite(age) || age >= maxOfflineAgeMs) throw Object.assign(new Error('本机账号核验暂不可用，请确认主电脑账号服务正常'), { status: 503 });
+      }
+      if (response && entitlementResponse) {
+        if (response.ok && entitlementResponse.ok) {
+          const [{ user }, entitlement] = await Promise.all([response.json(), entitlementResponse.json()]);
+          grant = { user, entitlement, savedAt: new Date().toISOString() };
+          await this.saveGrant(key, grant);
+        } else if ([401, 403].includes(response.status) || [401, 403].includes(entitlementResponse.status)) {
+          await this.saveGrant(key, { user: null, entitlement: { valid: false }, savedAt: new Date().toISOString() });
+          throw Object.assign(new Error('账号验证失败，请重新联网登录'), { status: 401 });
+        } else if (this.config.authMode === 'standalone' || !grant || !Number.isFinite(age) || age >= maxOfflineAgeMs) {
+          throw Object.assign(new Error('账号服务器暂不可用，请稍后联网重试'), { status: 503 });
+        }
+      }
     }
     const { user, entitlement } = grant;
     if (!entitlement?.valid || entitlement.expiresAt && new Date(entitlement.expiresAt).getTime() <= Date.now()) {
       throw Object.assign(new Error('账号授权已到期，请联网续权'), { status: 403 });
     }
-    if (!user || user.mainAccountId !== this.config.ownerId || user.mustChangePassword || !user.isActive) {
+    if (!user || String(user.mainAccountId || user.id) !== String(this.config.ownerId) || user.mustChangePassword || !user.isActive) {
       throw Object.assign(new Error('此账号没有访问主电脑共享数据的权限'), { status: 403 });
     }
-    return user;
+    return { ...user, mobileOfflineUntil: Math.min(Date.parse(grant.savedAt) + 24 * 3600000,
+      entitlement.expiresAt ? Date.parse(entitlement.expiresAt) : Infinity, tokenExpiry) };
   }
 
   async readGrants() {
@@ -350,6 +373,7 @@ class LanWorkspaceService {
   }
 
   can(user, key, action) {
+    if (MODULES[key] === 'finance') return mainOwner(user, this.config?.ownerId);
     if (ADMIN_ROLES.has(user.role)) return true;
     if (key === 'financeOpeningBalance' && action !== 'view') return false;
     if (key === 'financeCategories' && action !== 'view') return action === 'create' && (this.can(user, 'finances', 'update') || this.can(user, 'finances', 'create'));
@@ -484,6 +508,7 @@ class LanWorkspaceService {
           for (const [key, value] of Object.entries(patch.data)) {
             if (['__proto__', 'constructor', 'prototype'].includes(key)) throw Object.assign(new Error('字段名不正确'), { status: 400 });
             if (isDeepStrictEqual(data[key], value)) continue;
+            if (MODULES[key] === 'finance' && !this.can(user, key, 'view')) throw Object.assign(new Error('财务仅限主账号使用'), { status: 403 });
             if (key === 'foundationDeletedRecords' && !ADMIN_ROLES.has(user.role)) {
               if (!Array.isArray(value) || !value.length || value.some(entry => entry?.domain !== '/finance-records'
                 || !entry.record?.id || ![...(current.data.finances || []), ...(current.data.financeRecords || [])].some(record => String(record.id) === String(entry.record.id))
@@ -504,9 +529,9 @@ class LanWorkspaceService {
           }
           const previousFinance = new Map([...(current.data.finances || []), ...(current.data.financeRecords || [])].map(row => [String(row.id), row]));
           const categoryChanges = (data.financeRecords?.length ? data.financeRecords : data.finances || []).filter(row => ['ai', 'rules'].includes(row.categorySource) && previousFinance.has(String(row.id)) && previousFinance.get(String(row.id)).category !== row.category);
-          if (categoryChanges.length && !ADMIN_ROLES.has(user.role)) (data.operationLogs ||= []).push({ id: randomUUID(), action: '智能整理收支科目', residentIds: categoryChanges.map(row => row.id), createdAt: new Date().toISOString(), source: 'foundation', accountId: user.id });
+          if (categoryChanges.length) (data.operationLogs ||= []).push({ id: randomUUID(), action: '智能整理收支科目', residentIds: categoryChanges.map(row => row.id), createdAt: new Date().toISOString(), source: 'foundation', accountId: user.id });
           const orderChanges = (data.financeRecords?.length ? data.financeRecords : data.finances || []).filter(row => previousFinance.has(String(row.id)) && (previousFinance.get(String(row.id)).transactionOrder !== row.transactionOrder || previousFinance.get(String(row.id)).orderConfirmed !== row.orderConfirmed));
-          if (orderChanges.length && !ADMIN_ROLES.has(user.role)) (data.operationLogs ||= []).push({ id: randomUUID(), action: '审核财务同日交易顺序', residentIds: orderChanges.map(row => row.id), createdAt: new Date().toISOString(), source: 'foundation', accountId: user.id });
+          if (orderChanges.length) (data.operationLogs ||= []).push({ id: randomUUID(), action: '审核财务同日交易顺序', residentIds: orderChanges.map(row => row.id), createdAt: new Date().toISOString(), source: 'foundation', accountId: user.id });
           const next = { ...current, version: current.version + 1, data, updatedAt: new Date().toISOString(), updatedBy: user.id };
           await this.writeJson(this.dataPath, next);
           const result = { mainAccountId: this.config.ownerId, version: next.version, updatedAt: next.updatedAt };
@@ -523,6 +548,7 @@ class LanWorkspaceService {
   }
 
   async stop() {
+    await this.mobile.stop();
     if (this.discoveryResponder) { const responder = this.discoveryResponder; this.discoveryResponder = null; await responder.close(); }
     if (!this.server) return;
     const server = this.server; this.server = null;

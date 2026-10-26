@@ -144,6 +144,7 @@ function requestedMemberPermissions(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw failure(400, '权限配置格式无效');
   const allowed = new Map(permissionPolicy.CATALOG.map(module => [module.id, new Set(module.actions)]));
   for (const [moduleId, actions] of Object.entries(value)) {
+    if (moduleId === 'finance') throw failure(400, '财务仅限主账号使用，不能分配给子账号');
     if (!allowed.has(moduleId) || !Array.isArray(actions) || actions.some(action => !allowed.get(moduleId).has(action))) throw failure(400, '权限配置中包含未知板块或操作');
   }
   return permissions(value);

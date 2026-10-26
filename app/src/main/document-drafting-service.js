@@ -1,6 +1,7 @@
 'use strict';
 
 const crypto = require('node:crypto');
+const { classifyWritingTask } = require('./ai-model-routing');
 
 const { getTemplate, listTemplates, validateFields } = require('./document-template-catalog');
 const { ALLOWED_BUSINESS_COLLECTIONS, buildDocumentContext, stableJson } = require('./document-context-builder');
@@ -530,7 +531,9 @@ class DocumentDraftingService {
       currentFields: document.conversationState?.fields || document.fieldSnapshot || {},
       currentContent: document.workingContentText || currentVersion?.contentText || '',
       referencePrompt: context.prompt,
-    }), task: { taskTier: 'deep', taskKind: 'document-draft', taskId: documentId } });
+    }), task: { taskTier: classifyWritingTask({ instructions: userMessage,
+      documentKind: document.documentKind === 'contract' ? 'contract' : detectDocumentKind(userMessage, preferredKind),
+      referenceCount: selectedReferences.length }), maxTokens: 4096, taskKind: 'document-draft', taskId: documentId } });
     const plan = parseConversationResponse(aiResponse?.content, {
       fallbackKind: document.documentKind,
       fallbackTemplateId: document.templateId,
@@ -615,7 +618,9 @@ class DocumentDraftingService {
     const response = await this.aiRouter.chat({ messages: [
       { role: 'system', content: "你是村居公文拟写助手。输出完整正文，不要输出分析过程。所有事实必须来自用户字段或明确提供的参考资料。" },
       { role: 'user', content: `${context.prompt}${instructions ? `\n\n补充修改要求：${cleanText(instructions)}` : ''}` },
-    ], task: { taskTier: 'deep', taskKind: 'document-draft', taskId: documentId } });
+    ], task: { taskTier: classifyWritingTask({ instructions: `${JSON.stringify(validation.fields)}\n${instructions}`,
+      documentKind: document.documentKind, referenceCount: selectedReferences.length }),
+      maxTokens: 4096, taskKind: 'document-draft', taskId: documentId } });
     const contentText = cleanText(response?.content);
     if (!contentText) throw new Error('AI 未返回有效正文，请重试或切换模型');
     const outcome = await this.databaseStore.update((freshDatabase) => {

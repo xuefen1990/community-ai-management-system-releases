@@ -1,3 +1,5 @@
+import {installResidentBulkDelete} from './resident-bulk-delete.mjs';
+import {installResidentImportReview} from './resident-import-review.mjs';
 import { app, router, useAppStore, usePersonnelStore, useOverviewStore } from './vendor/assets/foundation-runtime.mjs';
 import { installExtensions, loadScript } from './extensions.mjs';
 import { installStatisticsFinanceChart } from './statistics-finance-chart.mjs';
@@ -8,6 +10,7 @@ import { installSettingsReferenceSync } from './settings-reference-sync.mjs';
 import { installResidentEditor } from './resident-editor.mjs';
 import { installHouseholdMemberRegistration } from './household-member-registration.mjs';
 import { initializeMenuConfiguration } from './settings-panels.mjs';
+import { installSpecialCategoryDisplay } from './special-category-display.mjs';
 import { needsLanSetup } from './workspace-connection.mjs';
 
 // The desktop preload supplies authenticated operations backed by our own
@@ -29,6 +32,9 @@ initializeMenuConfiguration(shell);
 installCommunitySettings();
 installSettingsReferenceSync();
 installResidentEditor(loadScript);
+installSpecialCategoryDisplay(usePersonnelStore());
+installResidentBulkDelete(usePersonnelStore());
+installResidentImportReview();
 installHouseholdMemberRegistration(loadScript);
 app.mount('#app');
 // Subscribe before the native startup update check can emit its result.

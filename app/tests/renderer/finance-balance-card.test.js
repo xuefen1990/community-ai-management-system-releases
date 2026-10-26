@@ -33,6 +33,8 @@ test('overview registers an in-place card using cumulative balance and refreshes
 test('overview only requests financial data for authorized accounts', async () => {
   const denied = fixture('member', { workspace: ['view'] }); await denied.mount();
   assert.equal(denied.requests(), 0); assert.equal(denied.render(), null);
-  const allowed = fixture('member', { finance: ['view'] }); await allowed.mount();
+  const legacy = fixture('member', { finance: ['view', 'update'] }); await legacy.mount();
+  assert.equal(legacy.requests(), 0); assert.equal(legacy.render(), null);
+  const allowed = fixture('main_account'); await allowed.mount();
   assert.equal(allowed.requests(), 1); assert.match(JSON.stringify(allowed.render()), /账户余额/);
 });

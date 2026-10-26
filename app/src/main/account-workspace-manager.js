@@ -28,7 +28,10 @@ class AccountWorkspaceManager {
   }
 
   makeService(root) {
-    return new LanWorkspaceService({ userDataPath: root, ...this.options });
+    const service = new LanWorkspaceService({ userDataPath: root, ...this.options });
+    service.directAiChat = (user, messages, options) => this.directAiChat(user, messages, options);
+    service.directAiCapabilities = user => this.directAiCapabilities(user);
+    return service;
   }
 
   async loadExisting() {
@@ -100,6 +103,19 @@ class AccountWorkspaceManager {
   }
   deactivate() { this.activeOwnerId = null; }
 
+  async useLocalAuthority(ownerId, baseUrl) {
+    const service = await this.serviceFor(ownerId);
+    const config = await service.readConfig();
+    if (!config) return;
+    const url = new URL(baseUrl);
+    if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw new Error('本机账号服务地址不正确');
+    if (String(config.ownerId) !== String(ownerId)) throw new Error('工作区归属不一致');
+    if (config.authMode === 'standalone' && config.cloudBaseUrl === baseUrl) return;
+    await service.stop();
+    await service.writeJson(service.configPath, { ...config, authMode: 'standalone', cloudBaseUrl: baseUrl });
+    service.config = null;
+  }
+
   async prepareLocal({ ownerId, cloudBaseUrl }) {
     if (this.migrating) throw new Error('工作区正在搬迁，请稍候');
     const service = await this.serviceFor(ownerId);
@@ -108,12 +124,20 @@ class AccountWorkspaceManager {
     }
     const local = await service.prepareLocal({ ownerId, cloudBaseUrl });
     this.activeOwnerId = String(ownerId);
+    // A busy LAN port must not repeatedly restart the working local-only server.
+    if (service.config?.authMode === 'standalone' && service.localOnlyAfterShareFailure) return local;
     try {
       const shared = await service.enableSharing();
       this.lastShareError = '';
       return { baseUrl: `http://127.0.0.1:${shared.port}`, ownerId };
     } catch (error) {
       this.lastShareError = error.message || '局域网共享启动失败';
+      if (service.config?.authMode === 'standalone') {
+        service.localOnlyAfterShareFailure = true;
+        const current = service.info();
+        if (!current.localReady) throw new Error('本机资料服务启动失败：' + this.lastShareError);
+        return { baseUrl: `http://127.0.0.1:${current.port}`, ownerId };
+      }
       return local;
     }
   }
@@ -125,13 +149,17 @@ class AccountWorkspaceManager {
       if (ownerId !== this.activeOwnerId && service.info().enabled)
         throw new Error('本电脑已有其他主账号开启共享，请先关闭该账号的共享后再启用');
     }
-    return active.enableSharing();
+    const result = await active.enableSharing();
+    active.localOnlyAfterShareFailure = false;
+    this.lastShareError = '';
+    return result;
   }
 
   async disableSharing() {
     if (!this.active) throw new Error('请先登录主账号并打开本机数据');
     return this.active.disableSharing();
   }
+  async mobilePairing(address) { if (!this.active) throw new Error('请先登录主账号'); return this.active.mobilePairing(address); }
 
   async initializeWorkspace(input) {
     const service = await this.serviceFor(input.ownerId);

@@ -1,5 +1,6 @@
 'use strict';
 
+const { extractAiJsonObject } = require('./ai-json-response');
 const { getTemplate, listTemplates, validateFields } = require('./document-template-catalog');
 
 const CONTRACT_REQUIRED = Object.freeze([
@@ -48,12 +49,20 @@ function buildConversationMessages({
   currentContent = '',
   referencePrompt = '无',
 }) {
-  const templates = listTemplates().filter((item) => !item.isCustom).map((item) => ({
-    id: item.id,
-    documentKind: item.documentKind,
-    name: item.name,
-    fields: item.fields.map((field) => ({ key: field.key, label: field.label, required: Boolean(field.required) })),
-  }));
+  // Report/contract templates share their field definitions. Send each schema once,
+  // while keeping every template available and all selected facts intact.
+  const fieldSchemas = {};
+  const schemaIds = new Map();
+  const templates = listTemplates().filter((item) => !item.isCustom).map((item) => {
+    const fields = item.fields.map((field) => ({ key: field.key, label: field.label, required: Boolean(field.required) }));
+    const key = JSON.stringify(fields);
+    if (!schemaIds.has(key)) {
+      const id = `fields-${schemaIds.size + 1}`;
+      schemaIds.set(key, id);
+      fieldSchemas[id] = fields;
+    }
+    return { id: item.id, documentKind: item.documentKind, name: item.name, fieldsSchema: schemaIds.get(key) };
+  });
   const schema = {
     documentKind: 'report 或 contract',
     templateId: '上方模板中的一个 id',
@@ -67,10 +76,11 @@ function buildConversationMessages({
       content: [
         "你是村居公文拟写助手。收到用户要求后必须直接生成完整正文，不得向用户追问。",
         '只输出一个可解析的严格 JSON 对象，不要 Markdown 代码块，不要分析过程，不要输出 JSON 之外的文字。',
-        `不得杜撰姓名、主体、金额、日期、政策编号或其他事实。普通缺失内容可以省略；合同必需信息缺失时使用${REQUIRED_PLACEHOLDER}。`,
+        `不得杜撰姓名、主体、金额、日期、政策编号或其他事实。地点、工作方式、成效、问题和统计数字等未提供的信息，不得扩写成已经发生的事实。未提供的成效和问题章节直接省略，不得写成“没有问题”“未收到反馈”或“意识增强”。不要为凑字数编造；合同必需信息缺失时使用${REQUIRED_PLACEHOLDER}。`,
         `合同中的甲乙双方、标的或服务、金额或计价、期限、付款、违约责任和争议解决缺失时，字段和正文都必须明确写${REQUIRED_PLACEHOLDER}，不能因此停止生成。`,
         `输出结构：${JSON.stringify(schema)}`,
         `可选模板：${JSON.stringify(templates)}`,
+        `模板字段定义（按 fieldsSchema 取用）：${JSON.stringify(fieldSchemas)}`,
       ].join('\n'),
     },
     {
@@ -87,18 +97,6 @@ function buildConversationMessages({
   ];
 }
 
-function extractJson(value) {
-  const normalized = cleanText(value).replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '');
-  const start = normalized.indexOf('{');
-  const end = normalized.lastIndexOf('}');
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(normalized.slice(start, end + 1));
-  } catch {
-    return null;
-  }
-}
-
 function parseConversationResponse(content, {
   fallbackKind = 'report',
   fallbackTemplateId = defaultTemplateFor(fallbackKind),
@@ -106,7 +104,11 @@ function parseConversationResponse(content, {
 } = {}) {
   const normalizedContent = cleanText(content);
   if (!normalizedContent) throw new Error('AI 未返回完整公文正文，请重试');
-  const parsed = extractJson(normalizedContent) || { documentText: normalizedContent };
+  const structured = extractAiJsonObject(normalizedContent);
+  if (!structured && /^\s*(?:```(?:json)?\s*)?\{/iu.test(normalizedContent)) {
+    throw new Error('AI 返回公文格式不完整，请保留当前草稿后重试');
+  }
+  const parsed = structured || { documentText: normalizedContent };
   const documentKind = ['report', 'contract'].includes(parsed.documentKind) ? parsed.documentKind : fallbackKind;
   let templateId = cleanText(parsed.templateId) || fallbackTemplateId;
   let template;

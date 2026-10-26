@@ -135,17 +135,31 @@
   body.community-green-skin .app-main .btn-text { padding: 4px 6px; }
   body.community-green-skin .app-main .el-button { border-radius: 7px; font-size: 12px; }
   body.community-green-skin.light-theme .el-button--primary { --el-button-bg-color: var(--primary); --el-button-border-color: var(--primary); --el-button-hover-bg-color: var(--primary-hover); --el-button-hover-border-color: var(--primary-hover); }
+  /* Plain primary buttons keep a light surface and readable green text. */
+  body.community-green-skin.light-theme .el-button--primary.is-plain {
+    --el-button-bg-color: var(--skin-active);
+    --el-button-text-color: var(--primary-dark);
+    --el-button-border-color: color-mix(in srgb, var(--primary) 30%, var(--border-color));
+    --el-button-hover-bg-color: var(--primary-hover);
+    --el-button-hover-border-color: var(--primary-hover);
+    --el-button-hover-text-color: #fff;
+    --el-button-active-bg-color: var(--primary-dark);
+    --el-button-active-border-color: var(--primary-dark);
+    --el-button-active-text-color: #fff;
+  }
   body.community-green-skin .app-main :is(.el-input__wrapper, .el-select__wrapper) { border-radius: 7px; }
   body.community-green-skin.light-theme .app-main :is(.el-input__wrapper, .el-select__wrapper) { background: #fff; }
   body.community-green-skin.light-theme .app-main .glass-filter-panel { background: #fff; border-color: var(--border-color); box-shadow: var(--shadow-sm); border-radius: 10px; }
   body.community-green-skin .glass-filter-panel { padding: 12px; gap: 12px; flex-wrap: wrap; }
   body.community-green-skin .table-wrapper { min-width: 0; }
-  /* Summary cards must not consume the resident table's entire viewport at
-     the minimum window size. The main area can scroll to the remaining rows. */
-  body.community-green-skin #tab-personnel, body.community-green-skin #tab-personnel .personnel-view { overflow: visible; }
+  /* Keep resident rows and pagination in the viewport. At small sizes the
+     summary remains available in its own scroll area instead of pushing the
+     table beyond the window. */
+  body.community-green-skin #tab-personnel { overflow: hidden; }
+  body.community-green-skin #tab-personnel .personnel-header-card { max-height: min(40vh, calc(100% - 408px)); overflow-y: auto; }
   body.community-green-skin #tab-personnel .land-table-container { overflow: clip; }
-  body.community-green-skin #tab-personnel .personnel-content-card { flex: 1 0 340px; min-height: 340px; overflow: clip; }
-  body.community-green-skin #tab-personnel .el-table__body-wrapper { min-height: 160px; }
+  body.community-green-skin #tab-personnel .personnel-content-card { flex: 1 1 400px; min-height: 400px; overflow: clip; }
+  body.community-green-skin #tab-personnel .el-table__body-wrapper { min-height: 150px; }
   body.community-green-skin.light-theme .data-table thead th {
     background: #f8fafb !important;
     color: var(--text-secondary) !important;
@@ -367,3 +381,50 @@
     body.community-green-skin :is(.menu-item, .wb-stat-card, .action-card) { transition: none; }
   }
 }
+
+/* Editable resident category configuration, outside the locked runtime. */
+.community-category-hidden { display: none !important; }
+.special-category-manager { padding: 20px; color: var(--text-main); }
+.special-category-manager-head, .special-category-card-head, .special-category-editor-head,
+.special-category-editor-actions { display: flex; align-items: center; gap: 10px; }
+.special-category-manager-head { justify-content: space-between; margin-bottom: 18px; flex-wrap: wrap; }
+.special-category-manager h3, .special-category-editor h3 { margin: 0 0 8px; }
+.special-category-manager p { margin: 6px 0 12px; line-height: 1.6; }
+.special-category-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,320px),1fr)); gap: 14px; }
+.special-category-card { border: 1px solid var(--border-color); border-radius: 10px; padding: 16px; background: var(--bg-card, #fff); line-height: 1.8; min-width: 0; }
+.special-category-card-head { flex-wrap: wrap; }
+.special-category-card-head strong { overflow-wrap: anywhere; }
+.special-category-card-actions { display: flex; gap: 7px; margin-left: auto; }
+.special-category-kind { color: var(--primary); font-size: 12px; border: 1px solid var(--border-color); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+.special-category-canonical, .special-category-muted { color: var(--text-secondary); font-size: 13px; }
+.special-category-section-label { font-size: 13px; margin-right: 4px; }
+.special-category-field-pill { display: inline-block; font-size: 12px; border: 1px solid var(--border-color); border-radius: 4px; padding: 1px 6px; margin: 3px; overflow-wrap: anywhere; }
+.special-category-button { border: 1px solid var(--border-color); color: var(--primary-dark, #047857); background: var(--skin-active, #e1f5ec); padding: 6px 12px; border-radius: 6px; font: inherit; cursor: pointer; white-space: nowrap; }
+.special-category-button:hover { border-color: var(--primary); }
+.special-category-button.primary { color: #fff; background: var(--primary); border-color: var(--primary); }
+.special-category-button.danger { color: #c13939; background: #fff4f4; border-color: #f1cccc; }
+.special-category-button:disabled { opacity: .55; cursor: wait; }
+.special-category-deleted-toggle { margin-top: 20px; padding: 8px; border: 0; background: transparent; color: var(--primary); cursor: pointer; font: inherit; }
+.special-category-deleted { margin-top: 10px; }
+.special-category-backdrop { position: fixed; inset: 0; z-index: 3000; background: #172b3b66; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.special-category-editor { background: var(--bg-card, #fff); border-radius: 12px; width: min(760px,100%); max-height: calc(100vh - 48px); overflow-y: auto; padding: 24px; box-shadow: 0 12px 40px #172b3b33; }
+.special-category-editor label { display: grid; gap: 8px; margin-top: 18px; }
+.special-category-editor input, .special-category-editor select { min-width: 0; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-card, #fff); color: var(--text-main); padding: 9px 10px; font: inherit; }
+.special-category-editor input:focus, .special-category-editor select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+.special-category-editor-head { margin: 20px 0 10px; justify-content: space-between; }
+.special-category-editor-head h4 { margin: 0; }
+.special-category-field-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.special-category-field-row input { flex: 1 1 150px; }
+.special-category-editor-actions { justify-content: flex-end; flex-wrap: wrap; padding-top: 16px; }
+.special-category-error { color: #c13939; }
+@media (max-width: 1100px) { .special-category-manager { padding: 14px; } .special-category-card { padding: 12px; } }
+
+.special-basic-field { padding: 12px; margin-bottom: 12px; border: 1px solid var(--border-color); border-radius: 8px; }
+.special-basic-field.is-deleted, .special-category-field-pill.is-deleted { background: var(--bg-secondary, #f5f7f7); }
+.special-category-field-pill.is-deleted { color: var(--text-secondary); text-decoration: line-through; }
+.special-basic-field.is-deleted > .special-category-field-row input { text-decoration: line-through; }
+.special-basic-options { padding-left: 16px; border-left: 2px solid var(--border-color); }
+.special-basic-options .is-deleted input { text-decoration: line-through; color: var(--text-secondary); }
+.special-basic-type { padding: 8px 0; font-size: 13px; color: var(--text-secondary); }
+.community-basic-select { width: 100%; height: 36px; padding: 6px 10px; font: inherit; color: var(--text-primary); background: var(--bg-card, #fff); border: 1px solid var(--border-color); border-radius: 6px; }
+.community-basic-select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }

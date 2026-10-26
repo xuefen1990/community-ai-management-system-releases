@@ -1,4 +1,5 @@
-import { backupPanel, accountPanel, aiSettingsPanel, lanPanel, menuPanel, createElementVNode as h, ref, onMounted, useAppStore, useAuthStore, useDialogStore } from './vendor/assets/foundation-runtime.mjs';
+import { backupPanel, accountPanel, aiSettingsPanel, lanPanel, menuPanel, createElementVNode as h, createVNode as component, ref, onMounted, useAppStore, useAuthStore, useDialogStore } from './vendor/assets/foundation-runtime.mjs';
+import { StandaloneAiSettings } from './standalone-ai-settings.mjs';
 import { loadScript } from './extensions.mjs';
 import { readMenuConfiguration, sortMenuItems, moveMenuRow, menuRows, menuConfigFromRows, orderDefaultMenus } from './menu-configuration.mjs';
 let defaultMenuOrder = [];
@@ -26,8 +27,12 @@ export function installCommunitySettings() {
     const status = ref('');
     const rows = ref(menuRows(shell.allMenus, shell.menuVisibilityConfig));
     onMounted(() => {
-      void window.api.getAccountPreferences().then(preferences => {
-        const config = preferences?.menu || {};
+      void window.api.getAccountPreferences().then(async preferences => {
+        let config = preferences?.menu || {};
+        const server = await window.api.getRemoteServerConfig();
+        if (server.mode === 'standalone' && !preferences?.updatedAt && Object.keys(shell.menuVisibilityConfig || {}).length) {
+          config = shell.menuVisibilityConfig; await window.api.saveAccountPreferences({ menu: config });
+        }
         rows.value = menuRows(sortMenuItems(shell.allMenus, config, defaultMenuOrder), config);
       }).catch(error => { status.value = error.message || '暂时无法读取账号菜单设置'; });
     });
@@ -99,19 +104,19 @@ export function installCommunitySettings() {
       h('h3', {}, "村居账号与应用更新"), h('p', {}, `${account.value.account?.name || ''} ${account.value.account?.phone || ''}`),
       h('p', {}, `当前版本：${version.value} · ${account.value.entitlement?.label || account.value.entitlement?.type || ''}`),
       h('div', { class: 'foundation-setting-actions' }, [
-        button('检查更新', () => run(async () => { await loadScript('js/update-ui.js'); const result = await window.api.checkForAppUpdate(); if (result.disabled) { status.value = '独立开发版不检查正式更新'; return; } if (!result.ok) throw new Error(result.error || '检查更新失败'); status.value = '已发起检查，请查看更新提示。'; }), busy.value, 'community-update-check'),
+        button('检查更新', () => run(async () => { await loadScript('js/update-ui.js'); const result = await window.api.checkForAppUpdate(); if (result.disabled) { status.value = result.message || '独立开发版不检查正式更新'; return; } if (!result.ok) throw new Error(result.error || '检查更新失败'); status.value = '已发起检查，请查看更新提示。'; }), busy.value, 'community-update-check'),
         ['unit_admin', 'main_account'].includes(account.value.account?.role) ? button('成员与权限', () => run(async () => { await loadScript('js/unit-member-management-ui.js'); await window.unitMemberManagement.open(account.value); }), busy.value) : null,
         button('同步账号授权', () => run(async () => { await auth.refresh(); await load(); status.value = '账号授权已刷新'; }), busy.value),
         button('退出登录', () => run(() => auth.logout()), busy.value),
       ]),
-      h('details', {}, [h('summary', {}, '离线授权激活'), h('p', {}, `本机设备码：${account.value.machineId || ''}`),
+      account.value.mode === 'standalone' ? null : h('details', {}, [h('summary', {}, '离线授权激活'), h('p', {}, `本机设备码：${account.value.machineId || ''}`),
         field('授权码', activation.value, value => activation.value = value), button('验证并激活', () => run(async () => { await window.api.activateOfflineLicense(activation.value.trim()); activation.value = ''; await auth.refresh(); await load(); status.value = '授权已更新'; }), busy.value)]),
-      message(status), h('p', {}, "账号、单位、AI 和更新继续使用村居系统配置的服务。"),
+      message(status), h('p', {}, account.value.mode === 'standalone' ? '账号在本机验证；本机独立版使用下载安装包更新。' : '账号、单位、AI 和更新继续使用村居系统配置的服务。'),
     ]);
   };
   aiSettingsPanel.setup = () => {
     const { busy, status, run } = taskState();
-    const settings = ref({ mode: 'local', localModelPath: '', online: {} });
+    const settings = ref(null);
     const models = ref([]), runtime = ref({ running: false });
     const quota = ref(null), usage = ref([]), usagePagination = ref({ page: 1, totalPages: 1, total: 0 });
     const quotaStatus = ref(''); const backendUrl = ref('');
@@ -133,9 +138,12 @@ export function installCommunitySettings() {
         backendUrl.value = server?.baseUrl || '';
       } catch (error) { quotaStatus.value = error?.message || '暂时无法读取在线 AI 额度，请先登录单位账号'; }
     };
-    onMounted(() => run(async () => { settings.value = await window.api.getAiSettings(); await Promise.all([refreshRuntime(), refreshQuota()]); }));
+    onMounted(() => run(async () => {
+      settings.value = await window.api.getAiSettings();
+      if (settings.value.runtimeMode !== 'standalone') await Promise.all([refreshRuntime(), refreshQuota()]);
+    }));
     const save = async () => { settings.value = await window.api.saveAiSettings({ mode: settings.value.mode, localModelPath: settings.value.localModelPath }); status.value = 'AI 设置已保存'; };
-    return () => h('section', { class: 'foundation-settings-panel', 'data-testid': 'community-ai-settings' }, [h('h3', {}, 'AI 服务设置'),
+    return () => !settings.value ? h('section', { class: 'foundation-settings-panel' }, [h('h3', {}, 'AI 服务设置'), h('p', { role: status.value ? 'alert' : 'status' }, status.value || '正在读取 AI 设置…')]) : settings.value.runtimeMode === 'standalone' ? component(StandaloneAiSettings) : h('section', { class: 'foundation-settings-panel', 'data-testid': 'community-ai-settings' }, [h('h3', {}, 'AI 服务设置'),
       h('label', { class: 'foundation-setting-field' }, [h('span', {}, '运行方式'), h('select', { value: settings.value.mode, onChange: event => settings.value.mode = event.target.value },
         [['local', '本机模型'], ['online', '在线模型'], ['auto', '自动选择']].map(([value, label]) => h('option', { value }, label)))]),
       field('本机模型路径', settings.value.localModelPath, value => settings.value.localModelPath = value),
@@ -181,6 +189,7 @@ export function installCommunitySettings() {
   lanPanel.setup = () => {
     const { busy, status, run } = taskState();
     const baseUrl = ref('');
+    const localMode = ref(false);
     const account = ref(null), lanInfo = ref(null), hosts = ref([]), hostIp = ref('');
     const lanBusy = ref(false), lanStatus = ref(''), lanError = ref(false);
     const isMember = () => account.value?.role === 'member';
@@ -215,7 +224,8 @@ export function installCommunitySettings() {
       location.reload();
     });
     onMounted(() => run(async () => {
-      baseUrl.value = (await window.api.getRemoteServerConfig()).baseUrl || '';
+      const config = await window.api.getRemoteServerConfig();
+      baseUrl.value = config.baseUrl || ''; localMode.value = config.mode === 'standalone';
       await loadLan();
     }));
     const fallbackConnection = () => !window.communitySettingsReferenceSync && isMember() ? h('section', { class: 'foundation-settings-panel foundation-lan-fallback', 'data-testid': 'legacy-lan-connection-panel' }, [
@@ -233,7 +243,7 @@ export function installCommunitySettings() {
       ]),
       lanStatus.value ? h('p', { class: `foundation-setting-message${lanError.value ? ' is-error' : ''}`, role: lanError.value ? 'alert' : 'status' }, lanStatus.value) : null,
     ]) : null;
-    return () => h('div', {}, [fallbackConnection(), h('section', { class: 'foundation-settings-panel' }, [h('h3', {}, "村居单位服务"),
+    return () => localMode.value ? h('section', { class: 'foundation-settings-panel' }, [h('h3', {}, '本机独立运行'), h('p', {}, '账号在主电脑验证，业务资料仍留在主电脑。其他电脑请退出到登录页，选择“连接主电脑 / 本机模式”，粘贴手机互联页面的完整配对码后使用成员账号登录。')]) : h('div', {}, [fallbackConnection(), h('section', { class: 'foundation-settings-panel' }, [h('h3', {}, "村居单位服务"),
       h('p', {}, "单位账号和共享工作区使用村居系统的服务地址。"), field('服务地址', baseUrl.value, value => baseUrl.value = value),
       button('检查连接并保存', () => run(async () => { const result = await window.api.checkRemoteServerConnection({ baseUrl: baseUrl.value }); if (result.ok === false) throw new Error(result.error || '连接失败'); await window.api.setRemoteServerConfig({ baseUrl: baseUrl.value }); await useAuthStore().refresh(); location.reload(); }), busy.value), message(status)])]);
   };

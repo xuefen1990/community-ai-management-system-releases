@@ -91,11 +91,13 @@ test('import metadata and audit decisions survive workspace backup restoration',
  const service=new FoundationBackupService({store,authorize:async()=>{}}),backup=await service.create();await store.update(database=>{database.finances=[];database.financeRecords=[];database.financeImportBatches=[];return true;});
  await service.restore(backup.relativePath);const restored=await store.read();assert.equal(restored.finances.length,15);assert.deepEqual(restored.financeImportBatches[0].sourceAudit,db.financeImportBatches[0].sourceAudit);assert.deepEqual(restored.finances[4].sourceRaw,db.finances[4].sourceRaw);
 });
-test('import requests retain member create permission, and viewers cannot write',async()=>{
+test('finance imports reject legacy member create permission and allow the actual main account',async()=>{
  const {FoundationAuthService}=require('../../src/main/foundation-auth-service');
  const auth=new FoundationAuthService({store:{},authService:{getStatus:async()=>({authenticated:true,entitlement:{type:'licensed'},account:{role:'member',permissions:{finance:['view']}}})}});
  await assert.rejects(auth.authorize({method:'POST',path:'/finance-imports'}),{code:'FORBIDDEN'});
  auth.authService.getStatus=async()=>({authenticated:true,entitlement:{type:'licensed'},account:{role:'member',permissions:{finance:['view','create']}}});
+ await assert.rejects(auth.authorize({method:'POST',path:'/finance-imports'}),{code:'FORBIDDEN'});
+ auth.authService.getStatus=async()=>({authenticated:true,entitlement:{type:'licensed'},account:{id:'owner',mainAccountId:'owner',role:'main_account'}});
  await auth.authorize({method:'POST',path:'/finance-imports'});
 });
 

@@ -49,6 +49,7 @@ export async function checkGreenSkinLayout(width, height) {
   assert([...document.querySelectorAll('.sidebar-menu .menu-item')].map(item => item.textContent.trim()).join('|') === menus.map(item => item[0]).join('|'), '15 项默认菜单名称或顺序不正确');
   assert([...document.querySelectorAll('[data-skin-group-start]')].map(item => item.dataset.skinGroupStart).join('|') === '常用|居民服务|办公文书|资金土地|值班事项|智能与系统', '侧栏分类缺失或重复');
   const results = [];
+  let residentPagination;
   for (const [label, route] of menus) {
     await openGreenSkinRoute(route);
     assert(!document.querySelector('.foundation-extension-error'), `${label} 扩展错误`);
@@ -111,13 +112,31 @@ export async function checkGreenSkinLayout(width, height) {
     if (route === '/personnel') {
       const body = main.querySelector('.el-table__body-wrapper');
       assert(body && body.getBoundingClientRect().height >= 150, '居民表格被摘要挤压，无法查看数据行');
-      assert(height - main.querySelector('.pagination-bar').getBoundingClientRect().bottom >= -1 && height - main.querySelector('.pagination-bar').getBoundingClientRect().bottom <= 6, `居民分页未贴近窗口底边 ${width}x${height} footer=${main.querySelector('.pagination-bar').getBoundingClientRect().bottom} main=${main.getBoundingClientRect().bottom}`);
+      const pager = main.querySelector('.pagination-bar');
+      const bounds = pager.getBoundingClientRect();
+      const ancestors = [];
+      for (let parent = pager.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        ancestors.push({className:parent.className,id:parent.id,rect:parent.getBoundingClientRect().toJSON(),overflowY:style.overflowY,flex:style.flex,minHeight:style.minHeight,scrollHeight:parent.scrollHeight,clientHeight:parent.clientHeight});
+      }
+      residentPagination = { viewport:{width,height}, footer:bounds.toJSON(), tableHeight:body.getBoundingClientRect().height, ancestors };
+      assert(height - bounds.bottom >= -1 && height - bounds.bottom <= 6, `居民分页未贴近窗口底边 ${JSON.stringify(residentPagination)}`);
+      for (const target of pager.querySelectorAll('button,input,.pagination-info')) {
+        if (!visible(target) || target.disabled) continue;
+        // Element Plus paints the combobox label over its readonly input;
+        // the enclosing select wrapper is the actual clickable surface.
+        const surface = target.closest('.el-select__wrapper') || target;
+        const r = surface.getBoundingClientRect();
+        assert(r.top >= bounds.top - 1 && r.bottom <= height + 1, `居民分页操作越界：${target.textContent.trim()}`);
+        const hit = document.elementFromPoint(r.x + r.width / 2,r.y + r.height / 2);
+        assert(hit === surface || surface.contains(hit), `居民分页操作被遮挡：${target.outerHTML} hit=${hit?.outerHTML}`);
+      }
     }
     results.push({ label, route, mainWidth: main.clientWidth, mainScrollWidth: main.scrollWidth, clickableControl: control?.textContent.trim() });
   }
   for (const [, route] of [...menus].reverse()) await openGreenSkinRoute(route);
   assert(document.querySelectorAll('#community-skin-titlebar').length === 0, '切换后独立标题栏重新出现');
-  return { width, height, pages: results, reverseNavigation: true };
+  return { width, height, pages: results, reverseNavigation: true, residentPagination };
 }
 
 export async function checkGreenSkinCompatibility() {

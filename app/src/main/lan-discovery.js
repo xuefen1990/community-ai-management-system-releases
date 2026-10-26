@@ -27,13 +27,13 @@ function parsePacket(buffer) {
   } catch { return null; }
 }
 
-async function startLanDiscoveryResponder({ httpPort, port = DISCOVERY_PORT, name = os.hostname(), socketFactory = dgram.createSocket } = {}) {
+async function startLanDiscoveryResponder({ httpPort, port = DISCOVERY_PORT, name = os.hostname(), socketFactory = dgram.createSocket, mobileInfo = () => ({}) } = {}) {
   const socket = socketFactory('udp4');
   socket.on('message', (message, remote) => {
     const packet = parsePacket(message);
     if (packet?.type !== 'discover') return;
     const response = Buffer.from(JSON.stringify({ protocol: PROTOCOL, type: 'host', nonce: packet.nonce,
-      port: httpPort, name: String(name || '主电脑').slice(0, 80) }));
+      port: httpPort, name: String(name || '主电脑').slice(0, 80), ...mobileInfo() }));
     socket.send(response, remote.port, remote.address);
   });
   try {

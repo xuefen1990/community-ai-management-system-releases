@@ -74,15 +74,16 @@ test('order save validates every version before writing, audits and recomputes b
   assert.equal((await call(f,'/finance-transaction-order','PATCH',request)).ok,false);
 });
 
-test('member balance review and order permissions reuse finance view/update without granting opening writes',async()=>{
-  const status={authenticated:true,entitlement:{type:'licensed'},account:{role:'member',permissions:{finance:['view']}}};
+test('balance review and order reject historical member permissions; main account retains all finance operations',async()=>{
+  const status={authenticated:true,entitlement:{type:'licensed'},account:{id:'member',mainAccountId:'owner',role:'member',permissions:{finance:['view','update']}}};
   const auth=new FoundationAuthService({authService:{getStatus:async()=>status}});
+  for(const request of [{method:'GET',path:'/finance-balance-review'},{method:'PATCH',path:'/finance-transaction-order'},{method:'PATCH',path:'/finance-opening-balance'}]){
+    await assert.rejects(auth.authorize(request),{code:'FORBIDDEN'});
+  }
+  status.account={id:'owner',mainAccountId:'owner',role:'main_account'};
   await auth.authorize({method:'GET',path:'/finance-balance-review'});
-  await assert.rejects(auth.authorize({method:'PATCH',path:'/finance-transaction-order'}),{code:'FORBIDDEN'});
-  status.account.permissions.finance.push('update'); await auth.authorize({method:'PATCH',path:'/finance-transaction-order'});
-  await assert.rejects(auth.authorize({method:'PATCH',path:'/finance-opening-balance'}),{code:'FORBIDDEN'});
+  await auth.authorize({method:'PATCH',path:'/finance-transaction-order'});
 });
-
 
 test('earlier ambiguous days do not prevent deriving a later source balance baseline; malformed amount stays excluded',()=>{
   const rows=[{...row('a','2026-01-01',1000),importBatchId:undefined},{...row('b','2026-01-01',500,'expense'),importBatchId:undefined},row('next','2026-01-02',100,'income',10600,3)];

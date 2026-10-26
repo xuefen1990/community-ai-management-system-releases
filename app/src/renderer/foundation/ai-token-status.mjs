@@ -12,6 +12,7 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
   let lastUsedTokens = null;
   let refreshPromise = null;
   let creditsMode = false;
+  let providerMode = false;
   let remainingCredits = null;
   let lastUsedCredits = null;
 
@@ -19,6 +20,7 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
     for (const element of documentRef?.querySelectorAll?.('[data-ai-token-status]') || []) {
       const used = element.querySelector('[data-ai-token-used]');
       const remaining = element.querySelector('[data-ai-token-remaining]');
+      if (providerMode) { if (used) used.textContent = lastUsedTokens === null ? '本次用量 — Token' : `本次用量 ${tokenCount(lastUsedTokens)} Token`; if (remaining) remaining.textContent = '自用服务 · 费用以服务商为准'; element.title = '模型由你配置的服务商提供，本机不扣平台积分'; continue; }
       if(creditsMode){if(used)used.textContent=lastUsedCredits===null?'本次消耗 — 积分':`本次消耗 ${lastUsedCredits.toLocaleString('zh-CN',{maximumFractionDigits:4})} 积分`;if(remaining)remaining.textContent=remainingCredits===null?'积分读取中':`余量 ${remainingCredits.toLocaleString('zh-CN',{maximumFractionDigits:4})} 积分`;element.title='主账号与子账号共用积分，内部步骤汇总结算';continue;}
       if (used) used.textContent = lastUsedTokens === null ? '本次消耗 — Token' : `本次消耗 ${tokenCount(lastUsedTokens)} Token`;
       if (remaining) remaining.textContent = remainingTokens === null ? '余量读取中' : `余量 ${tokenCount(remainingTokens)} Token`;
@@ -33,6 +35,7 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
       .then((response) => {
         const quota = quotaFromResponse(response);
         if (response?.ok === false) throw new Error(response.error || '额度暂不可用');
+        providerMode = quota.billingUnit === 'provider';
         creditsMode=quota.billingUnit==='credits';
         if(creditsMode&&Number.isFinite(Number(quota.remainingCredits)))remainingCredits=Number(quota.remainingCredits);
         const available = Number(quota.remainingTokens ?? quota.availableTokens);
@@ -46,6 +49,7 @@ export function createAiTokenStatus({ api = globalThis.window?.api, documentRef 
   }
 
   function record({ actualTokens, chargedCredits, remainingCredits:nextCredits, billingUnit, remainingTokens: nextRemainingTokens } = {}) {
+    if (billingUnit === 'provider') providerMode = true;
     if(billingUnit==='credits')creditsMode=true;
     if (creditsMode && chargedCredits == null && Number(actualTokens) === 0 && actualTokens != null) lastUsedCredits = 0;
     if(chargedCredits!==null&&chargedCredits!==undefined&&Number.isFinite(Number(chargedCredits)))lastUsedCredits=Number(chargedCredits);

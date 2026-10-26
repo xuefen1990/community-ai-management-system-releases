@@ -61,11 +61,15 @@ test('specific catalog categories are reused by parsing and accepted during impo
   const parsed = parseFinanceGrid([['日期','摘要','支出','科目'],['2026-01-10','缴纳电费',100,'电费']], {categoryCatalog:catalog});
   assert.equal(parsed.rows[0].category, '电费'); assert.equal(parsed.rows[0].categorySource, 'rules');
 });
-test('finance editors may confirm categorization; viewers cannot write', async () => {
-  const status = { authenticated:true, entitlement:{type:'licensed'}, account:{role:'member',permissions:{finance:['view','update']}} };
+test('categorization and category queries reject legacy member grants and allow the actual main account', async () => {
+  const status = { authenticated:true, entitlement:{type:'licensed'}, account:{id:'member',mainAccountId:'owner',role:'member',permissions:{finance:['view','update']}} };
   const auth = new FoundationAuthService({authService:{getStatus:async()=>status}});
-  await auth.authorize({method:'PATCH',path:'/finance-reclassifications'}); await auth.authorize({method:'GET',path:'/finance-categories'});
-  status.account.permissions.finance=['view']; await assert.rejects(auth.authorize({method:'PATCH',path:'/finance-reclassifications'}), {code:'FORBIDDEN'});
+  for (const request of [{method:'PATCH',path:'/finance-reclassifications'},{method:'GET',path:'/finance-categories'}]) {
+    await assert.rejects(auth.authorize(request), {code:'FORBIDDEN'});
+  }
+  status.account={id:'owner',mainAccountId:'owner',role:'main_account'};
+  await auth.authorize({method:'PATCH',path:'/finance-reclassifications'});
+  await auth.authorize({method:'GET',path:'/finance-categories'});
 });
 test('workspace backup and restoration preserve category catalog', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(),'finance-categories-')); t.after(()=>fs.rm(root,{recursive:true,force:true}));

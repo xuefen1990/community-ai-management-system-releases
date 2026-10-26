@@ -1290,6 +1290,8 @@ test('慢速 AI 证明结果完整返回并立即结算，不留下预留积分'
   assert.equal(result.title, '测试证明');
   assert.equal(result.content, '兹证明{居民姓名}的有关情况。');
   assert.equal(result.routing.chargedCredits, 1);
+  assert.equal(calls.filter(call => call.path === '/api/auth/profile').length, 1);
+  assert.equal(calls.find(call => call.path === '/api/ai/chat').body.taskTier, 'basic');
   assert.equal(calls.filter(call => call.path === '/api/ai/chat').length, 1);
   assert.equal(calls.filter(call => call.path.endsWith('/finish')).length, 1);
   assert.equal(calls.at(-1).path, '/api/ai/credit-tasks/test-task/finish');
@@ -1311,6 +1313,8 @@ test('AI 证明起草只发送模板结构并返回可核对的结构化草稿',
   assert.match(received.messages[0].content, /仅输出一个 JSON/u);
   assert.doesNotMatch(JSON.stringify(received.messages), /321302/u);
   assert.equal(received.options.temperature, 0.15);
+  assert.equal(received.options.taskTier, 'basic');
+  assert.equal(received.options.maxTokens, 2400);
 });
 
 test('AI 证明起草拒绝不存在的模板编号并保留临时草稿', async () => {
@@ -1608,4 +1612,24 @@ test('asks for a file name when several pending conversation files could be arch
   assert.match(result.content, /有 2 个待归档文件/u);
   assert.match(result.content, /说明文件名/u);
   assert.equal(assistant.pendingAction, null);
+});
+
+
+test('proof drafting honors explicit deep-analysis requests without changing its output limit', async () => {
+  let options;
+  const assistant = service({}, { aiRouter: { onlineChat: async (_messages, received) => {
+    options = received;
+    return { content: JSON.stringify({ reply: '请核对', needsMoreInfo: false, draftMode: 'temporary', title: '测试证明', content: '兹证明{居民姓名}的有关情况。' }) };
+  } } });
+  await assistant.draftCertificateWithAi({ messages: [{ role: 'user', content: '请深入分析后起草测试证明' }], templates: [] });
+  assert.equal(options.taskTier, 'deep');
+  assert.equal(options.maxTokens, 2400);
+});
+
+
+test('proof drafting accepts complete structured JSON with an extra closing brace', async () => {
+  const assistant = service({}, { aiRouter: { onlineChat: async () => ({ content: JSON.stringify({ needsMoreInfo: false,
+    draftMode: 'temporary', title: '测试证明', content: '兹证明{居民姓名}有关情况。' }) + '\n}' }) } });
+  const result = await assistant.draftCertificateWithAi({ messages: [{ role: 'user', content: '起草测试证明' }], templates: [] });
+  assert.equal(result.content, '兹证明{居民姓名}有关情况。');
 });

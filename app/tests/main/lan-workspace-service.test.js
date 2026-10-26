@@ -195,10 +195,10 @@ test('同一主账号在不同电脑各自使用独立的本机数据', async t 
   assert.equal(second.info().enabled, false);
 });
 
-test('finance opening balance is shared with finance viewers and protected from member writes', async t => {
+test('finance opening balance is main-account-only and protected from legacy member grants', async t => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'lan-finance-balance-')); t.after(() => fs.rm(root, { recursive: true, force: true }));
   const profiles = { finance: { id: 'f', role: 'member', mainAccountId: 'owner', isActive: true, permissions: { finance: ['view', 'create', 'update'] } },
-    other: { id: 'o', role: 'member', mainAccountId: 'owner', isActive: true, permissions: { workspace: ['view'] } } };
+    other: { id: 'o', role: 'member', mainAccountId: 'owner', isActive: true, permissions: { workspace: ['view'] } }, owner: { id: 'owner', role: 'main_account', mainAccountId: 'owner', isActive: true } };
   const service = new LanWorkspaceService({ userDataPath: root, port: 0, host: '127.0.0.1', discovery: false,
     fetchImpl: async (url, options) => response(200, url.endsWith('/api/auth/entitlement') ? { valid: true, plan: 'permanent' } : { user: profiles[options.headers.Authorization.replace('Bearer ', '')] }) });
   const opening = { startDate: '2026-01-01', amountCents: 100000, version: 1 };
@@ -206,7 +206,8 @@ test('finance opening balance is shared with finance viewers and protected from 
   t.after(() => service.stop());
   const port = service.info().port;
   const view = await request(port, '/api/unit/workspace/data', 'finance');
-  assert.deepEqual(view.body.data.financeOpeningBalance, opening);
+  assert.equal(view.body.data.financeOpeningBalance, undefined);
+  assert.deepEqual((await request(port, '/api/unit/workspace/data', 'owner')).body.data.financeOpeningBalance, opening);
   assert.equal((await request(port, '/api/unit/workspace/data', 'other')).body.data.financeOpeningBalance, undefined);
   const result = await new Promise((resolve, reject) => {
     const req = http.request({ hostname: '127.0.0.1', port, method: 'PUT', path: '/api/unit/workspace/data', headers: { Authorization: 'Bearer finance', 'Content-Type': 'application/json' } }, res => {
@@ -217,9 +218,9 @@ test('finance opening balance is shared with finance viewers and protected from 
   assert.deepEqual((await service.readWorkspace()).data.financeOpeningBalance, opening);
 });
 
-test('finance category catalog is shared; editing members can append categories and host logs AI changes', async t => {
+test('main account edits finance categories; legacy finance members stay blocked and host logs changes', async t => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lan-finance-categories-')); t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  const profiles={editor:{id:'editor',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view','update']}},viewer:{id:'viewer',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view']}},other:{id:'other',role:'member',mainAccountId:'owner',isActive:true,permissions:{workspace:['view']}}};
+  const profiles={editor:{id:'owner',role:'main_account',mainAccountId:'owner',isActive:true},viewer:{id:'viewer',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view','update']}},other:{id:'other',role:'member',mainAccountId:'owner',isActive:true,permissions:{workspace:['view']}}};
   const service=new LanWorkspaceService({userDataPath:root,port:0,host:'127.0.0.1',discovery:false,fetchImpl:async(url,options)=>response(200,url.endsWith('/api/auth/entitlement')?{valid:true,plan:'permanent'}:{user:profiles[options.headers.Authorization.replace('Bearer ','')]})});
   const record={id:'r',recordType:'expense',recordDate:'2026-02-02',summary:'水费',category:'其他支出',amountCents:8000};
   await service.initialize({ownerId:'owner',cloudBaseUrl:'https://account.example.com',data:{financeRecords:[record],finances:[record],financeCategories:[]}}); t.after(()=>service.stop()); const port=service.info().port;
@@ -228,30 +229,30 @@ test('finance category catalog is shared; editing members can append categories 
   const put=(token,body)=>new Promise((resolve,reject)=>{const req=http.request({hostname:'127.0.0.1',port,method:'PUT',path:'/api/unit/workspace/data',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end(JSON.stringify(body));});
   const data={financeCategories:catalog,financeRecords:[{...record,category:'水费',categorySource:'ai'}],finances:[{...record,category:'水费',categorySource:'ai'}]};
   assert.equal(await put('viewer',{version:snapshot.version,data}),403); assert.equal(await put('editor',{version:snapshot.version,data}),200);
-  assert.deepEqual((await request(port,'/api/unit/workspace/data','viewer')).body.data.financeCategories,catalog); assert.equal((await request(port,'/api/unit/workspace/data','other')).body.data.financeCategories,undefined);
+  assert.deepEqual((await request(port,'/api/unit/workspace/data','editor')).body.data.financeCategories,catalog); assert.equal((await request(port,'/api/unit/workspace/data','viewer')).body.data.financeCategories,undefined); assert.equal((await request(port,'/api/unit/workspace/data','other')).body.data.financeCategories,undefined);
   assert.equal((await service.readWorkspace()).data.operationLogs.at(-1).action,'智能整理收支科目');
 });
 
 
-test('transaction source balances and reviewed day order survive sharing; only editors can reorder and host audits it', async t => {
+test('transaction source balances and reviewed day order remain main-account-only; host audits order changes', async t => {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),'lan-finance-order-')); t.after(()=>fs.rm(root,{recursive:true,force:true}));
-  const profiles={editor:{id:'editor',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view','update']}},viewer:{id:'viewer',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view']}}};
+  const profiles={editor:{id:'owner',role:'main_account',mainAccountId:'owner',isActive:true},viewer:{id:'viewer',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view','update']}}};
   const service=new LanWorkspaceService({userDataPath:root,port:0,host:'127.0.0.1',discovery:false,fetchImpl:async(url,options)=>response(200,url.endsWith('/api/auth/entitlement')?{valid:true,plan:'permanent'}:{user:profiles[options.headers.Authorization.replace('Bearer ','')]})});
   const record={id:'r',recordType:'expense',recordDate:'2026-02-02',summary:'水费',category:'水费',amountCents:8000,sourceBalanceCents:12000,sourceBalanceText:'120.00',sourceRowNumber:3,sourceSheetName:'2月',sourceOrder:3};
   await service.initialize({ownerId:'owner',cloudBaseUrl:'https://account.example.com',data:{financeOpeningBalance:{startDate:'2026-01-01',amountCents:20000},financeRecords:[record],finances:[record]}});t.after(()=>service.stop());const port=service.info().port;
-  const snapshot=(await request(port,'/api/unit/workspace/data','viewer')).body;assert.equal(snapshot.data.financeRecords[0].sourceBalanceCents,12000);
+  const snapshot=(await request(port,'/api/unit/workspace/data','editor')).body;assert.equal(snapshot.data.financeRecords[0].sourceBalanceCents,12000);assert.equal((await request(port,'/api/unit/workspace/data','viewer')).body.data.financeRecords,undefined);
   const changed={...record,transactionOrder:1,orderConfirmed:true};
   const put=token=>new Promise((resolve,reject)=>{const req=http.request({hostname:'127.0.0.1',port,method:'PUT',path:'/api/unit/workspace/data',headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}},res=>{res.resume();res.on('end',()=>resolve(res.statusCode));});req.on('error',reject);req.end(JSON.stringify({version:snapshot.version,data:{financeRecords:[changed],finances:[changed]}}));});
   assert.equal(await put('viewer'),403);assert.equal(await put('editor'),200);
   const stored=await service.readWorkspace();assert.equal(stored.data.operationLogs.at(-1).action,'审核财务同日交易顺序');
-  const shared=(await request(port,'/api/unit/workspace/data','viewer')).body.data;
+  const shared=(await request(port,'/api/unit/workspace/data','editor')).body.data;
   const result=require('../../src/main/finance-transaction-balances').transactionBalances(shared.financeRecords,shared.financeOpeningBalance,{today:'2026-10-04'});
   assert.equal(result.items[0].balanceStatus,'matched'); assert.equal(result.items[0].calculatedBalanceCents,12000);
 });
 
-test('finance source coverage audit is shared with finance viewers, hidden from other modules, and preserves source row identities',async t=>{
+test('finance source coverage audit is main-account-only and preserves source row identities',async t=>{
  const root=await fs.mkdtemp(path.join(os.tmpdir(),'lan-finance-import-audit-'));t.after(()=>fs.rm(root,{recursive:true,force:true}));
- const profiles={finance:{id:'f',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view']}},other:{id:'o',role:'member',mainAccountId:'owner',isActive:true,permissions:{workspace:['view']}}};
+ const profiles={finance:{id:'owner',role:'main_account',mainAccountId:'owner',isActive:true},other:{id:'o',role:'member',mainAccountId:'owner',isActive:true,permissions:{finance:['view'],workspace:['view']}}};
  const service=new LanWorkspaceService({userDataPath:root,port:0,host:'127.0.0.1',discovery:false,fetchImpl:async(url,options)=>response(200,url.endsWith('/api/auth/entitlement')?{valid:true,plan:'permanent'}:{user:profiles[options.headers.Authorization.replace('Bearer ','')]})});
  const audit={expectedRowKeys:['1%E6%9C%88:2','1%E6%9C%88:3'],decisions:[{key:'1%E6%9C%88:2',status:'import'},{key:'1%E6%9C%88:3',status:'import'}],coverage:[{sheetName:'1月',rows:[1,2,3],nonBusiness:[{sourceRowNumber:1,reason:'表头',raw:['日期','摘要','支出']}]}],totals:[]};
  const batch={id:'b',fileHash:'a'.repeat(64),sourceAudit:audit};

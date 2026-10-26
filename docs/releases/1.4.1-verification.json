@@ -1,0 +1,103 @@
+{
+  "version": "1.4.1",
+  "date": "2026-10-26",
+  "appTests": {
+    "passed": 867,
+    "failed": 0
+  },
+  "bundledBackendTests": {
+    "passed": 34,
+    "failed": 0,
+    "excluded": [
+      "android-update.test.js: newer mobile update API outside the delivered desktop baseline"
+    ]
+  },
+  "macPackagedSyntheticSmoke": {
+    "ok": true,
+    "packaged": true,
+    "version": "1.4.1",
+    "menus": 15,
+    "savedMenuPreserved": true,
+    "blockedPublicOrigins": [],
+    "rendererErrors": []
+  },
+  "aiSettingsMockedInteraction": {
+    "ok": true,
+    "providerRequestsMocked": 2,
+    "realNetworkRequests": [],
+    "rendererErrors": [],
+    "checks": [
+      "no-legacy-quota",
+      "no-implicit-provider-call",
+      "input-validation",
+      "secure-save",
+      "blank-key-preserved",
+      "reload",
+      "duplicate-test-click",
+      "provider-failure",
+      "invalid-save-preserves-edits",
+      "local-import-cancel",
+      "local-import-start-stop",
+      "local-scan-failure",
+      "session-key-warning",
+      "member-readonly",
+      "responsive-actions"
+    ],
+    "layouts": [
+      {
+        "width": 1600,
+        "height": 900,
+        "zoom": 1,
+        "overflow": false,
+        "outside": false,
+        "fields": true,
+        "columns": "905.531px 402.469px"
+      },
+      {
+        "width": 1080,
+        "height": 680,
+        "zoom": 1,
+        "overflow": false,
+        "outside": false,
+        "fields": true,
+        "columns": "830px"
+      },
+      {
+        "width": 1080,
+        "height": 680,
+        "zoom": 1.15,
+        "overflow": false,
+        "outside": false,
+        "fields": true,
+        "columns": "690.109px"
+      }
+    ]
+  },
+  "bundleParity": {
+    "ok": true,
+    "version": "1.4.1",
+    "sourceFileCounts": {
+      "app": 222,
+      "backend": 36
+    },
+    "vendorFilesUnchanged": 19,
+    "bundleProfileFiles": [],
+    "windowsProfileFiles": [],
+    "windowsArchitecture": "x64"
+  },
+  "dmg": {
+    "CFBundleShortVersionString": "1.4.1",
+    "CFBundleVersion": "1.4.1",
+    "ok": true,
+    "sourceFilesMatched": 258,
+    "signature": "ad-hoc verified",
+    "applicationsLink": true
+  },
+  "windowsInstallerArchiveIntegrity": true,
+  "windowsRealMachineAcceptance": false,
+  "realProviderAcceptance": false,
+  "realKeychainAcceptance": false,
+  "productionInAppUpdatePublished": false,
+  "websiteUpdated": false,
+  "installedApplicationReplaced": false
+}

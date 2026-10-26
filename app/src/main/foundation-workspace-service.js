@@ -11,7 +11,7 @@ function collectionPath(key) {
   if (key === 'visitRecords') return '/service-records';
   if (/^(dutyRecords|workItems|workEvidence|workProgressRecords|workResourceEntries|workAcceptances)$/.test(key)) return '/duty/plans';
   if (['lands', 'landParcel'].includes(key)) return '/land-parcels';
-  if (/^(finances|resourceContracts|contractFee)/.test(key)) return '/finance-records';
+  if (/^(finance|resourceContracts|contractFee)/.test(key)) return '/finance-records';
   if (/^(disbursement|farmlandSubsidy)/.test(key)) return '/funds';
   if (key === 'certificates') return '/certificate-records';
   if (key === 'documents' || key === 'aiFileIndexEntries') return '/documents';

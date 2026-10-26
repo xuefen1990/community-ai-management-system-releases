@@ -94,6 +94,18 @@ test('duplicate identity and missing edited identity fail rather than merging un
   assert.equal(result.failed[0].code, 'NOT_FOUND'); assert.equal(db.personnel.length, 2);
 });
 
+test('a versioned explicit editor can correct one existing duplicate record without merging or changing its sibling', () => {
+  const db = fixture();
+  db.personnel.push({ id:'existing-duplicate', name:'待核实姓名', id_card:'TEST-001' });
+  const first = db.personnel[0], sibling = structuredClone(db.personnel[2]);
+  let result = upsertPeople(db, [{ id:first.id, baseVersion:revision(first), fields:{ name:'核实后的姓名', idCard:'TEST-001', phone:'核实电话' } }]);
+  assert.equal(result.failed.length,0);assert.equal(db.personnel[0].name,'核实后的姓名');assert.deepEqual(db.personnel[2],sibling);
+  result = upsertPeople(db,[{id:first.id,baseVersion:revision(first),fields:{name:first.name,idCard:'TEST-002'}}]);
+  assert.equal(result.failed[0].code,'DUPLICATE_ID_CARD');assert.equal(db.personnel[0].id_card,'TEST-001');
+  result = upsertPeople(db,[{id:first.id,fields:{name:'没有版本的覆盖',idCard:'TEST-001'}}]);
+  assert.equal(result.failed[0].code,'DUPLICATE_ID_CARD');
+});
+
 test('concurrent initial API reads share one conversion and return defensive copies', async () => {
   const { api, reads } = service();
   const results = await Promise.all(['/people', '/households', '/village-groups', '/special-categories', '/system-settings'].map(path => request(api, path)));

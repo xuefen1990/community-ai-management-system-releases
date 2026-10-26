@@ -26,6 +26,7 @@ class LocalBackendManager {
     timeoutMs = 12000,
     pollIntervalMs = 120,
     healthTimeoutMs = 700,
+    isolated = false,
   } = {}) {
     this.fetchImpl = fetchImpl;
     this.spawnImpl = spawnImpl;
@@ -36,6 +37,8 @@ class LocalBackendManager {
     this.timeoutMs = timeoutMs;
     this.pollIntervalMs = pollIntervalMs;
     this.healthTimeoutMs = healthTimeoutMs;
+    this.isolated = isolated;
+    this.instanceId = require('node:crypto').randomUUID();
     this.child = null;
     this.startPromise = null;
     this.status = { state: 'idle', managed: false, baseUrl: '', message: '本机账号服务尚未启动' };
@@ -61,7 +64,8 @@ class LocalBackendManager {
       });
       if (!response?.ok) return false;
       const payload = await response.json().catch(() => ({}));
-      return payload.status === 'ok' && (!payload.service || payload.service === 'community-ai-backend');
+      return payload.status === 'ok' && (!payload.service || payload.service === 'community-ai-backend')
+        && (!this.isolated || payload.instanceId === this.instanceId);
     } catch {
       return false;
     } finally {
@@ -74,11 +78,16 @@ class LocalBackendManager {
     if (!isLoopbackUrl(baseUrl)) {
       return this.setStatus({ state: 'external', managed: false, baseUrl, message: '正在使用已配置的局域网账号服务器' });
     }
-    if (await this.checkHealth(baseUrl)) {
-      return this.setStatus({ state: 'ready', managed: Boolean(this.child), baseUrl, message: '账号服务已就绪' });
-    }
     if (this.startPromise) return this.startPromise;
-    this.startPromise = this.startManaged(baseUrl).finally(() => { this.startPromise = null; });
+    this.startPromise = (async () => {
+      if (await this.checkHealth(baseUrl)) return this.setStatus({ state: 'ready', managed: Boolean(this.child), baseUrl, message: '账号服务已就绪' });
+      if (this.isolated && !this.child) {
+        const probe = require('node:net').createServer();
+        await new Promise((resolve, reject) => { probe.once('error', () => reject(new Error('本机账号服务端口被其他程序占用，已停止连接'))); probe.listen(Number(new URL(baseUrl).port), '127.0.0.1', resolve); });
+        await new Promise(resolve => probe.close(resolve));
+      }
+      return this.startManaged(baseUrl);
+    })().finally(() => { this.startPromise = null; });
     return this.startPromise;
   }
 
@@ -100,6 +109,7 @@ class LocalBackendManager {
           UPDATE_FILES_DIR: runtime.updatesDir,
           JWT_SECRET: runtime.secret,
           ADMIN_PASSWORD: runtime.secret,
+          ...(this.isolated ? { NODE_ENV: 'production', CORS_ORIGINS: 'http://127.0.0.1', COMMUNITY_STANDALONE_RUNTIME: '1', COMMUNITY_BACKEND_INSTANCE_ID: this.instanceId, ADMIN_PHONE: 'local-internal-' + this.instanceId, AI_DEFAULT_API_KEY: '', AI_CREDITS_ENABLED: '0' } : {}),
         },
         stdio: 'ignore',
       });

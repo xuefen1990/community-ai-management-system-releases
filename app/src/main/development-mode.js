@@ -42,15 +42,16 @@ async function initializeDevelopmentPreview(authService, config) {
   authService.getStatus = async options => {
     if (!authService.session) await ensurePreview();
     if (!authService.session.developmentPreview) return originalStatus(options);
-    return {ok:true,authenticated:true,account:{...account},machineId:authService.machineId,entitlement:{...entitlement}};
+    return {ok:true,authenticated:true,account:{...account},machineId:authService.machineId,entitlement:{...entitlement},mode:authService.mode || 'cloud'};
   };
   authService.request = async (route, ...args) => {
+    if (authService.session?.developmentPreview && authService.mode === 'standalone' && route === '/auth/profile') return { user: account };
     if (authService.session?.developmentPreview && route === '/auth/preferences') {
       const file = path.join(config.userData,'development-preferences.json');
       if (args[0]?.method === 'PUT') fs.writeFileSync(file,JSON.stringify({menu:args[0]?.body?.menu || {},updatedAt:new Date().toISOString()}));
       try { return JSON.parse(fs.readFileSync(file,'utf8')); } catch { return {menu:{},updatedAt:null}; }
     }
-    if (authService.session?.developmentPreview && route === '/ai/quota') return {balanceTokens:0,balanceCredits:0,creditsEnabled:false,developmentPreview:true};
+    if (authService.session?.developmentPreview && route === '/ai/quota') return authService.mode === 'standalone' ? {quota:null,billingUnit:'provider',mode:'standalone',developmentPreview:true} : {balanceTokens:0,balanceCredits:0,creditsEnabled:false,developmentPreview:true};
     if (authService.session?.developmentPreview && !route.startsWith('/unit/workspace/') && !['/auth/login','/auth/register'].includes(route))
       throw new Error('开发预览可直接使用本机业务；在线 AI 和账号管理需要有效的真实账号，请在账号设置中登录');
     return originalRequest(route,...args);

@@ -1,4 +1,6 @@
 'use strict';
+const { extractAiJsonObject } = require('./ai-json-response');
+const { classifyWritingTask } = require('./ai-model-routing');
 const { dutySchedule } = require('../shared/duty-schedule');
 const { createReadOnlyToolRegistry } = require('./ai-tools/read-tools');
 const { publicToolMetadata } = require('./ai-tools/tool-definition');
@@ -214,12 +216,9 @@ function parseOnlinePlan(content) {
 
 function parseCertificateDraftResponse(content, templates = []) {
   const raw = text(content).replace(/^```(?:json)?\s*/iu, '').replace(/\s*```$/u, '');
-  const start = raw.indexOf('{');
-  const end = raw.lastIndexOf('}');
-  if (start < 0 || end < start) throw new Error('AI 返回内容无法识别，请保留当前草稿后重试');
-  let value;
-  try { value = JSON.parse(raw.slice(start, end + 1)); }
-  catch { throw new Error('AI 返回内容格式不完整，请保留当前草稿后重试'); }
+  if (!raw.includes('{')) throw new Error('AI 返回内容无法识别，请保留当前草稿后重试');
+  const value = extractAiJsonObject(raw);
+  if (!value) throw new Error('AI 返回内容格式不完整，请保留当前草稿后重试');
   const templateIds = new Set((Array.isArray(templates) ? templates : []).map(item => text(item?.id)).filter(Boolean));
   const recommendedTemplateId = templateIds.has(text(value?.recommendedTemplateId)) ? text(value.recommendedTemplateId) : '';
   const residentNames = [...new Set((Array.isArray(value?.residentNames) ? value.residentNames : []).map(name => text(name)).filter(Boolean))].slice(0, 6);
@@ -495,7 +494,7 @@ class AiAssistantService {
           content: `你是村居证明起草助手。根据连续对话判断证明用途、居民姓名和需要补充的信息，并优先匹配给定模板。不得声称已经查询居民档案或已经正式开具证明。信息不足时必须追问，不能猜测。正文中的居民姓名、身份证号、地址等个人资料必须使用模板现有的中文占位符，不得编造号码。仅输出一个 JSON，不要输出 Markdown 或解释，结构为：{"reply":"给工作人员的中文说明或追问","needsMoreInfo":true或false,"questions":["需补充的问题"],"residentNames":["对话中明确出现的姓名"],"recommendedTemplateId":"只能填写给定模板ID，没有则为空","draftMode":"template或temporary","title":"证明标题","content":"证明正文草稿","manualValues":{"字段中文名称":"从对话中明确得到的值"},"changeSummary":"本轮修改说明"}。若工作人员要求局部修改，应保留未要求改动的正文；若要求重新生成，可以重写整篇。可用模板：${JSON.stringify(safeTemplates)}`,
         },
         ...conversation,
-      ], { maxTokens: 2400, temperature: 0.15, taskTier: 'deep', taskKind: 'certificate-draft' });
+      ], { maxTokens: 2400, temperature: 0.15, taskTier: classifyWritingTask({ instructions: lastUserMessage(conversation)?.content }), taskKind: 'certificate-draft' });
       return { ...parseCertificateDraftResponse(response?.content, safeTemplates), provider: 'online', model: response?.model || '', usage: response?.usage || null,
         routing: response?.routing || null };
     } catch (error) {

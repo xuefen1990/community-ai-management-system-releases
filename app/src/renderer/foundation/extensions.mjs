@@ -1,7 +1,7 @@
 import { installOverviewBalance } from './finance-balance-card.mjs';
 import { installFloatingAssistant } from './floating-assistant.mjs';
 import { createElementVNode as h, onMounted, onBeforeUnmount, ref, useDialogStore, useAuthStore } from './vendor/assets/foundation-runtime.mjs';
-import { sortMenuItems, orderDefaultMenus } from './menu-configuration.mjs';
+import { sortMenuItems, orderDefaultMenus, readMenuConfiguration } from './menu-configuration.mjs';
 import { navigateToRecord } from './record-navigation.mjs';
 import { workspaceApi } from './workspace-api.mjs';
 import { installAiFileViewer } from './ai-file-viewer.mjs';
@@ -142,7 +142,11 @@ export function installExtensions({ router, shell }) {
     const account = status?.account;
     if (!status?.authenticated || !account) return;
     const preferences = await window.api.getAccountPreferences();
-    const menuConfig = preferences?.menu || {};
+    let menuConfig = preferences?.menu || {};
+    if (status.mode === 'standalone' && !preferences?.updatedAt) {
+      const saved = readMenuConfiguration();
+      if (Object.keys(saved).length) { menuConfig = saved; await window.api.saveAccountPreferences({ menu: saved }); }
+    }
     shell.setMenuVisibilityConfig(menuConfig);
     const visible = originalMenus.filter(item => account?.role !== 'member' || (item.key !== 'ai-assistant-records' || account.aiAccessEnabled !== false) && (!menuModules[item.key] || account.permissions?.[menuModules[item.key]]?.includes('view')));
     shell.allMenus.splice(0, shell.allMenus.length, ...sortMenuItems(visible, menuConfig, originalMenus));

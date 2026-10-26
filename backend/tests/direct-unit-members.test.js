@@ -46,6 +46,9 @@ test('主账号直接开通成员、首次改密和逐人 AI 权限', async t =>
   const catalog = await request(base, '/auth/unit/permissions/catalog', { token: admin.data.token });
   assert.equal(catalog.status, 200);
   assert.ok(catalog.data.modules.some(item => item.id === 'document'));
+  assert.equal(catalog.data.modules.some(item => item.id === 'finance'), false);
+  assert.equal(catalog.data.presets.readonly.permissions.finance, undefined);
+  assert.equal((await request(base, '/auth/unit/members', { method: 'POST', token: admin.data.token, body: { phone: '13700000009', name: '财务越权测试', permissions: { finance: ['view'] } } })).status, 400);
 
   const created = await request(base, '/auth/unit/members', { method: 'POST', token: admin.data.token, body: { phone: '13700000001', name: '经办员', preset: 'custom', permissions: { personnel: ['view'], document: ['view'] }, aiAccessEnabled: true } });
   assert.equal(created.status, 201);

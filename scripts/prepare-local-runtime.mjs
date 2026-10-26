@@ -126,6 +126,10 @@ if (!templateAppArgument || !projectAppArgument) {
     'debug',
     'ms',
     'sax',
+    // The server-side QR renderer needs these packages; yargs is CLI-only.
+    'qrcode',
+    'dijkstrajs',
+    'pngjs',
   ];
   for (const dependency of updateRuntimeDependencies) {
     await cp(
@@ -136,12 +140,34 @@ if (!templateAppArgument || !projectAppArgument) {
   }
   const verifyApplicationDependencies = spawnSync(process.execPath, [
     '-e',
-    "for (const name of Object.keys(JSON.parse(process.argv[1]))) require.resolve(name); const PizZip = require('pizzip'); new PizZip();",
+    `
+      const assert = require('node:assert/strict');
+      for (const name of Object.keys(JSON.parse(process.argv[1]))) require.resolve(name);
+      const PizZip = require('pizzip'); new PizZip();
+      const QRCode = require('qrcode');
+      const { PNG } = require('pngjs');
+      const payload = JSON.stringify({ protocol: 'village-mobile-pair-v1', workspaceId: 'runtime-test',
+        endpoint: 'https://192.168.50.2:3002', fingerprint: '0'.repeat(64), pairingToken: 'synthetic-runtime-test',
+        expiresAt: 2000000000000, miniProgram: { protocol: 'village-mini-channel-v1', endpoint: 'http://192.168.50.2:3003', port: 3003 } });
+      QRCode.toDataURL(payload, { width: 560, margin: 4, errorCorrectionLevel: 'M' }).then(dataUrl => {
+        assert.ok(dataUrl.startsWith('data:image/png;base64,'), 'QR renderer must return a PNG');
+        const image = PNG.sync.read(Buffer.from(dataUrl.split(',')[1], 'base64'));
+        assert.equal(image.width, 560); assert.equal(image.height, 560);
+        let dark = 0, light = 0;
+        for (let offset = 0; offset < image.data.length; offset += 4) {
+          if (image.data[offset] === 0) dark++;
+          if (image.data[offset] === 255) light++;
+        }
+        assert.ok(dark > 0 && light > 0, 'QR image must contain both modules and a white background');
+        console.log(JSON.stringify({ runtimeQr: 'passed', width: image.width, height: image.height }));
+      }).catch(error => { console.error(error.message); process.exitCode = 1; });
+    `,
     JSON.stringify(packageManifest.dependencies || {}),
   ], { cwd: runtimeSource, encoding: 'utf8' });
   if (verifyApplicationDependencies.status !== 0) {
     throw new Error(`应用运行依赖未完整打包：${verifyApplicationDependencies.stderr || verifyApplicationDependencies.stdout || '模块解析失败'}`);
   }
+  if (verifyApplicationDependencies.stdout) process.stdout.write(verifyApplicationDependencies.stdout);
   await cp(path.join(projectApp, 'build', 'icon.icns'), path.join(resourcesDirectory, 'icon.icns'));
   const ocrSource = path.join(projectApp, 'src', 'native', 'macos-vision-ocr.swift');
   const ocrExecutable = path.join(resourcesDirectory, 'community-vision-ocr');

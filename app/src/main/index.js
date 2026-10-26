@@ -8,6 +8,9 @@ const { registerCompatibilityHandlers } = require('./ipc-handlers');
 const { AuthStore } = require('./auth-store');
 const { RememberedLoginStore } = require('./remembered-login-store');
 const { RemoteAuthService } = require('./remote-auth-service');
+const { StandaloneAccountRuntime } = require('./standalone-account-runtime');
+const { StandaloneAuthService, manualUpdateService } = require('./standalone-auth-service');
+const { StandaloneLanClient } = require('./standalone-lan-client');
 const { prepareBackendData } = require('./backend-data-migrator');
 const { LocalBackendManager } = require('./local-backend-manager');
 const { AccountWorkspaceManager } = require('./account-workspace-manager');
@@ -92,27 +95,33 @@ app.whenReady().then(async () => {
     && Boolean(app.getLoginItemSettings?.().wasOpenedAsHidden);
   configureApplicationMenu({ app, Menu, shell, appName: PRODUCT_DISPLAY_NAME });
   const machineId = createMachineId();
-  const authStore = new AuthStore({ userDataPath: app.getPath('userData') });
-  const authService = new RemoteAuthService({
-    store: development ? developmentAuthStore(authStore, development.remoteServerUrl) : authStore,
-    rememberedLoginStore: new RememberedLoginStore({ userDataPath: app.getPath('userData'), safeStorage }),
+  const standalone = process.env.COMMUNITY_RUNTIME_MODE !== 'cloud';
+  const standaloneRuntime = standalone ? new StandaloneAccountRuntime({ userDataPath: app.getPath('userData') }) : null;
+  const accountDataPath = standalone ? standaloneRuntime.directory : app.getPath('userData');
+  const authStore = new AuthStore({ userDataPath: accountDataPath });
+  const AuthService = standalone ? StandaloneAuthService : RemoteAuthService;
+  const authService = new AuthService({
+    ...(standalone ? { runtime: standaloneRuntime, hostClient: new StandaloneLanClient({ userDataPath: app.getPath('userData'), safeStorage, fetchImpl: (...args) => net.fetch(...args) }), ensureReady: config => localBackendManager.ensureReady(config) } : {}),
+    store: development && !standalone ? developmentAuthStore(authStore, development.remoteServerUrl) : authStore,
+    rememberedLoginStore: new RememberedLoginStore({ userDataPath: accountDataPath, safeStorage }),
     machineId,
-    baseUrl: development?.remoteServerUrl || process.env.COMMUNITY_AI_BACKEND_URL || PRODUCTION_BACKEND_URL,
+    baseUrl: standalone ? 'http://127.0.0.1:3302' : development?.remoteServerUrl || process.env.COMMUNITY_AI_BACKEND_URL || PRODUCTION_BACKEND_URL,
     legacyBaseUrls: development ? [] : LEGACY_PRODUCTION_BACKEND_URLS,
     fetchImpl: (...args) => net.fetch(...args),
   });
   lanWorkspaceService = new AccountWorkspaceManager({ userDataPath: app.getPath('userData'), fetchImpl: (...args) => net.fetch(...args),
-    port: development ? 3302 : undefined, discovery: !development });
+    port: development ? 0 : undefined, discovery: !development });
   authService.localWorkspaceService = lanWorkspaceService;
-  if (development) await initializeDevelopmentPreview(authService, development);
-  lanWorkspaceService.startIfConfigured().catch(error => console.error('[LAN sharing]', error.message));
+  if (development && process.env.COMMUNITY_DEV_AUTH_SCREEN !== '1') await initializeDevelopmentPreview(authService, development);
+  if (!standalone) lanWorkspaceService.startIfConfigured().catch(error => console.error('[LAN sharing]', error.message));
   const projectRoot = path.resolve(__dirname, '..', '..', '..');
   const backendEntry = app.isPackaged
     ? path.join(process.resourcesPath, 'backend', 'src', 'index.js')
     : path.join(projectRoot, 'backend', 'src', 'index.js');
   localBackendManager = new LocalBackendManager({
     backendEntry,
-    prepareData: () => prepareBackendData({
+    isolated: standalone,
+    prepareData: () => standalone ? standaloneRuntime.prepareData() : prepareBackendData({
       userDataPath: app.getPath('userData'),
       legacyBackendPaths: development ? [] : [
         process.env.COMMUNITY_AI_LEGACY_BACKEND_DB,
@@ -120,7 +129,7 @@ app.whenReady().then(async () => {
       ].filter(Boolean),
     }),
   });
-  authService.getServerConfig()
+  if (!standalone) authService.getServerConfig()
     .then(config => localBackendManager.ensureReady(config))
     .catch(() => {});
   const modelCatalog = new LocalModelCatalog({ userDataPath: app.getPath('userData') });
@@ -128,6 +137,12 @@ app.whenReady().then(async () => {
   const onlineClient = new OpenAiCompatibleClient();
   const localAiRuntime = new LocalAiRuntime();
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient, authService, confirmCredits: async estimate => { const result = await dialog.showMessageBox(mainWindow, {type:'question',title:'确认 AI 积分消耗',message:`本次操作预计消耗 ${estimate.estimatedCredits} 积分`,detail:`本次最多扣除 ${estimate.approvedMaxCredits} 积分，完成后按实际用量结算。超出上限会停止后续步骤。`,buttons:['取消','确认继续'],defaultId:0,cancelId:0}); return result.response===1; } });
+  if (standalone) lanWorkspaceService.directAiChat = async (user, messages, options) => {
+    const account = (await authService.getStatus()).account;
+    if (!account || String(user.mainAccountId || user.id) !== String(account.id) || user.aiAccessEnabled === false || user.mustChangePassword) throw new Error('主电脑当前账号未授权此 AI 请求');
+    return options.forceOnline ? aiRouter.onlineChat(messages, options) : aiRouter.chat({ messages, task: options });
+  };
+  if (standalone) lanWorkspaceService.directAiCapabilities = () => aiRouter.getOnlineCapabilities();
   const aiVisionService = new AiVisionService({ aiRouter });
   const localDatabaseStore = new JsonDatabaseStore({ userDataPath: app.getPath('userData') });
   const databaseStore = new RemoteDatabaseStore({ authService, localStore: localDatabaseStore, localWorkspaceService: lanWorkspaceService,
@@ -135,7 +150,7 @@ app.whenReady().then(async () => {
   registerFoundationFileProtocol({ protocol, net, store: databaseStore, authService });
   const aiTaskService = new AiTaskService({ databaseStore, authService });
   const aiFileAuth = new FoundationAuthService({ authService,
-    ensureReady: async () => localBackendManager?.ensureReady(await authService.getServerConfig()) });
+    ensureReady: async () => { if (!standalone) await localBackendManager?.ensureReady(await authService.getServerConfig()); } });
   const aiFileDocumentService = new FoundationDocumentService({ store: databaseStore, shell,
     authorize: request => aiFileAuth.authorize(request) });
   const aiFileBusinessService = new FoundationBusinessService({ store: databaseStore, authorize: request => aiFileAuth.authorize(request) });
@@ -157,7 +172,7 @@ app.whenReady().then(async () => {
   const documentExportService = new DocumentExportService({ documentDraftingService, dialog, BrowserWindow });
   const certificateDocumentService = new CertificateDocumentService({ store: databaseStore, dialog, BrowserWindow,
     artifactRecorder: value => aiFileTaskService.archiveGeneratedArtifact(value) });
-  const updateService = new UpdateService({
+  const updateService = standalone ? manualUpdateService() : new UpdateService({
     diagnostics: new UpdateDiagnostics({userDataPath:app.getPath('userData')}),
     prepareInstall: async () => {
       await lanWorkspaceService?.stop();

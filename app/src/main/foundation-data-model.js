@@ -145,10 +145,18 @@ function upsertPeople(database, items, { now = () => new Date(), uuid = randomUU
       if (!input.id && matches.length > 1) fail('AMBIGUOUS_PERSON', '存在相同身份证的多条档案，请先处理重复资料');
       const original = input.id ? byId.get(string(input.id)) : matches[0];
       checkWrite(Boolean(original));
+      if (input.importReview) {
+        const review = input.importReview;
+        if (review.policy !== 'fill-empty' || string(review.selectedName).trim() !== string(changes.name).trim()) fail('INVALID_INPUT', '导入姓名未经过人工核对');
+        if ((original ? personRecordId(original, recordIndexes.get(original)) : '') !== review.expectedPersonId) fail('VERSION_CONFLICT', '居民档案在导入预览后发生变化，请重新核对');
+        if (original && (input.baseVersion == null || string(original.name).trim() !== review.previousName)) fail('VERSION_CONFLICT', '原姓名或档案版本已变化，请重新核对');
+      }
       if ((input.id || input.baseVersion != null) && !original) fail('NOT_FOUND', '原居民档案不存在，请刷新后重试');
       if (original && input.baseVersion != null) checkVersion(original, input.baseVersion);
       const newCard = string(changes.idCard).trim().toUpperCase();
-      if (newCard && (byCard.get(newCard) || []).some(record => record !== original)) fail('DUPLICATE_ID_CARD', '身份证已存在于其他档案');
+      const originalCard = original && string(field(original, PERSON_FIELDS.idCard)).trim().toUpperCase();
+      const retainingOwnCard = original && input.id && input.baseVersion != null && newCard === originalCard;
+      if (newCard && !retainingOwnCard && (byCard.get(newCard) || []).some(record => record !== original)) fail('DUPLICATE_ID_CARD', '身份证已存在于其他档案');
       const next = original ? copy(original) : { id: uuid(), created_at: now().toISOString() };
       if (original && !string(next.id).trim()) next.id = string(input.id || personRecordId(original, recordIndexes.get(original)));
       applyPersonFields(next, changes);

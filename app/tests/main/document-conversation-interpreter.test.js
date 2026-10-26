@@ -89,3 +89,31 @@ test('plain-text contract responses preserve required-field safeguards', () => {
 test('empty AI content is rejected', () => {
   assert.throws(() => parseConversationResponse('   ', { fallbackKind: 'report', fallbackTemplateId: 'report-work' }), /未返回完整公文正文/u);
 });
+
+
+test('compact template catalog preserves every template and exact required-field definitions', () => {
+  const { listTemplates } = require('../../src/main/document-template-catalog');
+  const messages = buildConversationMessages({ conversation: [{ role: 'user', content: '写情况报告' }],
+    currentContent: '人工核对的原稿', referencePrompt: '已确认的参考来源全文' });
+  const lines = messages[0].content.split('\n');
+  const templates = JSON.parse(lines.find(line => line.startsWith('可选模板：')).slice('可选模板：'.length));
+  const prefix = '模板字段定义（按 fieldsSchema 取用）：';
+  const schemas = JSON.parse(lines.find(line => line.startsWith(prefix)).slice(prefix.length));
+  const expected = listTemplates().filter(item => !item.isCustom);
+  assert.deepEqual(templates.map(item => item.id), expected.map(item => item.id));
+  for (const template of templates) {
+    const original = expected.find(item => item.id === template.id);
+    assert.deepEqual(schemas[template.fieldsSchema], original.fields.map(field => ({ key: field.key, label: field.label, required: Boolean(field.required) })));
+  }
+  assert.equal(Object.keys(schemas).length, 2);
+  assert.match(messages[1].content, /人工核对的原稿/u);
+  assert.match(messages[1].content, /已确认的参考来源全文/u);
+});
+
+
+test('complete JSON with a redundant closing brace is usable; incomplete JSON never becomes a draft', () => {
+  const value = { documentKind: 'report', templateId: 'report-work', fields: { title: '测试报告' }, documentText: '已确认事实，保留{占位符}和"引号"。' };
+  assert.equal(parseConversationResponse(JSON.stringify(value) + '\n}').documentText, value.documentText);
+  assert.throws(() => parseConversationResponse('{"documentText":"正文未完整'), /格式不完整/u);
+  assert.throws(() => parseConversationResponse(JSON.stringify(value) + '{"documentText":"矛盾的另一份"}'), /格式不完整/u);
+});

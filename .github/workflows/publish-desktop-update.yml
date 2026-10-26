@@ -1,15 +1,20 @@
 name: Publish desktop update
 
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
+    inputs:
+      publish_cloud_update:
+        description: 'Explicitly publish to the legacy cloud update service'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 jobs:
   publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_cloud_update == true }}
     name: Build and publish macOS update
     runs-on: macos-14
     timeout-minutes: 45

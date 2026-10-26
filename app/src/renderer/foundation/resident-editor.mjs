@@ -9,7 +9,7 @@ export function installResidentEditor(loadScript) {
     const saving = ref(false), identityEditing = ref(false), dialogs = useDialogStore();
     let initialPerson, initialDefinitions;
     let draft, snapshot, originalForm = JSON.stringify(form), touched = false, mounted = false, disposed = false;
-    let root, sidebar, errorBox, pendingClose = false;
+    let root, sidebar, errorBox, pendingClose = false, saved = false;
     const ready = person ? Promise.all([
       window.api.businessRequest({path:`/api/v3/people/editor?id=${encodeURIComponent(person.id)}`}).then(result=>{if(!result.ok)throw new Error(result.error.message);return result.data;}),
       loadScript('../shared/chinese-identity-card.js').then(()=>loadScript('../shared/contract-fee-model.js')).then(()=>loadScript('../shared/resident-record-presentation.js')).then(()=>loadScript('js/resident-subsidy-profile.js')),
@@ -91,7 +91,7 @@ export function installResidentEditor(loadScript) {
         if(window.communityResidentInitialSection?.id===person.id){const section=window.communityResidentInitialSection.section;window.communityResidentInitialSection=null;requestAnimationFrame(()=>{navigate(section);syncNav();});}
       }catch(error){showError(error);}
     });
-    onBeforeUnmount(()=>{disposed=true;draft?.dispose();scroll.value?.removeEventListener('scroll',syncNav);root?.remove();sidebar?.querySelectorAll('[data-editor-nav]').forEach(button=>button.remove());});
+    onBeforeUnmount(()=>{disposed=true;draft?.dispose();scroll.value?.removeEventListener('scroll',syncNav);root?.remove();sidebar?.querySelectorAll('[data-editor-nav]').forEach(button=>button.remove());if(person)window.dispatchEvent(new CustomEvent('community-resident-editor-closed',{detail:{id:person.id,saved}}));});
     return { saving, identityEditing, beginIdentityCorrection, async handle(event,payload) {
       if(event==='close') {
         if(saving.value||pendingClose)return;
@@ -125,6 +125,7 @@ export function installResidentEditor(loadScript) {
         const body=toIpcData({...payload,id:person.id,accountChanges,identityChangeConfirmation,customFields:draft.database.residentCustomFields,customFieldsVersion:snapshot.customFieldsVersion,customValues:snapshot.person.customFields||{}});
         const response=await window.api.businessRequest({method:'PATCH',path:'/api/v3/people/editor',body});
         if(!response.ok)throw new Error(response.error.message);
+        saved=true;
         emit('close');dialogs.notify({type:'success',message:identityChanged?'身份证号已更正，居民关联资料保持不变':'居民资料与收款账户已保存'});
         await usePersonnelStore().load({force:true});
       }catch(error){showError(error);}finally{saving.value=false;}

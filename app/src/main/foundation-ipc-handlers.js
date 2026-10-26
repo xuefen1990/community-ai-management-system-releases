@@ -12,7 +12,7 @@ const { domainRows } = require('./foundation-domains');
 
 function registerFoundationHandlers({ handle, store, authService, localBackendManager, shell, app, dialog, aiRouter }) {
   const auth = new FoundationAuthService({ authService,
-    ensureReady: async () => localBackendManager?.ensureReady(await authService.getServerConfig()) });
+    ensureReady: async () => { if (authService?.mode !== 'standalone') await localBackendManager?.ensureReady(await authService.getServerConfig()); } });
   let business;
   const { FoundationWorkspaceService } = require('./foundation-workspace-service');
   const workspace = new FoundationWorkspaceService({ store, auth });

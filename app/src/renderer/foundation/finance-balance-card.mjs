@@ -11,7 +11,7 @@ export function installOverviewBalance({ router }) {
       try {
         const status = await window.api.getLocalAuthStatus();
         if (!active || id !== sequence) return;
-        allowed.value = status.authenticated === true && (status.account?.role !== 'member' || status.account.permissions?.finance?.includes('view'));
+        allowed.value = status.authenticated === true && ['main_account', 'unit_admin'].includes(status.account?.role) && String(status.account.mainAccountId || status.account.id) === String(status.account.id);
         if (!allowed.value) { balance.value = null; return; }
         const result = await window.api.businessRequest({ method: 'GET', path: '/api/v3/finance-account-balance' });
         if (!active || id !== sequence) return;

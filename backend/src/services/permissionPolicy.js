@@ -8,7 +8,6 @@ const CATALOG = [
   { id: 'party', label: '党员管理', actions: ACTIONS },
   { id: 'visit', label: '民情记录', actions: ACTIONS },
   { id: 'work', label: '村务值班与工作事项', actions: ACTIONS },
-  { id: 'finance', label: '财务收支与承包费', actions: ACTIONS },
   { id: 'land', label: '土地承包确权', actions: ACTIONS },
   { id: 'certificate', label: '证明管理', actions: ACTIONS },
   { id: 'archive', label: '电子档案柜', actions: ACTIONS },
@@ -21,7 +20,7 @@ const MODULES = {
   settings: 'settings', personnel: 'personnel', specialPersonnelProfiles: 'personnel', households: 'personnel', partyMembers: 'party', partyActivists: 'party',
   visitRecords: 'visit', dutyRecords: 'work', workItems: 'work', workEvidence: 'work',
   workProgressRecords: 'work', workResourceEntries: 'work', workAcceptances: 'work',
-  lands: 'land', landParcel: 'land', finances: 'finance', resourceContracts: 'finance',
+  lands: 'land', landParcel: 'land', finances: 'finance', financeRecords: 'finance', financeOpeningBalance: 'finance', financeCategories: 'finance', financeImportBatches: 'finance', resourceContracts: 'finance',
   contractFeeLedgers: 'finance', contractFeeBatches: 'finance', contractFeeReceipts: 'finance',
   contractFeeAdvances: 'finance', contractFeeDistributionPlans: 'finance', contractFeeDistributionBatches: 'finance',
   disbursementCategories: 'funds', disbursementBatches: 'funds', disbursementProfiles: 'funds', farmlandSubsidyLedgers: 'funds',
@@ -53,6 +52,7 @@ function normalizePermissions(value) {
 }
 
 function can(user, moduleId, action = 'view') {
+  if (moduleId === 'finance') return ['main_account', 'unit_admin'].includes(user?.role) && String(user.mainAccountId || user.main_account_id || user.id) === String(user.id);
   if (user?.role === 'main_account' || user?.role === 'unit_admin' || user?.role === 'admin' || user?.role === 'platform_admin') return true;
   const actions = user?.permissions?.[moduleId] || [];
   return actions.includes('view') && actions.includes(action);

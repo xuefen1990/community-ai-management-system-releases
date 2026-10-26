@@ -67,14 +67,15 @@ test('opening balance API saves atomically, checks versions, audits and recomput
   assert.equal((await call(f.api, '/finance-account-balance')).data.amountCents, 140000);
 });
 
-test('finance viewers can read balances but even finance editors cannot change opening balance', async () => {
-  const status = { authenticated: true, entitlement: { type: 'licensed' }, account: { role: 'member', permissions: { finance: ['view', 'update'] } } };
+test('legacy finance grants cannot read or change balances; actual main account retains access', async () => {
+  const status = { authenticated: true, entitlement: { type: 'licensed' }, account: { id: 'member', mainAccountId: 'owner', role: 'member', permissions: { finance: ['view', 'update'] } } };
   const auth = new FoundationAuthService({ authService: { getStatus: async () => status } });
+  for (const [method, path] of [['GET', '/finance-account-balance'], ['GET', '/finance-opening-balance'], ['PATCH', '/finance-opening-balance']]) {
+    await assert.rejects(auth.authorize({ method, path }), { code: 'FORBIDDEN' });
+  }
+  status.account = { id: 'owner', mainAccountId: 'owner', role: 'main_account' };
   await auth.authorize({ method: 'GET', path: '/finance-account-balance' });
-  await auth.authorize({ method: 'GET', path: '/finance-opening-balance' });
-  await assert.rejects(auth.authorize({ method: 'PATCH', path: '/finance-opening-balance' }), { code: 'FORBIDDEN' });
-  status.account.permissions = { workspace: ['view'] };
-  await assert.rejects(auth.authorize({ method: 'GET', path: '/finance-account-balance' }), { code: 'FORBIDDEN' });
+  await auth.authorize({ method: 'PATCH', path: '/finance-opening-balance' });
 });
 
 test('opening settings survive verified workspace backup and restoration', async t => {

@@ -8,9 +8,11 @@ export function installCommunityAccountGate() {
     const mode = ref('login'); const busy = ref(false); const error = ref(''); const notice = ref('');
     const phone = ref(''); const password = ref(''); const nextPassword = ref(''); const confirmation = ref(''); const remember = ref(true);
     const serverUrl = ref(''); const activation = ref('');
+    const runtimeMode = ref('cloud');
     const version = ref(''); const checkingUpdate = ref(false); const updateMessage = ref('');
     let unsubscribeUpdate;
     onMounted(async () => {
+      try { runtimeMode.value = (await window.api.getRemoteServerConfig()).mode || 'cloud'; } catch { /* Existing login errors remain visible. */ }
       try { version.value = await window.api.getVersion(); }
       catch { version.value = '未知'; }
       unsubscribeUpdate = window.api.onAppUpdateStatus?.(event => {
@@ -30,7 +32,7 @@ export function installCommunityAccountGate() {
       checkingUpdate.value = true; updateMessage.value = '正在检查新版本…';
       try {
         const result = await window.api.checkForAppUpdate();
-        if (result?.disabled) updateMessage.value = '开发版不检查正式更新，请在已安装应用中使用。';
+        if (result?.disabled) updateMessage.value = result.message || '开发版不检查正式更新，请在已安装应用中使用。';
         else if (!result?.ok) throw new Error(result?.error || '检查更新失败');
         else if (updateMessage.value === '正在检查新版本…') updateMessage.value = '检查已发起，正在等待结果。';
       } catch (cause) { updateMessage.value = cause.message || '检查更新失败'; }
@@ -43,12 +45,16 @@ export function installCommunityAccountGate() {
     }
     async function openServer() {
       switchMode('server');
-      try { serverUrl.value = (await window.api.getRemoteServerConfig()).baseUrl || ''; }
+      try { serverUrl.value = runtimeMode.value === 'standalone' ? '' : (await window.api.getRemoteServerConfig()).baseUrl || ''; }
       catch (cause) { error.value = cause.message; }
     }
     async function saveServer() {
       if (busy.value) return; busy.value = true; error.value = ''; notice.value = '';
       try {
+        if (runtimeMode.value === 'standalone') {
+          const result = await window.api.setRemoteServerConfig({ pairingCode: serverUrl.value.trim() });
+          switchMode('login'); notice.value = result.warning || '主电脑配对码已保存，请使用成员账号登录'; return;
+        }
         const result = await window.api.checkRemoteServerConnection({ baseUrl: serverUrl.value.trim() });
         if (result?.ok === false) throw new Error(result.error || '服务连接失败');
         await window.api.setRemoteServerConfig({ baseUrl: serverUrl.value.trim() });
@@ -140,18 +146,19 @@ export function installCommunityAccountGate() {
           ].map(([icon, title, text]) => h('div', { class: 'intro-feature-item', key: title }, [h('div', { class: 'feature-icon-wrapper' }, icon), h('div', { class: 'feature-text' }, [h('h4', null, title), h('p', null, text)])]))),
         ])]),
         h('div', { class: `login-form-section is-${mode.value}` }, [h('div', { class: 'login-card' }, [
-          mode.value === 'server' ? h('section', { class: 'auth-panel' }, [heading('服务地址设置', "连接您的村居账号服务器"),
-            input('服务器地址', serverUrl, 'community-login-server', 'url', 'url', '例如 https://example.com'),
+          mode.value === 'server' ? h('section', { class: 'auth-panel' }, [heading(runtimeMode.value === 'standalone' ? '连接主电脑' : '服务地址设置', runtimeMode.value === 'standalone' ? '在主电脑的系统设置 → 手机互联中复制完整配对码，粘贴到这里。密码将通过加密通道验证。' : '连接您的村居账号服务器'),
+            input(runtimeMode.value === 'standalone' ? '主电脑完整配对码' : '服务器地址', serverUrl, 'community-login-server', runtimeMode.value === 'standalone' ? 'text' : 'url', 'off', runtimeMode.value === 'standalone' ? '粘贴完整配对码' : '例如 https://example.com'),
             error.value ? h('p', { role: 'alert' }, error.value) : null,
             h('button', { class: 'login-btn btn btn-primary', disabled: busy.value, onClick: saveServer }, busy.value ? '正在检查…' : '检查连接并保存'),
+            runtimeMode.value === 'standalone' ? button('使用本电脑的主账号', async () => { await window.api.setRemoteServerConfig({ useThisComputer: true }); switchMode('login'); }) : null,
             button('返回登录', () => switchMode('login')),
           ]) : mode.value === 'forgot' ? h('section', { class: 'auth-panel forgot-panel' }, [
-            heading('找回密码', '为保障账号安全，暂由管理员协助重置'),
+            heading('找回密码', runtimeMode.value === 'standalone' ? '本机密码需通过可信备份恢复' : '为保障账号安全，暂由管理员协助重置'),
             h('div', { class: 'foundation-auth-help-card' }, [
               h('strong', null, '请联系管理员重置密码'),
-              h('p', null, '子账号请联系本单位主账号管理员；主账号请联系平台管理员。重置后使用手机号和新密码登录。'),
+              h('p', null, runtimeMode.value === 'standalone' ? '请先保留本机全部资料和迁移备份，再核对恢复方式。成员账号请联系主电脑管理员重置密码。' : '子账号请联系本单位主账号管理员；主账号请联系平台管理员。重置后使用手机号和新密码登录。'),
             ]),
-            h('details', { class: 'foundation-auth-extra' }, [
+            runtimeMode.value === 'standalone' ? null : h('details', { class: 'foundation-auth-extra' }, [
               h('summary', null, '已有离线授权码？'),
               h('div', { class: 'machine-code-card' }, [h('strong', null, '本机设备码'), h('code', null, auth.status.machineId || '暂未获取')]),
               button('复制设备码', () => navigator.clipboard.writeText(auth.status.machineId || '')),
@@ -169,7 +176,7 @@ export function installCommunityAccountGate() {
             h('button', { type: 'submit', class: 'login-btn btn btn-primary', disabled: busy.value }, busy.value ? '正在修改…' : '修改密码并进入工作台'),
             button('返回登录', () => { password.value = ''; switchMode('login'); }),
           ]) : h('form', { class: 'auth-panel login-form', onSubmit: submit }, [
-            heading(mode.value === 'login' ? '账号登录' : '注册新账号', mode.value === 'login' ? '输入手机号与登录密码' : '仅需手机号和密码，注册后即可试用'),
+            heading(mode.value === 'login' ? runtimeMode.value === 'standalone' ? '本机账号登录' : '账号登录' : runtimeMode.value === 'standalone' ? '创建本机账号' : '注册新账号', runtimeMode.value === 'standalone' ? '在本电脑验证密码，无需连接云端账号服务；已有资料请使用原账号和密码' : mode.value === 'login' ? '输入手机号与登录密码' : '仅需手机号和密码，注册后即可试用'),
             input('手机号', phone, 'login-phone', 'tel', 'username', '请输入手机号'),
             input('登录密码', password, 'login-password', 'password', mode.value === 'login' ? 'current-password' : 'new-password', '请输入密码'),
             mode.value !== 'login' ? input('确认密码', confirmation, 'application-password-confirm', 'password', 'new-password', '请再次输入密码') : null,
@@ -185,7 +192,7 @@ export function installCommunityAccountGate() {
           h('footer', { class: 'login-footer' }, [
             h('span', null, "村居AI管理系统 · 用心做好每一件村居事务"),
             h('div', { class: 'foundation-auth-footer-actions' }, [
-              button('服务地址设置', openServer),
+              runtimeMode.value === 'standalone' ? button('连接主电脑 / 本机模式', openServer) : button('服务地址设置', openServer),
               h('span', { class: 'foundation-auth-footer-divider', 'aria-hidden': 'true' }, '·'),
               h('span', { class: 'foundation-auth-version' }, `● 版本 v${version.value || '…'}`),
               h('span', { class: 'foundation-auth-footer-divider', 'aria-hidden': 'true' }, '·'),

@@ -1,0 +1,29 @@
+{
+  "version": "1.4.1",
+  "confirmedDate": "2026-10-26",
+  "repository": "https://github.com/xuefen1990/community-ai-management-system-releases",
+  "branch": "codex/macos-installer-update-repair",
+  "delivery": [
+    "Mac ARM64 full DMG",
+    "Windows x64 full EXE",
+    "reviewed desktop source commit",
+    "GitHub release assets"
+  ],
+  "baseline": "verified already delivered 1.4.0 standalone installer",
+  "approvedRuntimeOverlay": [
+    "app/src/main/ai-settings-store.js",
+    "app/src/renderer/foundation/standalone-ai-settings.mjs",
+    "app/src/renderer/foundation/settings-panels.mjs",
+    "app/src/renderer/foundation/index.html",
+    "app/src/renderer/foundation/standalone-ai-settings.css"
+  ],
+  "excluded": [
+    "unconfirmed working-tree development",
+    "user data and credentials",
+    "ECS deployment",
+    "production in-app update",
+    "website changes",
+    "Android and WeChat package delivery"
+  ],
+  "workflowChange": "tag pushes do not automatically publish legacy cloud updates"
+}

@@ -70,7 +70,7 @@ test('routes online AI through the authenticated backend and clears legacy crede
   assert.equal(calls[1], 'clear-legacy');
 });
 
-test('routes long-form drafting to deep AI and exposes token settlement metadata', async () => {
+test('ordinary drafting uses fast AI without shrinking the document output budget', async () => {
   const calls = [];
   const router = new AiRouter({
     settingsStore: { readRaw: async () => ({ mode: 'online' }), clearLegacyOnlineSettings: async () => {} },
@@ -78,14 +78,15 @@ test('routes long-form drafting to deep AI and exposes token settlement metadata
     onlineClient: { chat: async () => ({ content: 'unused' }) },
     authService: { request: async (path, options) => {
       if(path!=='/ai/credit-tasks/estimate')calls.push({ path, options });
-      return { model: 'deepseek-reasoner', choices: [{ message: { content: '拟写完成' } }], usage: { total_tokens: 321 }, communityAi: { taskTier: 'deep', actualTokens: 321, remainingTokens: 9000 } };
+      return { model: 'deepseek-flash', choices: [{ message: { content: '拟写完成' } }], usage: { total_tokens: 321 }, communityAi: { taskTier: 'basic', actualTokens: 321, remainingTokens: 9000 } };
     } },
   });
   const result = await router.chat({ messages: [{ role: 'user', content: '请拟写一份工作报告' }], task: { taskKind: 'document-draft', taskId: 'doc-1' } });
-  assert.equal(calls[0].options.body.taskTier, 'deep');
+  assert.equal(calls[0].options.body.taskTier, 'basic');
   assert.equal(calls[0].options.body.taskId, 'doc-1');
+  assert.equal(calls[0].options.body.maxTokens, 4096);
   assert.equal(result.routing.actualTokens, 321);
-  assert.equal(result.model, 'deepseek-reasoner');
+  assert.equal(result.model, 'deepseek-flash');
 });
 
 test('online estimate uses the same task classification', async () => {
@@ -138,4 +139,65 @@ test('credits group multiple requests, confirm the upper bound, and settle once'
 test('declining a costly credit operation does not reserve or call the model',async()=>{
  let calls=0;const router=new AiRouter({settingsStore:{readRaw:async()=>({mode:'online'})},confirmCredits:async()=>false,authService:{request:async()=>{calls++;return {billingUnit:'credits',estimatedCredits:6};}}});
  await assert.rejects(()=>router.onlineChat([{content:'分析'}]),/取消/);assert.equal(calls,1);
+});
+
+
+test('one permission check per writing request, refreshed next time; one model call and settlement', async () => {
+  const calls = [];
+  let allowed = true;
+  const authService = { session: { token: 'fixture-token', user: { id: 'member' } }, request: async (path, { body } = {}) => {
+    calls.push({ path, body });
+    if (path === '/auth/profile') return { user: { id: 'member', role: 'member', aiAccessEnabled: allowed } };
+    if (path.endsWith('/estimate')) return { billingUnit: 'credits', estimatedCredits: 2, remainingCredits: 20 };
+    if (path === '/ai/credit-tasks') return { id: 'fixture-task' };
+    if (path.endsWith('/finish')) return { chargedCredits: 1, remainingCredits: 19 };
+    return { choices: [{ message: { content: '完整报告正文' } }] };
+  } };
+  const router = new AiRouter({ authService, settingsStore: { readRaw: async () => ({ mode: 'online' }) } });
+  const input = { messages: [{ role: 'user', content: '请拟写一份工作报告' }], task: { taskKind: 'document-draft' } };
+  const result = await router.chat(input);
+  assert.equal(result.content, '完整报告正文');
+  assert.equal(result.routing.chargedCredits, 1);
+  assert.equal(result.routing.billingPending, false);
+  assert.deepEqual(calls.map(call => call.path), ['/auth/profile', '/ai/credit-tasks/estimate', '/ai/credit-tasks', '/ai/chat', '/ai/credit-tasks/fixture-task/finish']);
+  assert.equal(calls.find(call => call.path.endsWith('/estimate')).body.maxTokens, 4096);
+  allowed = false;
+  await assert.rejects(() => router.chat(input), /未授权/u);
+  assert.equal(calls.filter(call => call.path === '/auth/profile').length, 2);
+  assert.equal(calls.filter(call => call.path === '/ai/chat').length, 1);
+});
+
+test('direct online writing failure is not retried and still finishes its credit task', async () => {
+  const calls = [];
+  const router = new AiRouter({ settingsStore: { readRaw: async () => ({ mode: 'online' }) }, authService: {
+    session: { token: 'fixture-token' }, request: async (path) => {
+      calls.push(path);
+      if (path === '/auth/profile') return { user: { role: 'main_account' } };
+      if (path.endsWith('/estimate')) return { billingUnit: 'credits', estimatedCredits: 2, remainingCredits: 10 };
+      if (path === '/ai/credit-tasks') return { id: 'failed-task' };
+      if (path.endsWith('/finish')) return { chargedCredits: 0 };
+      throw new Error('模型请求超时');
+    },
+  } });
+  await assert.rejects(() => router.onlineChat([{ role: 'user', content: '起草报告' }]), /模型请求超时/u);
+  assert.equal(calls.filter(path => path === '/auth/profile').length, 1);
+  assert.equal(calls.filter(path => path === '/ai/chat').length, 1);
+  assert.equal(calls.filter(path => path.endsWith('/finish')).length, 1);
+});
+
+test('writing estimate and dispatch have the same mode and output budget', async () => {
+  const sent = [];
+  const router = new AiRouter({ settingsStore: { readRaw: async () => ({ mode: 'online' }) }, authService: { request: async (path, { body }) => {
+    sent.push({ path, body });
+    if (path === '/ai/credit-tasks/estimate') return { billingUnit: 'tokens' };
+    return { choices: [{ message: { content: '报告正文' } }] };
+  } } });
+  const messages = [{ role: 'user', content: '拟写工作报告' }];
+  await router.estimateOnline(messages, { taskKind: 'document-draft' });
+  await router.onlineChat(messages, { taskKind: 'document-draft' });
+  const estimate = sent.find(item => item.path === '/ai/estimate').body;
+  const dispatch = sent.find(item => item.path === '/ai/chat').body;
+  assert.equal(estimate.taskTier, dispatch.taskTier);
+  assert.equal(estimate.maxTokens, dispatch.maxTokens);
+  assert.equal(dispatch.maxTokens, 4096);
 });

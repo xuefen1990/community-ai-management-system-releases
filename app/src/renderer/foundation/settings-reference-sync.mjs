@@ -1,10 +1,11 @@
 import {
   settingsView, basicPanel, menuPanel, lanPanel, dictionaryPanel,
-  specialPanel, logsPanel, accountPanel, aiSettingsPanel, router,
+  logsPanel, accountPanel, aiSettingsPanel, router,
   createElementVNode as h, createVNode as component, ref, onMounted,
   onBeforeUnmount, useDialogStore, useThemeStore,
 } from './vendor/assets/foundation-runtime.mjs';
 import { MobileConnectivityPanel, LanSharingPanel, BackupReferencePanel } from './settings-connectivity-panels.mjs';
+import { SpecialCategoryPanel } from './special-category-panel.mjs';
 import { AccessManagementPanel } from './settings-access-panel.mjs';
 
 const tabs = [
@@ -29,10 +30,11 @@ async function readSettings() {
 }
 
 const UpdateSettingsCard = { setup() {
+  const standalone = ref(false);
   const version = ref('读取中…'), checking = ref(false), message = ref(''), error = ref(false);
   let unsubscribe;
   onMounted(async () => {
-    try { version.value = await window.api.getVersion(); }
+    try { standalone.value = (await window.api.getRemoteServerConfig()).mode === 'standalone'; version.value = await window.api.getVersion(); }
     catch (cause) { version.value = '暂时无法读取'; message.value = cause.message; error.value = true; }
     unsubscribe = window.api.onAppUpdateStatus(event => {
       if (event.type !== 'error') error.value = false;
@@ -48,17 +50,17 @@ const UpdateSettingsCard = { setup() {
     checking.value = true; error.value = false; message.value = '正在检查新版本…';
     try {
       const result = await window.api.checkForAppUpdate();
-      if (result.disabled) message.value = '当前为独立开发版，正式更新检查将在已安装应用中使用。';
+      if (result.disabled) message.value = result.message || '当前为独立开发版，正式更新检查将在已安装应用中使用。';
       else if (!result.ok) throw new Error(result.error || '检查更新失败');
       else if (message.value === '正在检查新版本…') message.value = '检查已完成，正在等待更新结果。';
     } catch (cause) { message.value = cause.message || '检查更新失败'; error.value = true; }
     finally { checking.value = false; }
   };
   return () => h('section', { class: 'settings-card foundation-reference-card', 'data-testid': 'community-update-settings' }, [
-    h('div', { class: 'card-header foundation-reference-card__head' }, [h('h3', {}, '🚀 系统版本与在线更新'), h('span', { class: 'foundation-reference-badge' }, `当前版本 v${version.value}`)]),
+    h('div', { class: 'card-header foundation-reference-card__head' }, [h('h3', {}, standalone.value ? '系统版本与手动更新' : '🚀 系统版本与在线更新'), h('span', { class: 'foundation-reference-badge' }, `当前版本 v${version.value}`)]),
     h('div', { class: 'card-body' }, [
-      h('p', {}, "通过村居AI管理系统的更新服务检查新版本。下载完成后，可按提示重启安装。"),
-      h('div', { class: 'foundation-setting-actions' }, [button(checking.value ? '正在检查…' : '🔄 检查新版本', check, { disabled: checking.value, testid: 'community-check-update' })]),
+      h('p', {}, standalone.value ? '本机独立版采用下载安装包更新；账号登录和日常业务无需连接云端账号服务。' : '通过村居AI管理系统的更新服务检查新版本。下载完成后，可按提示重启安装。'),
+      h('div', { class: 'foundation-setting-actions' }, [button(checking.value ? '正在检查…' : standalone.value ? '查看更新方式' : '🔄 检查新版本', check, { disabled: checking.value, testid: 'community-check-update' })]),
       status(message.value, error.value),
     ]),
   ]);
@@ -117,7 +119,7 @@ export function installSettingsReferenceSync() {
         case 'backup': return component(BackupReferencePanel);
         case 'menu': return component(menuPanel);
         case 'dictionary': return component(dictionaryPanel);
-        case 'special': return component(specialPanel);
+        case 'special': return component(SpecialCategoryPanel);
         case 'logs': return component(logsPanel);
         case 'ai-assistant': return component(aiSettingsPanel);
         default: return null;

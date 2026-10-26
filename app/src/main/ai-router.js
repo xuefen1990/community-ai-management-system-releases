@@ -2,7 +2,7 @@
 
 const crypto = require('node:crypto');
 const { AsyncLocalStorage } = require('node:async_hooks');
-const { classifyAiTask } = require('./ai-model-routing');
+const { classifyAiTask, defaultAiMaxTokens } = require('./ai-model-routing');
 
 function checkTextIntegrity(response) {
   if (String(response?.content || '').includes('\uFFFD')) {
@@ -44,9 +44,10 @@ class AiRouter {
   async chat({ messages, task = {} }) {
     await this.assertAiAccess();
     const taskTier = classifyAiTask({ messages, taskKind: task.taskKind, requestedTier: task.taskTier });
+    if (this.authService?.mode === 'standalone' && await this.authService.hostClient?.config()) return this._onlineChat(messages, { ...task, taskTier, hostMode: 'auto' });
     const settings = await this.settingsStore.readRaw();
     if (settings.mode === 'local') return { ...checkTextIntegrity(await this.localRuntime.chat(messages)), routing: { taskTier, provider: 'local' } };
-    if (settings.mode === 'online') return this.onlineChat(messages, { ...task, taskTier });
+    if (settings.mode === 'online') return this._onlineChat(messages, { ...task, taskTier });
     if (this.localRuntime.getStatus().running) {
       try {
         return { ...checkTextIntegrity(await this.localRuntime.chat(messages)), routing: { taskTier, provider: 'local' } };
@@ -54,19 +55,20 @@ class AiRouter {
         if (!this.authService && !(await this.settingsStore.getOnlineCredentials()).apiKey) throw error;
       }
     }
-    return this.onlineChat(messages, { ...task, taskTier });
+    return this._onlineChat(messages, { ...task, taskTier });
   }
 
   async estimateOnline(messages, options = {}) {
     const taskTier = classifyAiTask({ messages, taskKind: options.taskKind, requestedTier: options.taskTier });
-    if (this.authService) {
+    const maxTokens = Math.min(8192, Math.max(16, Number(options.maxTokens) || defaultAiMaxTokens({ messages, taskKind: options.taskKind, taskTier })));
+    if (this.authService && this.authService.mode !== 'standalone') {
       return this.authService.request('/ai/estimate', {
         method: 'POST',
-        body: { messages, maxTokens: options.maxTokens, taskTier, taskKind: options.taskKind || '', taskId: options.taskId || '', attachmentCount: Number(options.attachmentCount || 0) },
+        body: { messages, maxTokens, taskTier, taskKind: options.taskKind || '', taskId: options.taskId || '', attachmentCount: Number(options.attachmentCount || 0) },
       });
     }
     const promptTokens = Math.ceil(Buffer.byteLength(JSON.stringify(messages || []), 'utf8') / 3);
-    const outputTokens = Math.min(8192, Math.max(16, Number(options.maxTokens) || (taskTier === 'deep' ? 4096 : 1200)));
+    const outputTokens = maxTokens;
     const estimatedTokens = promptTokens + outputTokens;
     const highCost = estimatedTokens >= 4000 || options.taskKind === 'vision-document-review' || Number(options.attachmentCount || 0) >= 3;
     return { taskTier, estimatedTokens, remainingTokens: null, sufficient: true, highCost, requiresConfirmation: highCost };
@@ -76,14 +78,15 @@ class AiRouter {
     await this.assertAiAccess();
     const taskTier = classifyAiTask({ messages, taskKind: options.taskKind, requestedTier: options.taskTier });
     const settings = await this.settingsStore.readRaw();
-    if (settings.mode === 'local' || (settings.mode === 'auto' && this.localRuntime.getStatus().running)) {
+    const host = this.authService?.mode === 'standalone' && await this.authService.hostClient?.config();
+    if (!host && (settings.mode === 'local' || (settings.mode === 'auto' && this.localRuntime.getStatus().running))) {
       return { provider: 'local', taskTier, estimatedTokens: 0, remainingTokens: null, sufficient: true, requiresConfirmation: false };
     }
     return applyTokenReminderPolicy(await this.estimateOnline(messages, { ...options, taskTier }), settings.tokenReminderMode);
   }
 
   async withBillingTask(input, work) {
-    if (this.billingContext.getStore() || !this.authService) return work();
+    if (this.billingContext.getStore() || !this.authService || this.authService.mode === 'standalone') return work();
     const settings = await this.settingsStore.readRaw();
     if (settings.mode === 'local' || settings.mode === 'auto' && this.localRuntime.getStatus().running) return work();
     const estimate = await this.authService.request('/ai/credit-tasks/estimate', {method:'POST',body:input}).catch(error => {
@@ -103,26 +106,33 @@ class AiRouter {
       if(!billing && !error) error = new Error('AI 已完成，积分结算结果暂不可用，请刷新余额；后台将自动结算');
     }
     if(error) throw error;
-    return result && typeof result==='object' ? {...result,routing:{...(result.routing||{}),...billing,billingUnit:'credits'}} : result;
+    return result && typeof result==='object' ? {...result,routing:{...(result.routing||{}),...billing,billingPending:false,billingUnit:'credits'}} : result;
   }
 
   async getOnlineCapabilities() {
-    if (this.authService) {
+    if (this.authService?.mode === 'standalone' && await this.authService.hostClient?.config()) return this.authService.hostClient.capabilities(this.authService.session?.token);
+    if (this.authService && this.authService.mode !== 'standalone') {
       const response = await this.authService.request('/ai/models', { method: 'GET' });
       const data = response?.data || response || {};
       return { supportsVision: data.supportsVision === true, visionModel: data.visionModel || '', models: data.models || [] };
     }
-    return { supportsVision: false, visionModel: '', models: [] };
+    const settings = await this.settingsStore.getPublicSettings?.();
+    return { supportsVision: settings?.online?.supportsVision === true, visionModel: settings?.online?.supportsVision ? settings.online.model : '', models: settings?.online?.model ? [settings.online.model] : [] };
   }
 
-  async onlineChat(messages, { maxTokens, temperature = 0.2, taskTier = '', taskKind = '', taskId = '', requestId = '' } = {}) {
+  async onlineChat(messages, options = {}) {
     await this.assertAiAccess();
+    return this._onlineChat(messages, options);
+  }
+
+  // Only reached after the public entry point checks current account permissions.
+  async _onlineChat(messages, { maxTokens, temperature = 0.2, taskTier = '', taskKind = '', taskId = '', requestId = '', hostMode = 'online' } = {}) {
     const resolvedTier = classifyAiTask({ messages, taskKind, requestedTier: taskTier });
-    const resolvedMaxTokens = Math.min(8192, Math.max(16, Number(maxTokens) || (resolvedTier === 'deep' ? 4096 : 1200)));
+    const resolvedMaxTokens = Math.min(8192, Math.max(16, Number(maxTokens) || defaultAiMaxTokens({ messages, taskKind, taskTier: resolvedTier })));
     const resolvedRequestId = requestId || `ai-request-${crypto.randomUUID()}`;
-    if (this.authService) {
+    if (this.authService && this.authService.mode !== 'standalone') {
       const active = this.billingContext.getStore();
-      if(!active && !this.legacyBillingCall) return this.withBillingTask({messages,maxTokens:resolvedMaxTokens,taskTier:resolvedTier,taskKind},()=>this.onlineChat(messages,{maxTokens,temperature,taskTier,taskKind,taskId,requestId:resolvedRequestId}));
+      if(!active && !this.legacyBillingCall) return this.withBillingTask({messages,maxTokens:resolvedMaxTokens,taskTier:resolvedTier,taskKind},()=>this._onlineChat(messages,{maxTokens:resolvedMaxTokens,temperature,taskTier:resolvedTier,taskKind,taskId,requestId:resolvedRequestId}));
       let response;
       const send = () => this.authService.request('/ai/chat', {
         method: 'POST',
@@ -150,6 +160,9 @@ class AiRouter {
       };
     }
 
+    if (this.authService?.mode === 'standalone' && await this.authService.hostClient?.config()) {
+      return this.authService.hostClient.chat(messages, { maxTokens: resolvedMaxTokens, taskKind, hostMode, token: this.authService.session?.token });
+    }
     const credentials = await this.settingsStore.getOnlineCredentials();
     if (!credentials.apiKey && credentials.credentialStatus === 'secure-storage-unavailable') {
       throw new Error('macOS 安全存储不可用。请在“系统设置 → AI 配置”重新输入 API 密钥；密钥只在本次打开软件期间有效，关闭软件后会自动清除。');
@@ -160,7 +173,7 @@ class AiRouter {
       maxTokens: resolvedMaxTokens,
       temperature,
     });
-    return { ...checkTextIntegrity(response), provider: 'online', routing: { requestId: resolvedRequestId, taskTier: resolvedTier, model: response?.model || credentials.model || '' } };
+    return { ...checkTextIntegrity(response), provider: 'online', routing: { requestId: resolvedRequestId, taskTier: resolvedTier, model: response?.model || credentials.model || '', ...(this.authService?.mode === 'standalone' ? { billingUnit: 'provider', provider: 'direct' } : {}) } };
   }
 }
 

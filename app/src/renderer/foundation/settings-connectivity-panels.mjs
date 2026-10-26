@@ -148,7 +148,7 @@ export const MobileConnectivityPanel = { props: { onOpenAccess: Function }, setu
           h('div', { class: 'foundation-connect-benchmark-side' }, [
             h('div', { class: 'foundation-connect-eyebrow' }, '局域网连接与设备授权'),
             h('p', {}, `手机上传简短地址：${active() ? primary().url : '未就绪'}`),
-            h('p', {}, accountLookupFailed.value ? `干部名册：${roster.value.length} 人 · 子账号状态暂不可查 · 手机设备绑定待小程序接入` : `干部名册：${roster.value.length} 人 · 已开通子账号：${roster.value.filter(item => accountFor(item)).length} 人 · 手机设备绑定待小程序接入`),
+            h('p', {}, accountLookupFailed.value ? `干部名册：${roster.value.length} 人 · 子账号状态暂不可查 · 手机设备状态尚未接入干部名册` : `干部名册：${roster.value.length} 人 · 已开通子账号：${roster.value.filter(item => accountFor(item)).length} 人 · 手机设备状态尚未接入干部名册`),
           ]),
         ]),
         h('div', { class: 'foundation-connect-toolbar' }, [
@@ -163,7 +163,7 @@ export const MobileConnectivityPanel = { props: { onOpenAccess: Function }, setu
           h('tbody', {}, visibleCadres().length ? visibleCadres().map(cadre => h('tr', { key: cadre.id }, [
             h('td', {}, [h('strong', {}, cadre.name), h('small', {}, cadre.position || '摸底干部')]),
             h('td', {}, cadre.phone || '未填写'),
-            h('td', {}, [h('span', { class: `foundation-connect-account-badge${accountFor(cadre) ? ' is-linked' : ''}` }, accountLookupFailed.value ? '账号状态暂不可查' : accountFor(cadre) ? '子账号已开通' : '未开通子账号'), h('small', {}, '手机设备待小程序接入')]),
+            h('td', {}, [h('span', { class: `foundation-connect-account-badge${accountFor(cadre) ? ' is-linked' : ''}` }, accountLookupFailed.value ? '账号状态暂不可查' : accountFor(cadre) ? '子账号已开通' : '未开通子账号'), h('small', {}, '手机设备状态尚未接入干部名册')]),
             h('td', {}, '从未下载 · 小程序底册接口待接通'),
             h('td', {}, '暂无回传记录'),
             h('td', {}, [action(accountFor(cadre) ? '账号授权' : '开通子账号', () => props.onOpenAccess?.(cadre), { secondary: true, disabled: !canManage() }),
@@ -214,14 +214,18 @@ export const MobileConnectivityPanel = { props: { onOpenAccess: Function }, setu
 } };
 
 export const LanSharingPanel = { props: { autoScan: Boolean }, setup(props) {
-  const info = ref(null), message = ref(''), error = ref(false), ip = ref(''), busy = ref(false), account = ref(null), hosts = ref([]);
+  const info = ref(null), message = ref(''), error = ref(false), ip = ref(''), busy = ref(false), account = ref(null), hosts = ref([]), mobilePair = ref(null);
   let refreshTimer;
   const canManage = () => ['unit_admin', 'main_account', 'admin', 'platform_admin'].includes(account.value?.role);
+  const canPairMobile = () => ['unit_admin', 'main_account'].includes(account.value?.role)
+    && String(account.value?.id) === String(info.value?.ownerId);
   const copyIp = async address => { try { await copyText(address); message.value = `${address} 已复制`; error.value = false; } catch (cause) { message.value = cause.message; error.value = true; } };
   const refresh = async () => {
     try {
       info.value = await window.api.getLanShareInfo();
       account.value = (await window.api.getLocalAuthStatus()).account;
+      if (!canPairMobile() || !info.value?.mobile || mobilePair.value?.expiresAt <= Date.now()
+        || mobilePair.value?.data?.workspaceId && mobilePair.value.data.workspaceId !== info.value.mobile.workspaceId) mobilePair.value = null;
       if (!ip.value && info.value?.connection?.baseUrl) ip.value = new URL(info.value.connection.baseUrl).hostname;
     } catch (cause) { message.value = cause.message || '无法读取局域网共享状态'; error.value = true; }
   };
@@ -255,6 +259,13 @@ export const LanSharingPanel = { props: { autoScan: Boolean }, setup(props) {
       }
       message.value = hosts.value.length ? `发现 ${hosts.value.length} 台主电脑，请选择属于当前账号的设备。` : '未发现主电脑。请确认处于同一局域网，或在下方手动输入 IP。若本机从未启用共享，请由主账号先在本机设置。';
     } catch (cause) { message.value = cause.message || '扫描失败，请手动输入 IP'; error.value = true; }
+    finally { busy.value = false; }
+  };
+  const pairMobile = async () => {
+    if (busy.value) return;
+    busy.value = true; error.value = false;
+    try { mobilePair.value = await window.api.updateLanShareConfig({ action: 'mobile-pairing' }); message.value = ''; }
+    catch (cause) { message.value = cause.message || '无法生成手机配对码'; error.value = true; }
     finally { busy.value = false; }
   };
   onMounted(async () => { await refresh(); if (props.autoScan && !info.value?.connection?.baseUrl) await scan(); refreshTimer = setInterval(refresh, 10000); });
@@ -295,6 +306,16 @@ export const LanSharingPanel = { props: { autoScan: Boolean }, setup(props) {
           action('连接并使用主电脑数据', () => { void run('connect', '已连接主电脑'); }, { disabled: busy.value || !ip.value.trim(), testid: 'community-lan-connect' }),
         ]) : null,
         !canManage() ? h('p', { class: 'foundation-lan-account-hint' }, '子账号首次连接这台主电脑时，需联网完成身份核对。') : null,
+        canPairMobile() ? h('div', { class: 'foundation-connect-actions' }, [
+          action(mobilePair.value ? '刷新二维码' : '手机配对二维码', () => { void pairMobile(); }, { secondary: true, disabled: busy.value || !info.value?.mobile, testid: 'mobile-pairing-create' }),
+        ]) : null,
+        canPairMobile() && mobilePair.value ? h('div', { 'data-testid': 'mobile-pairing-code', style: { display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'center', minWidth: 0 } }, [
+          h('img', { src: mobilePair.value.qrDataUrl, alt: '安卓应用与微信小程序五分钟配对二维码', width: 280, height: 280, style: { width: '280px', maxWidth: '100%', height: 'auto', aspectRatio: '1', flexShrink: 0 } }),
+          h('div', { style: { flex: '1 1 180px', minWidth: 0 } }, [
+            h('p', {}, `有效至 ${new Date(mobilePair.value.expiresAt).toLocaleTimeString('zh-CN')}`),
+            h('p', {}, '手机登录后扫码连接，同一局域网内使用'),
+          ]),
+        ]) : null,
         notice(message.value, error.value),
       ]),
     ]),

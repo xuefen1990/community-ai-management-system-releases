@@ -1,0 +1,65 @@
+export async function checkResidentImportReview({id,id3}){
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+ const find=id=>document.querySelector(`[data-testid="${id}"]`);
+ const wait=async(fn,message)=>{for(let i=0;i<500;i++){if(fn())return;await pause(30);}throw Error(message||'导入核对界面等待超时');};
+ const click=id=>{const e=find(id);if(!e)throw Error(`Missing ${id}`);e.click();};
+ const {foundation}=await import('../../src/renderer/foundation/bootstrap.mjs');
+ await foundation.personnel.load({force:true});await foundation.router.push('/personnel');await wait(()=>find('resident-audit-open'),'检查入口未显示');
+ click('resident-audit-open');await wait(()=>find('resident-audit-dialog'),'现有档案检查未打开');
+ const audit=find('resident-audit-dialog');if(!audit.textContent.includes('4 份档案')||!audit.textContent.includes('姓名不同 1 组'))throw Error('现有档案检查结果错误');
+ [...audit.querySelectorAll('button')].find(button=>button.textContent==='关闭').click();
+ const dropdown=find('personnel-import-dropdown-container');if(!dropdown)throw Error('导入菜单不存在');dropdown.querySelector('button').click();
+ await wait(()=>[...document.querySelectorAll('.el-dropdown-menu__item')].some(e=>e.textContent.includes('批量导入')));
+ [...document.querySelectorAll('.el-dropdown-menu__item')].find(e=>e.textContent.includes('批量导入')).click();
+ await wait(()=>find('personnel-import-dialog'),'导入窗口未打开');click('import-dropzone');await wait(()=>find('confirm-import-btn')&&!find('confirm-import-btn').disabled,'列映射未完成');
+ click('confirm-import-btn');await wait(()=>find('resident-import-review-dialog'),'未进入导入检查');
+ if(!find('resident-review-confirm').disabled)throw Error('姓名未选择却允许导入');
+ click('resident-review-cancel');await wait(()=>!find('resident-import-review-dialog')&&!find('confirm-import-btn').disabled,'取消后导入按钮未恢复');if(foundation.personnel.people.length!==4)throw Error('取消核对改变了档案');
+ click('confirm-import-btn');await wait(()=>find('resident-import-review-dialog'),'再次核对未打开');
+ const select=document.querySelector(`[data-resident-name-choice="${id}"]`);select.value='原姓名';select.dispatchEvent(new Event('change',{bubbles:true}));
+ if(find('resident-review-confirm').disabled)throw Error('人工选择后按钮仍被禁用');
+ if(!find('resident-import-review-dialog').textContent.includes('保留已有值'))throw Error('字段差异未展示');
+ await pause(200);await new Promise(requestAnimationFrame);await window.api.businessRequest({path:'/api/v3/__test/resident-review-capture'});
+ click('resident-review-confirm');await wait(()=>find('import-done-btn')&&!find('import-done-btn').disabled,'导入未完成');
+ click('import-done-btn');await wait(()=>!find('personnel-import-dialog'));
+ await foundation.personnel.load({force:true});if(foundation.personnel.people.length!==5)throw Error('归并后的档案数量不正确');
+ click('resident-audit-open');await wait(()=>find('resident-audit-dialog'));
+ await pause(200);await new Promise(requestAnimationFrame);
+ return {existingAuditVisible:true,nameChoiceRequired:true,cancelDoesNotWrite:true,duplicateNamesRequireChoice:true,finalCount:5};
+}
+
+export async function checkResidentAuditEditing({validCard}){
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),find=id=>document.querySelector(`[data-testid="${id}"]`);
+ const wait=async(fn,message)=>{for(let i=0;i<500;i++){if(fn())return;await pause(30);}throw Error(message);};
+ const {foundation}=await import('../../src/renderer/foundation/bootstrap.mjs');
+ foundation.personnel.filters.search='原姓名';await pause(100);
+ if(find('edit-person-invalid'))throw Error('测试应让目标档案位于当前筛选以外');
+ const editButton=id=>document.querySelector(`[data-resident-audit-edit="${id}"]`);
+ editButton('invalid').click();await wait(()=>find('person-form-dialog')&&document.querySelector('#foundation-resident-extra-root .resident-profile-section'),'查验问题不能直接打开原生编辑窗口');
+ if(find('resident-audit-dialog').style.display!=='none')throw Error('查验层遮挡了编辑窗口');
+ find('person-form-dialog').querySelector('.el-dialog__headerbtn').click();
+ await wait(()=>!find('person-form-dialog')||document.querySelector('[data-confirm-action="confirm"]'),'关闭未响应');
+ if(find('person-form-dialog'))document.querySelector('[data-confirm-action="confirm"]').click();
+ await wait(()=>!find('person-form-dialog')&&find('resident-audit-dialog').style.display!=='none'&&!find('resident-audit-recheck').disabled,'取消编辑未返回查验');
+ if(!editButton('invalid'))throw Error('取消修改错误地移除了原问题');
+ editButton('invalid').click();await wait(()=>find('person-form-dialog')&&document.querySelector('#foundation-resident-extra-root .resident-profile-section'),'无法再次打开编辑窗口');
+ const setInput=(id,value)=>{const input=document.querySelector(`input#${id}`)||document.querySelector(`#${id} input`);if(!input)throw Error(`缺少输入项 ${id}`);input.value=value;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));};
+ document.querySelector('#idCardHint').click();await pause(50);setInput('p_id_card',validCard);setInput('p_name','已核实居民');await pause(80);
+ const save=()=>[...find('person-form-dialog').querySelectorAll('.el-dialog__footer button')].find(button=>button.textContent.includes('保存')).click();save();
+ const {useDialogStore}=await import('../../src/renderer/foundation/vendor/assets/foundation-runtime.mjs'),dialogs=useDialogStore();
+ await wait(()=>dialogs.confirmation?.title?.includes('第一次确认'),'未出现身份证更正第一次确认');
+ document.querySelector('[data-confirm-action="confirm"]').click();
+ await wait(()=>dialogs.confirmation?.title?.includes('第二次确认'),'未出现身份证更正第二次确认');
+ document.querySelector('[data-confirm-action="confirm"]').click();
+ await wait(()=>!find('person-form-dialog')&&find('resident-audit-dialog').style.display!=='none'&&!find('resident-audit-recheck').disabled,'保存后未返回查验结果');
+ if(editButton('invalid'))throw Error('更正后仍显示已解决的身份证异常');
+ if(!find('resident-audit-summary').textContent.includes('2 份需要核对')||!find('resident-audit-summary').textContent.includes('不合法 0 份'))throw Error('保存后问题统计没有更新');
+ if(!find('resident-audit-dialog').textContent.includes('修改已保存，检查结果已刷新'))throw Error('保存后的重新查验提示缺失');
+ editButton('dup1').click();await wait(()=>find('person-form-dialog')&&document.querySelector('#foundation-resident-extra-root .resident-profile-section'),'重复身份证档案无法编辑');
+ setInput('p_name','重复甲已核实');await pause(60);save();
+ await wait(()=>!find('person-form-dialog')&&find('resident-audit-dialog').style.display!=='none'&&!find('resident-audit-recheck').disabled,'重复身份证档案的普通资料不能保存');
+ if(!find('resident-audit-dialog').textContent.includes('重复甲已核实'))throw Error('查验列表未展示更新后的姓名');
+ find('resident-audit-recheck').click();await wait(()=>!find('resident-audit-recheck').disabled,'手工重新查验失败');
+ await pause(200);await new Promise(requestAnimationFrame);
+ return {editOutsideCurrentFilter:true,cancelReturnsWithoutResolving:true,identityTwoConfirmations:true,saveReturnsAndRechecks:true,resolvedIssueRemoved:true,duplicateRecordEditable:true,manualRecheck:true};
+}

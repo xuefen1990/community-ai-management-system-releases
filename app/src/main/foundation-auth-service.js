@@ -76,6 +76,8 @@ class FoundationAuthService {
       fail('PRODUCT_AUTH_REQUIRED', productStatus(status).message || "请先登录有效的村居账号");
     }
     const account = status.account || {};
+    if ((moduleForPath(path) === 'finance' || path === '/import-backup' && domain === 'finance')
+      && (!['main_account', 'unit_admin'].includes(account.role) || String(account.mainAccountId || account.id) !== String(account.id))) fail('FORBIDDEN', '财务仅限主账号使用');
     if (account.role !== 'member') return;
     if (path === '/finance-opening-balance' && method !== 'GET') fail('FORBIDDEN', '仅主账号可设置期初余额');
     if (path === '/backup') fail('FORBIDDEN', '仅主账号可备份或恢复完整工作区');

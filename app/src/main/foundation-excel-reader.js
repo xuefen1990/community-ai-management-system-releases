@@ -18,8 +18,9 @@ function parseFoundationGrid(grid) {
     while (used.has(name)) name = `${base}_${suffix++}`;
     used.add(name); return name;
   });
-  const allRows = grid.slice(header.index + 1).filter(row => row.some(value => String(value ?? '').trim()))
-    .map(row => Object.fromEntries(headers.map((name, index) => [name, String(row[index] ?? '').trim()])));
+  const allRows = grid.slice(header.index + 1).map((row, index) => ({ row, sourceRow: header.index + index + 2 }))
+    .filter(({ row }) => row.some(value => String(value ?? '').trim()))
+    .map(({ row, sourceRow }) => ({ ...Object.fromEntries(headers.map((name, index) => [name, String(row[index] ?? '').trim()])), __residentSourceRow: sourceRow }));
   return { headers, allRows, totalRows: allRows.length, headerRowNumber: header.index + 1 };
 }
 function readFoundationExcel(value) {

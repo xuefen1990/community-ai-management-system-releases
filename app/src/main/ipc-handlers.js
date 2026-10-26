@@ -65,6 +65,7 @@ function registerCompatibilityHandlers({
     const { account: user, entitlement } = await authService.getStatus();
     if (!['trial', 'licensed'].includes(entitlement?.type)) throw new Error('账号授权已到期');
     if (user.mustChangePassword) throw new Error('首次登录请先修改初始密码');
+    if (moduleId === 'finance' && (!['main_account', 'unit_admin'].includes(user.role) || String(user.mainAccountId || user.id) !== String(user.id))) throw new Error('财务仅限主账号使用');
     if (user.role !== 'member') return;
     const allowed = user.permissions?.[moduleId] || [];
     if (!allowed.includes('view') || !allowed.includes(action)) throw new Error('当前账号没有执行此操作的权限');
@@ -237,13 +238,19 @@ function registerCompatibilityHandlers({
     }
     if (value.action === 'connect') return authService.connectLanWorkspace({ ip: value.ip });
     if (value.action === 'check') return authService.checkLanWorkspace({ ip: value.ip });
-    if (!['enable', 'disable', 'migrate'].includes(value.action)) throw new Error('共享操作不正确');
+    if (!['enable', 'disable', 'migrate', 'mobile-pairing'].includes(value.action)) throw new Error('共享操作不正确');
     if (app.isPackaged === false && process.env.COMMUNITY_DEV_MODE !== '1') throw new Error('请通过独立开发环境启用共享');
     const { account: user, entitlement } = await authService.getStatus();
     if (!['trial', 'licensed'].includes(entitlement?.type)) throw new Error('账号授权已到期');
     if (!['main_account', 'unit_admin', 'admin', 'platform_admin'].includes(user?.role) || user.mustChangePassword) throw new Error('只有主账号可以管理本电脑的业务数据');
     const { baseUrl } = await authService.getServerConfig();
     await lanWorkspaceService.prepareLocal({ ownerId: user.mainAccountId || user.id, cloudBaseUrl: baseUrl });
+    if (value.action === 'mobile-pairing') {
+      if (!['main_account', 'unit_admin'].includes(user.role) || String(user.id) !== String(user.mainAccountId || user.id)) throw new Error('只有本工作区的主账号可以配对手机');
+      const paired = await lanWorkspaceService.mobilePairing();
+      const qrDataUrl = await require('qrcode').toDataURL(paired.payload, { width: 560, margin: 4, errorCorrectionLevel: 'M' });
+      return { ...paired, qrDataUrl };
+    }
     if (value.action === 'disable') return lanWorkspaceService.disableSharing();
     if (value.action === 'enable') {
       const result = await lanWorkspaceService.enableSharing();
@@ -266,7 +273,7 @@ function registerCompatibilityHandlers({
     ? localAiRuntime.getStatus()
     : ({ running: false }));
   if (authService) {
-    const ensureAccountService = async () => localBackendManager?.ensureReady(await authService.getServerConfig());
+    const ensureAccountService = async () => { if (authService.mode !== 'standalone') await localBackendManager?.ensureReady(await authService.getServerConfig()); };
     handle(INVOKE_CHANNELS.registerLocalAccount, async (_event, value) => { await ensureAccountService(); return authService.register(value); });
     handle(INVOKE_CHANNELS.submitUnitAdminApplication, async (_event, value) => { await ensureAccountService(); return authService.submitUnitAdminApplication(value); });
     handle(INVOKE_CHANNELS.listUnitMemberApplications, async () => authService.listMemberApplications());
@@ -299,7 +306,8 @@ function registerCompatibilityHandlers({
     handle(INVOKE_CHANNELS.getRemoteServerConfig, async () => authService.getServerConfig());
     handle(INVOKE_CHANNELS.setRemoteServerConfig, async (_event, value) => {
       const config = await authService.setServerConfig(value || {});
-      await localBackendManager?.ensureReady(config);
+      if (authService.mode !== 'standalone') await localBackendManager?.ensureReady(config);
+      await store.resetForAccountChange?.();
       return config;
     });
     handle(INVOKE_CHANNELS.checkRemoteServerConnection, async (_event, value) => authService.checkServerConnection(value || {}));
@@ -320,7 +328,7 @@ function registerCompatibilityHandlers({
       }
       return authService.request(`/ai/quota/ledger${params.toString() ? `?${params.toString()}` : ''}`);
     });
-    handle(INVOKE_CHANNELS.getAiModels, async () => authService.request('/ai/models'));
+    handle(INVOKE_CHANNELS.getAiModels, async () => authService.mode === 'standalone' ? aiRouter.getOnlineCapabilities() : authService.request('/ai/models'));
   }
   if (updateService) {
     handle(INVOKE_CHANNELS.checkForAppUpdate, async () => updateService.check());
@@ -329,6 +337,7 @@ function registerCompatibilityHandlers({
   }
   if (modelCatalog && dialog) {
     handle(INVOKE_CHANNELS.importLocalModel, async () => {
+      if (authService?.mode === 'standalone') await requireUnitAdmin();
       const result = await dialog.showOpenDialog({
         title: '导入本地 GGUF 模型',
         properties: ['openFile'],
@@ -339,11 +348,11 @@ function registerCompatibilityHandlers({
     });
   }
   if (aiSettingsStore) {
-    handle(INVOKE_CHANNELS.getAiSettings, async () => aiSettingsStore.getPublicSettings());
-    handle(INVOKE_CHANNELS.saveAiSettings, async (_event, value) => aiSettingsStore.save(value));
+    handle(INVOKE_CHANNELS.getAiSettings, async () => { await requireSignedIn(); return { ...await aiSettingsStore.getPublicSettings(), runtimeMode: authService?.mode || 'cloud' }; });
+    handle(INVOKE_CHANNELS.saveAiSettings, async (_event, value) => { await requireUnitAdmin(); return { ...await aiSettingsStore.save(value), runtimeMode: authService?.mode || 'cloud' }; });
   }
   if (localAiRuntime) {
-    handle(INVOKE_CHANNELS.toggleInternalAiServer, async (_event, value) => localAiRuntime.toggle(value));
+    handle(INVOKE_CHANNELS.toggleInternalAiServer, async (_event, value) => { if (authService?.mode === 'standalone') await requireUnitAdmin(); return localAiRuntime.toggle(value); });
   }
   if (aiRouter) {
     handle(INVOKE_CHANNELS.chatWithAi, async (_event, value) => aiRouter.chat(value));

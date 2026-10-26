@@ -80,11 +80,22 @@ module.exports = function adaptFoundation(source) {
   once('ka(()=>{o=!1,Ae&&(clearInterval(Ae),Ae=null)})',
     'ka(()=>{o=!1,Ae&&(clearInterval(Ae),Ae=null),foundationUploadUnsubscribe?.()})');
   // An import rollback must point to the state before its first write.
+  // Open the native editor by internal resident ID, independently of the
+  // visible page/filter. The view owns and cleans up this bridge on unmount.
+  once('async function $e(he){if(y.value=he,v.value="",n.load({force:!0}).catch(()=>{}),he&&(!k.value.landParcels||k.value.landParcels.length===0))',
+    'const foundationAuditEditor=async id=>{await n.load({force:!0});if(n.error)throw new Error(n.error);const person=n.people.find(row=>String(row.id)===String(id));if(!person)throw new Error("该居民档案已被删除，请重新查验");await $e(person);};window.communityResidentEditorOpen=foundationAuditEditor;wl(()=>{if(window.communityResidentEditorOpen===foundationAuditEditor)delete window.communityResidentEditorOpen;});async function $e(he){if(y.value=he,v.value="",n.load({force:!0}).catch(()=>{}),he&&(!k.value.landParcels||k.value.landParcels.length===0))');
+  // Keep the reviewed converter and mapping UI; require our read-only review
+  // before making the snapshot or writing any resident/dictionary records.
+  once('V[27]=d("div",{class:"box-label"},"覆盖更新",-1)', 'V[27]=d("div",{class:"box-label"},"补充资料",-1)');
+  once('o.value=3,h.value=!0,v.value="Excel表解析与格式校验中...",await new Promise(ie=>setTimeout(ie,80));try{',
+    'if(h.value)return;h.value=!0;let foundationCheckedImport;try{if(!window.communityReviewResidentImport)throw new Error("居民导入检查组件尚未加载，请重新打开开发版");foundationCheckedImport=await window.communityReviewResidentImport({rows:N.allRows,mappings:G,mode:l.value==="create"?"batch":l.value,existingPeople:a.existingPeople,villageGroups:a.villageGroups,customImportFields:_.value,buildPlan:o8e,fileName:p.value});}catch(error){s().notify({type:"error",message:error.message});return;}finally{h.value=!1;}if(!foundationCheckedImport)return;o.value=3,h.value=!0,v.value="Excel表解析与格式校验中...",await new Promise(ie=>setTimeout(ie,80));try{');
+  once('summary:Me}=o8e({rows:N.allRows,mappings:G,mode:l.value==="create"?"batch":l.value,existingPeople:a.existingPeople,villageGroups:a.villageGroups,customImportFields:_.value});',
+    'summary:Me}=foundationCheckedImport;');
   once('async function q0e(e){const t={domain:"personnel",', 'async function q0e(e){const t={id:e.id,domain:"personnel",');
-  once('try{const{validRows:ie,householdGroupCandidates:me,distinctRelations:xe,summary:Me}=o8e(',
-    'try{const foundationImportId=`import-job-${crypto.randomUUID()}`;await window.api.createV3ImportSnapshot({id:foundationImportId,domain:"personnel"});const{validRows:ie,householdGroupCandidates:me,distinctRelations:xe,summary:Me}=o8e(');
+  once('try{const{validRows:ie,householdGroupCandidates:me,distinctRelations:xe,summary:Me}=foundationCheckedImport;',
+    'try{const foundationImportId=`import-job-${crypto.randomUUID()}`;await window.api.createV3ImportSnapshot({id:foundationImportId,domain:"personnel"});const{validRows:ie,householdGroupCandidates:me,distinctRelations:xe,summary:Me}=foundationCheckedImport;');
   block('const Ae=await q0e({fileName:p.value,mode:l.value===', 'Object.assign(Q,Me)}catch(ie){s().notify',
-    'try{await q0e({id:foundationImportId,domain:"personnel",fileName:p.value,mode:l.value==="supplement"?"supplement":"batch",totalRows:Me.totalRows,insertedRows:Me.insertedRows,updatedRows:Me.updatedRows,failedRows:Me.failedRows});}catch(error){s().notify({type:"warning",message:"人员已写入，但导入历史登记失败。导入前完整备份已保留，可在设置中恢复。"});}');
+    'try{await q0e({id:foundationImportId,domain:"personnel",fileName:p.value,mode:l.value==="supplement"?"supplement":"batch",totalRows:Me.totalRows,insertedRows:Me.insertedRows,updatedRows:Me.updatedRows,failedRows:Me.failedRows,report:Me.review,mapping:G});}catch(error){s().notify({type:"warning",message:"人员已写入，但导入历史登记失败。导入前完整备份已保留，可在设置中恢复。"});}');
   once('catch(V){console.warn("创建导入快照失败:",V)}', 'catch(V){throw new Error("导入前备份失败，已停止导入："+(V.message||V))}');
   once('await window.api.createV3ImportSnapshot(se)', 'await window.api.createV3ImportSnapshot({id:se,domain:"land"})');
   once('catch(V){console.warn("记录导入历史日志失败:",V)}',

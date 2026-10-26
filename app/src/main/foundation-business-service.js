@@ -1,4 +1,5 @@
 'use strict';
+const { deleteResidents } = require('./foundation-resident-bulk-delete');
 const { editorSnapshot, saveEditor } = require('./foundation-resident-editor');
 const { householdRegistrationContext, registerHouseholdMember } = require('./foundation-household-member-registration');
 
@@ -177,6 +178,7 @@ class FoundationBusinessService {
   }
 
   mutate(database, method, path, body, authorization) {
+    if (method === 'DELETE' && path === '/people') return deleteResidents(database, body, { now: this.now, uuid: this.uuid });
     if (method === 'PATCH' && path === '/finance-transaction-order') {
       const result = saveTransactionOrder(database, body, { now: this.now, uuid: this.uuid, today: localToday(this.now()) });
       if (!authorization?.remoteChild) this.log(database, '审核财务同日交易顺序', result.recordIds);

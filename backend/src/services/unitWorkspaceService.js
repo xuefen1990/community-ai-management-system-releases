@@ -17,7 +17,7 @@ function assertNotCutOver(user) { if (db.findOne('workspace_cutovers', row => ro
 function may(user, action) { return isUnitAdmin(user) || Boolean(user?.permissions?.workspace?.includes(action)); }
 const MODULES = permissionPolicy.MODULES;
 function moduleFor(key) { return MODULES[key] || null; }
-function can(user, key, actions) { const moduleId = moduleFor(key); return isUnitAdmin(user) || (moduleId && actions.some(action => permissionPolicy.can(user, moduleId, action))); }
+function can(user, key, actions) { const moduleId = moduleFor(key); if (moduleId === 'finance') return actions.some(action => permissionPolicy.can(user, moduleId, action)); return isUnitAdmin(user) || (moduleId && actions.some(action => permissionPolicy.can(user, moduleId, action))); }
 function assertAccess(user, action) { if (!may(user, action) && !Object.keys(user?.permissions || {}).some(moduleId => permissionPolicy.can(user, moduleId, action))) throw error(403, action === 'view' ? '当前账号没有查看共享数据的权限' : '当前账号没有修改共享数据的权限'); }
 function workspaceFor(user) { assertNotCutOver(user); const ownerId = mainAccountId(user); let workspace = db.findOne('unit_workspaces', item => item.main_account_id === ownerId || (user.organization_id && item.organization_id === user.organization_id)); if (!workspace) { workspace = { id: db.genId(), main_account_id: ownerId, version: 1, data: {}, updated_by: '', updated_at: db.now() }; db.insert('unit_workspaces', workspace); } return workspace; }
 function read(user) { assertAccess(user, 'view'); const workspace = workspaceFor(user); const data = {}; for (const [key, value] of Object.entries(workspace.data)) if (can(user, key, ['view'])) data[key] = structuredClone(value); return { data, version: workspace.version, updatedAt: workspace.updated_at }; }
@@ -94,6 +94,7 @@ function write(user, { data, version }) {
   for (const [key, value] of Object.entries(data)) {
     if (!moduleFor(key) && !isUnitAdmin(user)) throw error(403, `当前账号无权修改 ${key}`);
     if (isDeepStrictEqual(merged[key], value)) continue;
+    if (moduleFor(key) === 'finance' && !can(user, key, ['view'])) throw error(403, '财务仅限主账号使用');
     if (!isUnitAdmin(user)) {
       const required = changesFor(merged[key], value);
       if (!can(user, key, ['view']) || required.some(action => !can(user, key, [action]))) throw error(403, `当前账号无权${required.join('、')} ${key}`);

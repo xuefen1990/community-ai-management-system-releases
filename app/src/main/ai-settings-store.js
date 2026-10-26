@@ -52,6 +52,7 @@ class AiSettingsStore {
       online: {
         baseUrl: settings.online.baseUrl,
         model: settings.online.model,
+        supportsVision: settings.online.supportsVision === true,
         hasApiKey: keyStorage === 'secure' || keyStorage === 'session',
         keyStorage,
       },
@@ -72,9 +73,12 @@ class AiSettingsStore {
     }
     const requestedApiKey = String(input.online?.apiKey || '').trim();
     let encryptedApiKey = current.online.encryptedApiKey;
+    let nextSessionApiKey = this.sessionApiKey;
     if (requestedApiKey) {
-      if (this.safeStorage?.isEncryptionAvailable()) encryptedApiKey = this.encryptApiKey(requestedApiKey);
-      else this.sessionApiKey = requestedApiKey;
+      if (this.safeStorage?.isEncryptionAvailable()) {
+        encryptedApiKey = this.encryptApiKey(requestedApiKey);
+        nextSessionApiKey = '';
+      } else nextSessionApiKey = requestedApiKey;
     }
     const settings = {
       mode: input.mode,
@@ -83,7 +87,8 @@ class AiSettingsStore {
         ? input.tokenReminderMode : current.tokenReminderMode || 'high_cost_only',
       online: {
         baseUrl,
-        model: String(input.online?.model || ''),
+        model: String(input.online?.model ?? current.online.model ?? ''),
+        supportsVision: input.online?.supportsVision ?? current.online.supportsVision ?? false,
         encryptedApiKey,
       },
     };
@@ -91,6 +96,9 @@ class AiSettingsStore {
     const temporaryPath = `${this.filePath}.tmp-${process.pid}`;
     await fs.writeFile(temporaryPath, `${JSON.stringify(settings, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     await fs.rename(temporaryPath, this.filePath);
+    // Replace the in-memory credential only after persistence succeeds. When
+    // secure storage recovers, the newly saved key must supersede the session key.
+    this.sessionApiKey = nextSessionApiKey;
     return this.getPublicSettings();
   }
 

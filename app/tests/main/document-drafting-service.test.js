@@ -21,10 +21,12 @@ function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiRespon
     },
   };
   const aiPrompts = [];
+  const aiTasks = [];
   const service = new DocumentDraftingService({
     databaseStore: store,
     getCurrentAccount: async () => currentAccountId ? ({ id: currentAccountId }) : null,
-    aiRouter: { chat: async ({ messages }) => {
+    aiRouter: { chat: async ({ messages, task }) => {
+      aiTasks.push(task);
       aiPrompts.push(messages);
       const content = Array.isArray(aiResponses) && aiResponses.length ? aiResponses.shift() : aiContent;
       return { content, provider: 'local', model: 'test-model' };
@@ -32,7 +34,7 @@ function makeHarness({ accountId = 'u1', aiContent = 'AI 生成正文', aiRespon
     now: () => new Date('2026-08-13T08:00:00.000Z'),
     createId: (prefix) => `${prefix}-${++sequence}`,
   });
-  return { service, aiPrompts, get database() { return structuredClone(database); }, setAccount: (id) => { currentAccountId = id; } };
+  return { service, aiPrompts, aiTasks, get database() { return structuredClone(database); }, setAccount: (id) => { currentAccountId = id; } };
 }
 
 const validReportFields = { title: '环境整治工作总结', period: '2026 年', keyPoints: '完成垃圾清运' };
@@ -235,6 +237,8 @@ test('direct drafting creates a draft and generates the first version without st
   const result = await harness.service.converse({ message: '写一份请示，申请拨付36000元过渡房费用' });
 
   assert.equal(result.action, 'generated');
+  assert.equal(harness.aiTasks[0].taskTier, 'basic');
+  assert.equal(harness.aiTasks[0].maxTokens, 4096);
   assert.equal(result.document.documentKind, 'report');
   assert.equal(result.version.versionNumber, 2);
   assert.equal(harness.database.documentDraftMessages.length, 0);
@@ -251,6 +255,8 @@ test('direct drafting generates an incomplete contract immediately with explicit
   const result = await harness.service.converse({ message: '帮我写一份保洁服务合同' });
   assert.equal(result.action, 'generated');
   assert.equal(result.version.versionNumber, 2);
+  assert.equal(harness.aiTasks[0].taskTier, 'deep');
+  assert.equal(harness.aiTasks[0].maxTokens, 4096);
   assert.equal(result.document.fieldSnapshot.partyA, '【待补充】');
   assert.equal(result.document.fieldSnapshot.payment, '【待补充】');
   assert.equal(harness.database.documentVersions.length, 2);
@@ -339,4 +345,16 @@ test('new document signatures support legacy unit settings without inventing a n
   assert.equal((await legacy.service.getLayoutDefaults()).signatureUnit, '测试村');
   const cleared = makeHarness({ settings: { villageName: '' }, foundationSettings: { village_name: '旧村名' } });
   assert.equal((await cleared.service.getLayoutDefaults()).signatureUnit, '');
+});
+
+
+test('unsuccessful fast rewriting preserves the manually edited draft and older versions', async () => {
+  const harness = makeHarness({ aiContent: '' });
+  const created = await harness.service.createDraft({ templateId: 'report-work', fields: validReportFields });
+  await harness.service.saveDraft({ documentId: created.document.id, contentText: '人工确认的原稿', contentHtml: '<p>人工确认的原稿</p>' });
+  const versions = harness.database.documentVersions;
+  await assert.rejects(() => harness.service.converse({ documentId: created.document.id, message: '请润色这份报告' }), /未返回完整公文正文/u);
+  assert.equal(harness.aiTasks[0].taskTier, 'basic');
+  assert.equal(harness.database.documentDrafts[0].workingContentText, '人工确认的原稿');
+  assert.deepEqual(harness.database.documentVersions, versions);
 });

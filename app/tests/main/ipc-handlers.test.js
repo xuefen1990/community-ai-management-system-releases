@@ -29,6 +29,28 @@ test('registers all dedicated document drafting channels', () => {
   }
 });
 
+test('only the actual main account can generate the Android pairing QR through IPC', async () => {
+  let account = { id: 'owner', mainAccountId: 'owner', role: 'main_account' };
+  const payload = JSON.stringify({ protocol: 'village-mobile-pair-v1', workspaceId: 'test-workspace-identity', ownerId: 'owner', endpoint: 'https://192.168.2.10:3002', fingerprint: 'a'.repeat(64), pairingToken: 'b'.repeat(48), expiresAt: Date.now() + 300000 });
+  let pairCalls = 0;
+  const { callbacks } = makeHandlers({
+    app: { getPath: () => '/tmp/community-ai-test', isPackaged: true, getVersion: () => '0.1.0' },
+    authService: { getStatus: async () => ({ account, entitlement: { type: 'licensed' } }), getServerConfig: async () => ({ baseUrl: 'https://xuefeng0901.cn' }) },
+    lanWorkspaceService: { prepareLocal: async () => {}, mobilePairing: async () => { pairCalls++; return { payload, expiresAt: JSON.parse(payload).expiresAt }; } },
+  });
+  const pair = callbacks.get(INVOKE_CHANNELS.updateLanShareConfig);
+  const result = await pair({}, { action: 'mobile-pairing' });
+  assert.equal(result.payload, payload);
+  assert.equal(result.expiresAt, JSON.parse(payload).expiresAt);
+  assert.match(result.qrDataUrl, /^data:image\/png;base64,/u);
+  assert.equal(Buffer.from(result.qrDataUrl.split(',')[1], 'base64').subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  for (const other of [{ id: 'member', mainAccountId: 'owner', role: 'member' }, { id: 'admin', mainAccountId: 'owner', role: 'admin' }, { id: 'foreign', mainAccountId: 'owner', role: 'main_account' }]) {
+    account = other;
+    await assert.rejects(pair({}, { action: 'mobile-pairing' }), /主账号/u);
+  }
+  assert.equal(pairCalls, 1);
+});
+
 test('direct disbursement printing uses the selected system printer without opening a visible window', async () => {
   const calls = [];
   class PrintWindow {
@@ -164,7 +186,7 @@ test('member exports require the matching module export permission', async () =>
   };
   const documentExportService = { print: async () => { calls.push('document'); return {}; } };
   const { callbacks } = makeHandlers({ authService, contractFeeFileService, documentExportService });
-  assert.match((await callbacks.get(INVOKE_CHANNELS.exportContractFeeGroupFiles)({}, {})).error, /没有执行此操作的权限/u);
+  assert.match((await callbacks.get(INVOKE_CHANNELS.exportContractFeeGroupFiles)({}, {})).error, /财务仅限主账号使用/u);
   assert.equal((await callbacks.get(INVOKE_CHANNELS.exportFarmlandSubsidyWorkbook)({}, {})).ok, true);
   assert.match((await callbacks.get(INVOKE_CHANNELS.printDraftDocument)({}, {})).error, /没有执行此操作的权限/u);
   assert.deepEqual(calls, ['funds']);
