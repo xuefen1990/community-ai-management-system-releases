@@ -1,4 +1,5 @@
 'use strict';
+const { previewResidentMerge, mergeResidents } = require('./foundation-resident-merge');
 const { deleteResidents } = require('./foundation-resident-bulk-delete');
 const { editorSnapshot, saveEditor } = require('./foundation-resident-editor');
 const { householdRegistrationContext, registerHouseholdMember } = require('./foundation-household-member-registration');
@@ -98,6 +99,11 @@ class FoundationBusinessService {
         await this.mutationQueue.catch(() => {});
         return { ok: true, data: await this.read(path, url.searchParams) };
       }
+      if (method === 'POST' && path === '/people/merge-preview') {
+        await this.mutationQueue.catch(() => {});
+        if (await this.store.isRemoteChild?.()) fail('HOST_REQUIRED', '请在保存数据的主电脑上合并居民档案');
+        return { ok:true, data:previewResidentMerge(await this.store.read(), input.body || {}) };
+      }
       if (method === 'POST' && path === '/finance-balance-preview') {
         await this.mutationQueue.catch(() => {});
         const { database, views } = await this.load();
@@ -116,6 +122,12 @@ class FoundationBusinessService {
       const operation = this.mutationQueue.catch(() => {}).then(async () => {
         const authorization = await this.authorize(scope);
         const remoteChild = await this.store.isRemoteChild?.();
+        if (method === 'POST' && path === '/people/merge') {
+          if (remoteChild) fail('HOST_REQUIRED', '请在保存数据的主电脑上合并居民档案');
+          if (typeof this.store.createBackup !== 'function') fail('BACKUP_UNAVAILABLE', '无法创建合并前备份，未修改档案');
+          const backup = await this.store.createBackup();
+          if (!backup?.ok) fail('BACKUP_UNAVAILABLE', '合并前备份失败，未修改档案');
+        }
         const referenceWrite = ['/party/member-save', '/party/member-remove', '/party/dues/batch', '/duty/schedule', '/duty/tasks'].some(base => path === base || path.startsWith(`${base}/`));
         if (referenceWrite && !remoteChild && !(await this.store.read()).foundationPartyDutyCompatibilityVersion) {
           if (typeof this.store.createBackup !== 'function') fail('BACKUP_UNAVAILABLE', '首次整理党员和值班数据前无法创建备份，请重试');
@@ -232,8 +244,9 @@ class FoundationBusinessService {
     if (personnelResult) { this.log(database, `${method} ${path}`, personnelResult.items?.map(item => item.id) || []); return personnelResult; }
     const domainResult = mutateDomain(database, method, path, body, { now: this.now, uuid: this.uuid });
     if (domainResult) { if (path.startsWith('/finance-records') && domainResult.item) registerCategories(database, [domainResult.item]); if (!authorization?.remoteChild) this.log(database, `${method} ${path}`, [domainResult.item?.id || domainResult.id]); return domainResult; }
+    if (method === 'POST' && path === '/people/merge') return mergeResidents(database, body, { now:this.now, uuid:this.uuid });
     if (method === 'POST' && path === '/people/batch-upsert') {
-      const outcome = upsertPeople(database, body.items, { now: this.now, uuid: this.uuid,
+      const outcome = upsertPeople(database, body.items, { now: this.now, uuid: this.uuid, validateIdentity: true,
         checkWrite: existing => {
           if (authorization?.personWriteActions && !authorization.personWriteActions.includes(existing ? 'update' : 'create')) fail('FORBIDDEN', '当前账号没有保存此居民档案的权限');
         } });

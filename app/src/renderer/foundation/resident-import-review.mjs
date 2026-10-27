@@ -1,10 +1,13 @@
 import '../../shared/chinese-identity-card.js';
+import { exportResidentImportErrors } from './resident-import-errors.mjs';
+import { openResidentMerge } from './resident-merge.mjs';
 import '../../shared/resident-import-review.js';
 import { useDialogStore } from './vendor/assets/foundation-runtime.mjs';
 
 const rules = globalThis.CommunityResidentImportReview;
+let latestImport=null;
 const node = (tag, text, className) => { const element = document.createElement(tag); if (text != null) element.textContent = text; if (className) element.className = className; return element; };
-const labels = { phone:'联系电话',address:'地址',gender:'性别',birthDate:'出生日期',educationLevel:'文化程度',ethnicity:'民族',relationToHead:'与户主关系',householdNo:'户号',villageGroupName:'居民组',registryType:'户籍类型',registryStatus:'档案状态',countInPopulation:'计入人口',customFields:'专项资料',remarks:'备注',name:'姓名' };
+const labels = { idCard:'身份证号',tags:'专项标签',bankAccounts:'收款账户',disbursementHistory:'发放历史',residentOperationLog:'档案操作记录',identityCardHistory:'身份证更正记录', phone:'联系电话',address:'地址',gender:'性别',birthDate:'出生日期',educationLevel:'文化程度',ethnicity:'民族',relationToHead:'与户主关系',householdNo:'户号',villageGroupName:'居民组',registryType:'户籍类型',registryStatus:'档案状态',countInPopulation:'计入人口',customFields:'专项资料',remarks:'备注',name:'姓名' };
 const display = value => value && typeof value === 'object' ? JSON.stringify(value) : String(value ?? '');
 const fieldLabel = field => field.split('.').map(key => labels[key] || key).join(' / ');
 
@@ -72,7 +75,8 @@ function showAudit(initialAudit) {
   const summary=node('p'),hint=node('p','点击问题行的“修改档案”可直接核对资料。身份证更正沿用校验和两次确认，保存后自动返回并重新查验。','resident-review-hint');
   const status=node('p'),error=node('p',null,'resident-review-error'),container=node('div'),empty=node('p','未发现重复身份证、姓名缺失或身份证异常。');
   summary.dataset.testid='resident-audit-summary';status.setAttribute('role','status');error.setAttribute('role','alert');
-  view.content.append(summary,hint,status,error,container,empty);
+  const mergeContainer=node('div');
+  view.content.append(summary,hint,status,error,mergeContainer,container,empty);
   let audit=initialAudit,busy=false,closed=false,editorListener=null;
   const headers=['档案序号','姓名','身份证号','居民组','户号','检查结果'];
   const close=node('button','关闭'),download=node('button','导出核对清单'),recheck=node('button','重新查验');
@@ -103,7 +107,28 @@ function showAudit(initialAudit) {
     const button=node('button','修改档案');button.type='button';button.dataset.residentAuditEdit=row.personId;button.disabled=busy||!row.personId;button.onclick=()=>edit(row);
     return [row.index,row.name,row.idCard,row.villageGroupName,row.householdNo,row.reason,button];
   }));
-  function render(){summary.textContent=`已检查 ${audit.total} 份档案，${audit.affected} 份需要核对。重复身份证 ${audit.duplicateGroups} 组，其中姓名不同 ${audit.nameConflictGroups} 组；身份证缺失 ${audit.missingId} 份、不合法 ${audit.invalidId} 份。`;empty.hidden=!!audit.issues.length;renderTable();controls();}
+  function renderMerges(){
+    mergeContainer.replaceChildren();
+    const groups=audit.mergeGroups||[];
+    if(!groups.length)return;
+    mergeContainer.append(node('h3',`发现 ${groups.length} 组重复或疑似重复档案，请核对后合并`));
+    const rows=node('div');mergeContainer.append(rows);
+    pagedTable(rows,['核对原因','姓名','档案数量','操作'],()=>groups.map(group=>{
+      const button=node('button','查看差异并合并');button.dataset.residentMergeOpen='true';button.disabled=busy;
+      button.onclick=async()=>{
+        if(busy)return;busy=true;controls();button.disabled=true;view.suspend();
+        try{
+          const merged=await openResidentMerge(group,{dialog,node,table,display,fieldLabel});
+          if(merged){
+            const {foundation}=await import('./bootstrap.mjs');await foundation.personnel.load({force:true});
+            await refresh('合并已完成，列表和检查结果已刷新。');
+          }
+        }catch(err){error.textContent=err.message;}finally{busy=false;controls();renderMerges();view.resume();}
+      };
+      return [group.reason,[...new Set(group.people.map(p=>p.name))].join('、'),group.people.length,button];
+    }));
+  }
+  function render(){renderMerges();summary.textContent=`已检查 ${audit.total} 份档案，${audit.affected} 份需要核对。重复身份证 ${audit.duplicateGroups} 组，其中姓名不同 ${audit.nameConflictGroups} 组；身份证缺失 ${audit.missingId} 份、不合法 ${audit.invalidId} 份。`;empty.hidden=!!audit.issues.length||!!audit.mergeGroups?.length;renderTable();controls();}
   async function refresh(message='检查结果已更新。'){
     const {people}=await currentResidents(window.api);if(closed)return;
     audit=rules.auditResidents(people);render();status.textContent=message;
@@ -137,22 +162,25 @@ async function reviewImport(options) {
     const cancel=node('button','返回表格'),confirm=node('button','确认合并并导入'),download=node('button','导出本次核对清单');confirm.dataset.testid='resident-review-confirm';confirm.className='resident-review-primary';cancel.dataset.testid='resident-review-cancel';
     let plan=null;
     const finish=value=>{view.close();resolve(value);};cancel.onclick=()=>finish(null);view.onCancel(()=>finish(null));
-    confirm.onclick=()=>{if(plan&&!confirm.disabled)finish(plan);};
+    confirm.onclick=()=>{if(plan&&!confirm.disabled){latestImport={input,plan};finish(plan);}};
     download.onclick=()=>{
       const headers=['类型','表格行号','姓名','身份证号','字段','原内容','表格内容','处理说明'];
       const rows=[...inspection.nameConflicts.map(group=>['姓名冲突',group.rows.map(row=>row.rowNo).join('、'),group.currentName,group.idCard,'姓名',group.currentName,group.names.join('、'),decisions[group.idCard]||'待人工选择']),...inspection.invalid.map(row=>['异常',row.rowNo,row.name,row.idCard,'','','',row.reason]),...(plan?.differences||[]).map(row=>['字段差异',row.rowNo,row.name,row.idCard,fieldLabel(row.field),display(row.current),display(row.incoming),'保留已有值'])];
       exportCsv('居民导入核对清单',headers,rows);
     };
-    view.footer.append(download,cancel,confirm);
+    const errorDownload=node('button','导出错误信息 (.xlsx)');errorDownload.dataset.testid='resident-review-export-errors';
+    errorDownload.onclick=async()=>{try{await exportResidentImportErrors(plan?.summary.failedList||inspection.invalid,input.fileName);}catch(err){error.textContent=err.message;}};
+    view.footer.append(download,errorDownload,cancel,confirm);
     function update(){
       error.textContent='';details.replaceChildren();
       const unresolved=inspection.nameConflicts.filter(group=>!decisions[group.idCard]).length;
       if(unresolved){plan=null;confirm.disabled=true;summary.textContent=`表格 ${inspection.totalRows} 行，可处理 ${inspection.groups.length} 人，表内重复 ${inspection.duplicateRows} 行，异常 ${inspection.invalid.length} 行；还有 ${unresolved} 项姓名冲突待选择。`;return;}
       try{
-        plan=rules.planImport(input,options.buildPlan,decisions);confirm.disabled=false;
+        plan=rules.planImport(input,options.buildPlan,decisions);confirm.disabled=!plan.validRows.length&&!plan.summary.unchangedRows;errorDownload.disabled=!plan.summary.failedList.length;
         summary.textContent=`将新增 ${plan.summary.insertedRows} 人，补充 ${plan.summary.updatedRows} 人，原档保持 ${plan.summary.unchangedRows} 人；表内归并 ${plan.summary.duplicateRows} 行，跳过/异常 ${plan.summary.failedRows} 行。`;
+        if(inspection.invalidIdentityRows.length)error.textContent=`${inspection.invalidIdentityRows.length} 行身份证号错误或缺失，将跳过；其余正确行可正常导入。导入后可导出错误表格。`;
         const sections=[['处理预览',['表格行号','姓名','身份证号','处理'],plan.reviewRows.map(row=>[row.rowNo,row.name,row.idCard,row.action])],['已有值与表格不同（保留已有值）',['表格行号','姓名','字段','已有值','表格值'],plan.differences.map(row=>[row.rowNo,row.name,fieldLabel(row.field),display(row.current),display(row.incoming)])],['异常与跳过项',['表格行号','姓名','身份证号','原因'],plan.summary.failedList.map(row=>[row.rowNo,row.name,row.idCard,row.reason])]];
-        for(const [title,headers,rows]of sections)if(rows.length){const section=node('details');section.open=title==='处理预览';section.append(node('summary',`${title}（${rows.length} 项）`));const container=node('div');section.append(container);details.append(section);pagedTable(container,headers,()=>rows);}
+        for(const [title,headers,rows]of sections)if(rows.length){const section=node('details');section.open=title==='处理预览'||title==='异常与跳过项';section.append(node('summary',`${title}（${rows.length} 项）`));const container=node('div');section.append(container);details.append(section);pagedTable(container,headers,()=>rows);}
       }catch(err){plan=null;confirm.disabled=true;error.textContent=err.message;}
     }update();
   });
@@ -161,13 +189,29 @@ async function reviewImport(options) {
 export function installResidentImportReview() {
   const dialogs=useDialogStore();let busy=false;
   window.communityReviewResidentImport=reviewImport;
+  window.communityExportResidentImportErrors=exportResidentImportErrors;
   const style=node('link');style.rel='stylesheet';style.href=new URL('./resident-import-review.css',import.meta.url).href;document.head.append(style);
   const installButton=()=>{
+    const exportButton=document.getElementById('btnExportImportErrors');
+    if(exportButton&&latestImport&&!exportButton.dataset.reviewExport){
+      exportButton.dataset.reviewExport='true';
+      exportButton.addEventListener('click',async event=>{
+        event.preventDefault();event.stopImmediatePropagation();
+        const {input,plan}=latestImport;
+        const failures=plan.summary.failedList.map(row=>row.raw?row:{...row,raw:input.rows.find(source=>globalThis.CommunityIdentityCard.normalize(source[input.mappings.id_card||input.mappings.idCard])===row.idCard)||{}});
+        try{await exportResidentImportErrors(failures,input.fileName);}catch(error){dialogs.notify({type:'error',message:error.message});}
+      },true);
+    }
+
     const more=document.querySelector('[data-testid="personnel-more-actions"]');
     if(!more||document.querySelector('[data-testid="resident-audit-open"]'))return;
     const button=node('button','检查现有档案','resident-audit-open el-button');button.type='button';button.dataset.testid='resident-audit-open';
     button.onclick=async()=>{if(busy)return;busy=true;button.disabled=true;try{const {people}=await currentResidents(window.api);showAudit(rules.auditResidents(people));}catch(error){dialogs.notify({type:'error',message:error.message});}finally{busy=false;button.disabled=false;}};
     (more.closest('.el-dropdown')||more).before(button);
+    currentResidents(window.api).then(({people})=>{
+      const count=rules.duplicateCandidates(people).length;
+      if(button.isConnected&&count){button.textContent=`发现 ${count} 组疑似重复 · 检查档案`;button.title='请核对重复档案，确认后可合并';}
+    }).catch(()=>{});
   };
   let scheduled=false;new MutationObserver(()=>{if(!scheduled){scheduled=true;requestAnimationFrame(()=>{scheduled=false;installButton();});}}).observe(document.getElementById('app'),{childList:true,subtree:true});
   installButton();

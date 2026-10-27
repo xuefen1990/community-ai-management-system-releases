@@ -69,7 +69,7 @@ test('personnel Excel import is loaded after legacy UI and persists through the 
   assert.match(importer, /唯一合并凭证/u);
   assert.match(importer, /personnelImportRecords/u);
   assert.match(importer, /parsePersonnelExcelGrid/u);
-  assert.match(importer, /自动忽略/u);
+  assert.match(importer, /将跳过/u);
   assert.match(importer, /specialPersonnelProfiles/u);
   assert.match(importer, /upsertPartyMember/u);
   assert.match(importer, /skippedReasons/u);

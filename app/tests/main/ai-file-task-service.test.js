@@ -399,7 +399,7 @@ test('居民表先区分新增、补充、冲突和跳过，确认后才调用�
   assert.equal(saveCall.body.items[0].fields.phone, '13900000000');
   assert.equal(saveCall.body.items[1].fields.name, '王五');
   const database = await f.store.read();
-  assert.equal(database.aiFileIndexEntries[0].importStatus, 'completed');
+  assert.equal(database.aiFileIndexEntries[0].importStatus, 'completed-with-errors');
   assert.equal(database.aiFileIndexEntries[0].importReport.conflictRows, 1);
 });
 
@@ -444,4 +444,20 @@ test('居民确认导入会通过正式业务服务保存、登记批次并建�
   assert.equal(database.personnelImportRecords.length, 1);
   assert.equal(database.personnelImportRecords[0].report.backupRelativePath, imported.backupRelativePath);
   assert.equal((await fs.stat(path.join(f.store.dataDirectory, 'foundation-backups', imported.backupRelativePath, 'manifest.json'))).isFile(), true);
+});
+
+
+test('AI Excel imports valid rows and returns original bad rows for correction without writing them', async t => {
+  const f = await fixture(t);
+  let backups=0,writes=0;
+  f.service.backupService={create:async()=>{backups++;return {};}};
+  f.service.businessService={request:async input=>{if(input.method==='POST')writes++;if(input.path.endsWith('/people/batch-upsert')){assert.equal(input.body.items.length,1);assert.equal(input.body.items[0].fields.name,'合成正确');return {ok:true,data:{insertedRows:1,updatedRows:0,failed:[]}};}return {ok:true,data:{items:[]}};}};
+  const source=path.join(f.root,'mixed-invalid-residents.xlsx'),book=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(book,XLSX.utils.aoa_to_sheet([['姓名','身份证号'],['合成正确','11010519491231002X'],['合成错误','110105194912310020'],['合成缺失','']]),'居民');
+  XLSX.writeFile(book,source);
+  const analyzed=await f.service.analyzeFiles({filePaths:[source],conversationId:'synthetic-mixed-invalid'});
+  const preview=await f.service.previewImport({fileId:analyzed.files[0].id});
+  assert.equal(preview.canImport,true);assert.equal(preview.rows.length,3);assert.equal(preview.errorRows.length,2);assert.equal(preview.errorRows[0].raw['姓名'],'合成错误');assert.equal(preview.errorRows[0].rowNo,3);
+  const result=await f.service.confirmImport({fileId:analyzed.files[0].id,previewRevision:preview.previewRevision,confirmed:true});
+  assert.equal(result.imported,true);assert.equal(result.errorRows.length,2);assert.equal(result.errorRows[1].raw['姓名'],'合成缺失');assert.equal(backups,1);assert.equal(writes,2);
 });

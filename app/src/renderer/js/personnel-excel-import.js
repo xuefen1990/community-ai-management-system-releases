@@ -3,7 +3,7 @@
 
   const getExcelParser = () => window.PersonnelExcelParser;
   const getProfileTools = () => window.SpecialPersonnelProfiles;
-  const importState = { columns: [], rows: [], fileName: '', sheetName: '', detectedIdentity: '', headerRowNumber: 0, ignoredRows: 0 };
+  const importState = { columns: [], invalidRows: [], rowNumbers: [], rows: [], fileName: '', sheetName: '', detectedIdentity: '', headerRowNumber: 0, ignoredRows: 0 };
   const text = (value) => String(value ?? '').trim();
   const escapeHtml = (value) => text(value).replace(/[&<>'"]/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[character]));
   const normalizeHeader = (value) => getExcelParser()?.normalizeHeader(value) || text(value).replace(/[\s_（）()\-]/g, '').toLowerCase();
@@ -62,7 +62,7 @@
       return `<label style="display:grid;grid-template-columns:96px 1fr;gap:8px;align-items:center;font-size:13px;color:var(--text-primary);"><span>${escapeHtml(field.label)}${field.required ? ' <b style="color:#ef4444">*</b>' : ''}</span><select data-personnel-import-field="${field.key}" style="padding:7px 8px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-card);color:var(--text-primary);"><option value="">本次不导入</option>${importState.columns.map((column) => `<option value="${escapeHtml(column)}"${column === suggested ? ' selected' : ''}>${escapeHtml(column)}</option>`).join('')}</select></label>`;
     }).join('');
     const summary = document.getElementById('excelMappingSummary');
-    if (summary) summary.innerHTML = `<div style="padding:9px 12px;background:rgba(16,185,129,.08);border-radius:8px;color:var(--text-primary);font-size:13px;">已读取 <b>${escapeHtml(importState.fileName)}</b>（工作表：<b>${escapeHtml(importState.sheetName)}</b>），第 <b>${importState.headerRowNumber}</b> 行为表头，共 <b>${importState.rows.length}</b> 条有效数据${importState.ignoredRows ? `，已自动忽略 <b>${importState.ignoredRows}</b> 条无效行` : ''}${identity ? `；将写入“<b>${escapeHtml(identity)}</b>”专项档案${specialCount ? `及 <b>${specialCount}</b> 个专属字段` : ''}` : ''}。</div>`;
+    if (summary) summary.innerHTML = `<div style="padding:9px 12px;background:rgba(16,185,129,.08);border-radius:8px;color:var(--text-primary);font-size:13px;">已读取 <b>${escapeHtml(importState.fileName)}</b>（工作表：<b>${escapeHtml(importState.sheetName)}</b>），第 <b>${importState.headerRowNumber}</b> 行为表头，共 <b>${importState.rows.length}</b> 条有效数据${importState.ignoredRows ? `，将跳过 <b>${importState.ignoredRows}</b> 条错误行，导入后可导出修正` : ''}${identity ? `；将写入“<b>${escapeHtml(identity)}</b>”专项档案${specialCount ? `及 <b>${specialCount}</b> 个专属字段` : ''}` : ''}。</div>`;
   }
 
   function openMappingModal() {
@@ -116,25 +116,27 @@
       const personnel = Array.isArray(database.personnel) ? database.personnel : [];
       const specialPersonnelProfiles = Array.isArray(database.specialPersonnelProfiles) ? database.specialPersonnelProfiles : [];
       const partyMembers = Array.isArray(database.partyMembers) ? database.partyMembers : [];
+      const failedList=[...importState.invalidRows];
       const importedAt = new Date().toISOString();
       const skippedReasons = {};
-      let added = 0; let merged = 0; let skipped = 0; let labelsAdded = 0; let profilesAdded = 0; let profilesUpdated = 0; let partyMembersAdded = 0; let partyMembersUpdated = 0;
+      let added = 0; let merged = 0; let skipped = importState.invalidRows.length; let labelsAdded = 0; let profilesAdded = 0; let profilesUpdated = 0; let partyMembersAdded = 0; let partyMembersUpdated = 0;
       const skip = (reason) => { skipped += 1; skippedReasons[reason] = (skippedReasons[reason] || 0) + 1; };
-      for (const row of importState.rows) {
+      for (const [index,row] of importState.rows.entries()) {
         const incoming = personFromRow(row, selected);
         const idCard = tools.normalizeIdCard(incoming.idCard);
-        if (!idCard) { skip('缺少身份证号'); continue; }
-        if (!tools.isValidIdCard(idCard)) { skip('身份证号格式或校验错误'); continue; }
+        const reject=reason=>{skip(reason);failedList.push({rowNo:importState.rowNumbers[index]||index+importState.headerRowNumber+1,name:incoming.name||'',idCard,raw:row,reason});};
+        if (!idCard) { reject('缺少身份证号'); continue; }
+        if (!tools.isValidIdCard(idCard)) { reject('身份证号格式或校验错误'); continue; }
         incoming.idCard = idCard;
         const match = tools.findUniquePersonById(personnel, idCard);
-        if (match.status === 'duplicate') { skip('本地身份证号重复'); continue; }
+        if (match.status === 'duplicate') { reject('本地身份证号重复'); continue; }
         let person;
         if (match.status === 'matched') {
           if (tools.mergeResidentInformation(match.person, incoming, identity, importedAt).identityAdded) labelsAdded += 1;
           merged += 1;
           person = match.person;
         } else {
-          if (!incoming.name) { skip('未匹配居民且缺少姓名'); continue; }
+          if (!incoming.name) { reject('未匹配居民且缺少姓名'); continue; }
           person = { id: `personnel-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`, created_at: importedAt };
           if (tools.mergeResidentInformation(person, incoming, identity, importedAt).identityAdded) labelsAdded += 1;
           personnel.push(person);
@@ -154,11 +156,19 @@
       if (identity === '党员') database.partyMembers = partyMembers;
       database.personnelImportRecords = [...(Array.isArray(database.personnelImportRecords) ? database.personnelImportRecords : []), {
         id: `personnel-import-${Date.now()}`, fileName: importState.fileName, sheetName: importState.sheetName, importedAt, identity,
-        detectedIdentity: importState.detectedIdentity || null, added, merged, labelsAdded, profilesAdded, profilesUpdated, partyMembersAdded, partyMembersUpdated, skipped, skippedReasons, total: importState.rows.length,
+        failedList, detectedIdentity: importState.detectedIdentity || null, added, merged, labelsAdded, profilesAdded, profilesUpdated, partyMembersAdded, partyMembersUpdated, skipped, skippedReasons, total: importState.rows.length+importState.invalidRows.length,
       }];
       const result = await window.api.writeDb(database);
       if (!result?.ok) throw new Error(result?.error || '本地数据保存失败');
       closeModal();
+      if(failedList.length){
+        const summary=document.createElement('section');summary.className='resident-legacy-import-result';summary.setAttribute('role','status');summary.style.cssText='padding:12px;margin:12px;border:1px solid #d1e5db;border-radius:8px;background:#f0fdf4';
+        summary.append(document.createTextNode(`导入完成，${failedList.length} 行未导入。`));
+        const exportButton=document.createElement('button');exportButton.type='button';exportButton.textContent='导出错误信息 (.xlsx)';
+        exportButton.onclick=async()=>{try{const module=await import(new URL('foundation/resident-import-errors.mjs',document.baseURI).href);await module.exportResidentImportErrors(failedList,importState.fileName);}catch(error){showToast(error.message,'error');}};
+        const dismiss=document.createElement('button');dismiss.type='button';dismiss.textContent='关闭';dismiss.onclick=()=>summary.remove();summary.append(exportButton,dismiss);
+        (document.querySelector('#tab-personnel')||document.querySelector('#app')||document.body).prepend(summary);
+      }
       try {
         await refreshPersonnelWorkspace();
       } catch (refreshError) {
@@ -182,7 +192,9 @@
       const workbook = window.XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
       const sheetName = workbook.SheetNames[0];
       const grid = window.XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: '', raw: false });
-      const parsed = parser.parsePersonnelExcelGrid(grid);
+      const parsed = parser.parsePersonnelExcelGrid(grid,{allowInvalidRows:true});
+      importState.invalidRows=(parsed.invalidRows||[]).map(row=>({rowNo:row.rowNo,raw:row.values,reason:'身份证号错误或缺失'}));
+      importState.rowNumbers=parsed.rowNumbers||[];
       importState.columns = parsed.columns;
       importState.rows = parsed.rows;
       importState.headerRowNumber = parsed.headerRowNumber;

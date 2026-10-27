@@ -1,4 +1,5 @@
 'use strict';
+const residentIdentity = require('../shared/chinese-identity-card');
 
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -378,7 +379,7 @@ class AiFileTaskService {
     try { generic = parseFoundationGrid(primary.grid); } catch { generic = { headers: [], allRows: [], totalRows: 0, headerRowNumber: 1 }; }
     const specialized = {};
     for (const [name, parser] of [['personnel', parsePersonnelExcelGrid], ['contractFee', parseContractFeeExcelGrid], ['disbursement', parseDisbursementExcelGrid]]) {
-      try { specialized[name] = parser(primary.grid); } catch (error) { specialized[name] = { error: error.message }; }
+      try { specialized[name] = parser(primary.grid, name === 'personnel' ? {allowInvalidRows:true} : undefined); } catch (error) { specialized[name] = { error: error.message }; }
     }
     const rowCandidates = primary.grid.slice(0, 30).map((row, index) => ({
       ...detectExcelModule(Array.isArray(row) ? row : [], primary.grid),
@@ -688,7 +689,8 @@ class AiFileTaskService {
 
   buildPersonnelImportPreview(database, entry, parsed) {
     const rows = Array.isArray(parsed?.rows) ? parsed.rows : [];
-    const sourceTotal = rows.length;
+    const rejectedRows = Array.isArray(parsed?.invalidRows) ? parsed.invalidRows : [];
+    const sourceTotal = rows.length + Number(parsed?.ignoredRows || 0);
     const people = Array.isArray(database.personnel) ? database.personnel : [];
     const byCard = new Map();
     for (const [index, person] of people.entries()) {
@@ -698,9 +700,11 @@ class AiFileTaskService {
       byCard.get(card).push({ person, index });
     }
     const actions = rows.slice(0, 1000).map((row, index) => {
-      const incoming = personnelFieldsFromRow(row);
+      const incoming = personnelFieldsFromRow(row), raw=structuredClone(row), rowNo=parsed.rowNumbers?.[index] || index + (parsed.headerRowNumber || 1) + 1;
       const matches = byCard.get(incoming.idCard) || [];
-      if (!incoming.idCard) return { index, action: 'skip', reason: '缺少有效身份证号', incoming };
+      const identityCheck = residentIdentity.validate(incoming.idCard);
+      if (!identityCheck.valid) return { index, rowNo, raw, action: 'skip', identityError:true, reason: `身份证号${identityCheck.reason}`, incoming };
+      incoming.idCard = identityCheck.normalized;
       if (!incoming.name) return { index, action: 'skip', reason: '缺少居民姓名', incoming };
       if (matches.length > 1) return { index, action: 'conflict', reason: '本地存在多条相同身份证档案', incoming };
       if (!matches.length) return { index, action: 'create', reason: '身份证号在居民档案中不存在', incoming };
@@ -718,9 +722,13 @@ class AiFileTaskService {
       if (!additions.length) return { index, action: 'skip', reason: '居民资料已存在且没有可补充字段', incoming, existing, additions, ...identity };
       return { index, action: 'update', reason: `补充 ${additions.map(item => item.label).join('、')}`, incoming, existing, additions, ...identity };
     });
+    actions.forEach((item,index)=>{item.raw ||= structuredClone(rows[index]||{});item.rowNo ||= parsed.rowNumbers?.[index] || index + (parsed.headerRowNumber || 1) + 1;});
+    for (const row of rejectedRows) {const incoming=personnelFieldsFromRow(row.values),validation=residentIdentity.validate(incoming.idCard);actions.push({index:row.rowNo-1,rowNo:row.rowNo,raw:structuredClone(row.values),action:'skip',identityError:true,reason:`身份证号${validation.reason||'错误或缺失，请核对'}`,incoming});}
+    if (parsed?.ignoredRows && !rejectedRows.length) actions.push({index:0,action:'skip',identityError:true,reason:'旧文件解析结果曾跳过错误号码，请重新选择文件核对',incoming:{}});
     const counts = Object.fromEntries(['create', 'update', 'conflict', 'skip'].map(action => [action, actions.filter(item => item.action === action).length]));
     const previewRevision = crypto.createHash('sha256').update(JSON.stringify({ file: entry.sha256, people: database.personnel || [] })).digest('hex');
-    return { actions, counts, previewRevision, sourceTotal, exceedsLimit: sourceTotal > 1000 };
+    const errorRows=actions.filter(item=>!['create','update'].includes(item.action)&&item.reason!=='居民资料已存在且没有可补充字段').map(item=>({rowNo:item.rowNo,name:item.incoming.name||'',idCard:item.incoming.idCard||'',reason:item.reason,raw:item.raw||{}}));
+    return { actions, errorRows, counts, previewRevision, sourceTotal, exceedsLimit: sourceTotal > 1000 };
   }
 
   async previewImport({ fileId, targetModule = 'auto' } = {}) {
@@ -745,12 +753,12 @@ class AiFileTaskService {
     }
     const preview = this.buildPersonnelImportPreview(database, entry, parsed);
     return { ok: true, file: publicEntry(entry), targetModule: 'personnel', previewRevision: preview.previewRevision,
-      counts: preview.counts, total: preview.sourceTotal, canImport: !preview.exceedsLimit && preview.counts.create + preview.counts.update > 0,
+      counts: preview.counts, total: preview.sourceTotal, errorRows:preview.errorRows, canImport: !preview.exceedsLimit && preview.counts.create + preview.counts.update > 0,
       rows: preview.actions.slice(0, 100).map(item => ({ index: item.index + 1, name: item.incoming.name, idCard: item.incoming.idCard,
         groupName: item.incoming.villageGroupName || '', action: item.action, reason: item.reason, conflicts: item.conflicts || [] })),
       truncated: preview.actions.length > 100,
       message: preview.exceedsLimit ? `表格共有 ${preview.sourceTotal} 条有效居民资料，单次最多安全导入 1000 条，请先拆分表格后再确认。`
-        : `共核对 ${preview.actions.length} 条：新增 ${preview.counts.create} 条，补充 ${preview.counts.update} 条，冲突 ${preview.counts.conflict} 条，跳过 ${preview.counts.skip} 条。冲突资料不会自动覆盖。`,
+        : `共核对 ${preview.actions.length} 条：新增 ${preview.counts.create} 条，补充 ${preview.counts.update} 条，冲突 ${preview.counts.conflict} 条，跳过 ${preview.counts.skip} 条。错误行不导入，可导出表格修正后重新导入；冲突资料不会自动覆盖。`,
     };
   }
 
@@ -794,7 +802,7 @@ class AiFileTaskService {
     if (preview.exceedsLimit) throw new Error(`表格共有 ${preview.sourceTotal} 条有效居民资料，单次最多安全导入 1000 条，请先拆分表格`);
     if (!previewRevision || preview.previewRevision !== previewRevision) throw new Error('居民资料在预览后发生变化，请重新核对导入预览');
     const selected = preview.actions.filter(item => ['create', 'update'].includes(item.action));
-    if (!selected.length) return { ok: true, imported: false, counts: preview.counts, message: '没有需要新增或补充的居民资料' };
+    if (!selected.length) return { ok: true, imported: false, counts: preview.counts, errorRows:preview.errorRows, message: '没有需要新增或补充的居民资料' };
     const importJobId = newId('ai-personnel-import');
     const snapshot = await this.backupService.create({ source: 'import', importJobId, importDomain: 'personnel' });
     const items = selected.map(item => {
@@ -810,9 +818,10 @@ class AiFileTaskService {
     const saved = await this.businessService.request({ method: 'POST', path: '/api/v3/people/batch-upsert', body: { items } });
     if (!saved?.ok) throw new Error(saved?.error?.message || '居民资料导入失败');
     const outcome = saved.data || {};
-    const report = { fileEntryId: entry.id, fileName: entry.fileName, totalRows: preview.actions.length,
+    const failedList=[...preview.errorRows,...(outcome.failed||[]).map(failure=>{const source=selected[failure.index];return {rowNo:source?.rowNo,name:source?.incoming.name||'',idCard:source?.incoming.idCard||'',raw:source?.raw||{},reason:failure.error||failure.message||'入库失败'};})];
+    const report = { failedList, fileEntryId: entry.id, fileName: entry.fileName, totalRows: preview.actions.length,
       insertedRows: Number(outcome.insertedRows) || 0, updatedRows: Number(outcome.updatedRows) || 0,
-      conflictRows: preview.counts.conflict, skippedRows: preview.counts.skip, failedRows: Array.isArray(outcome.failed) ? outcome.failed.length : 0,
+      conflictRows: preview.counts.conflict, skippedRows: preview.counts.skip, failedRows: failedList.length,
       backupRelativePath: snapshot.relativePath, completedAt: this.now().toISOString() };
     const recorded = await this.businessService.request({ method: 'POST', path: '/api/v3/import-jobs', body: {
       id: importJobId, domain: 'personnel', totalRows: report.totalRows, insertedRows: report.insertedRows,
@@ -834,7 +843,7 @@ class AiFileTaskService {
         message: `已复核保存结果；冲突 ${report.conflictRows} 条和跳过 ${report.skippedRows} 条均未覆盖原档案`,
       } });
     }
-    return { ok: true, imported: true, counts: report, importJobId, backupRelativePath: snapshot.relativePath,
+    return { ok: true, imported: true, errorRows:failedList, counts: report, importJobId, backupRelativePath: snapshot.relativePath,
       message: `导入完成：新增 ${report.insertedRows} 人，补充 ${report.updatedRows} 人；冲突 ${report.conflictRows} 条、跳过 ${report.skippedRows} 条未写入。` };
   }
 

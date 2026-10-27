@@ -43,7 +43,7 @@ test('duplicates within a file merge complementary rows; differing names never c
 test('existing duplicate ID, invalid checksum, missing ID and bad date are quarantined',()=>{
  const db=database();db.personnel.push({...db.personnel[0],id:'duplicate',name:'乙'});
  const input=options([{'姓名':'甲','身份证':id},{'姓名':'错校验','身份证':'110105194912310020'},{'姓名':'空号'},{'姓名':'错日期','身份证':'11010519490231002X'}],db);
- const plan=planImport(input,builder);assert.equal(plan.validRows.length,0);assert.equal(plan.summary.failedRows,4);
+ const plan=planImport(input,builder);assert.equal(plan.validRows.length,0);assert.equal(plan.summary.failedRows,4);assert.equal(plan.summary.failedList.find(row=>row.name==='错校验').raw['姓名'],'错校验');
  const audit=auditResidents([...db.personnel,{name:'空号'},{name:'错号',idCard:'bad'}]);assert.equal(audit.duplicateGroups,1);assert.equal(audit.nameConflictGroups,1);assert.equal(audit.affected,4);
 });
 test('supplement mode skips unknown ID; unchanged residents do not write; missing name uses existing name',()=>{
@@ -61,4 +61,30 @@ test('preview versions and targets prevent concurrent edits, new residents and c
  const fresh=planImport(options([{'姓名':'新居民','身份证':id2}]),builder);db.personnel.push({id:'concurrent',name:'新居民',id_card:id2,phone:'不能覆盖'});
  assert.equal(upsertPeople(db,fresh.validRows).failed[0].code,'VERSION_CONFLICT');assert.equal(db.personnel.at(-1).phone,'不能覆盖');
  const changed=planImport(options([{'姓名':'乙','身份证':id}]),builder,{[id]:'乙'});changed.validRows[0].fields.name='第三人';assert.equal(upsertPeople(database(),changed.validRows).failed[0].code,'INVALID_INPUT');
+});
+
+
+test('mixed rows import only valid residents; exported error XLSX preserves all fields and can be corrected/reimported',()=>{
+ const XLSX=require('xlsx'),{errorTable}=require('../../src/shared/resident-import-errors');
+ const db=database(),bad='110105194912310020';
+ const rows=[{'姓名':'合成新增','身份证':id2,'电话':'0012345','地址':'正确地址'},
+  {'姓名':'张三','身份证':bad,'电话':'0009876','地址':'=HYPERLINK("test")','户号':'00007','组别':'合成三组',__residentSourceRow:8},
+  {'姓名':'李四','身份证':'','电话':'00123','地址':'待修正',__residentSourceRow:11}];
+ const plan=planImport(options(rows,db),builder);assert.equal(plan.validRows.length,1);assert.equal(plan.summary.failedRows,2);
+ const written=upsertPeople(db,plan.validRows);assert.equal(written.insertedRows,1);assert.equal(db.personnel.length,2);assert(!db.personnel.some(p=>p.name==='张三'));
+ const {headers,rows:failed}=errorTable(plan.summary.failedList);assert(headers.includes('电话'));assert(!headers.includes('__residentSourceRow'));
+ const book=XLSX.utils.book_new(),sheet=XLSX.utils.aoa_to_sheet([headers,...failed]);XLSX.utils.book_append_sheet(book,sheet,'待修正错误行');
+ const restored=XLSX.read(XLSX.write(book,{type:'buffer',bookType:'xlsx'}),{type:'buffer'}),resultSheet=restored.Sheets[restored.SheetNames[0]];
+ const exported=XLSX.utils.sheet_to_json(resultSheet,{defval:''});assert.equal(exported[0]['电话'],'0009876');assert.equal(exported[0]['户号'],'00007');assert.equal(exported[0]['原表行号'],'8');assert(exported[0]['错误原因'].includes('身份证号'));
+ const addressCell=XLSX.utils.encode_cell({r:1,c:headers.indexOf('地址')});assert.equal(resultSheet[addressCell].t,'s');assert.equal(resultSheet[addressCell].f,undefined);
+ const makeId=prefix=>{const weights=[7,9,10,5,8,4,2,1,6,3,7,9,10,5,8,4,2],checks='10X98765432';return prefix+checks[weights.reduce((sum,w,i)=>sum+w*Number(prefix[i]),0)%11];};
+ exported[0]['身份证']=makeId('11010519800101001');exported[1]['身份证']=makeId('11010519810101001');
+ const corrected=planImport(options(exported,db),builder);assert.equal(corrected.summary.failedRows,0);assert.equal(corrected.validRows.length,2);
+ const imported=upsertPeople(db,corrected.validRows);assert.equal(imported.insertedRows,2);assert.equal(imported.failed.length,0);
+ const person=db.personnel.find(p=>p.name==='张三');assert.equal(person.phone,'0009876');assert.equal(person.household_id,'00007');assert.equal(person.address,'=HYPERLINK("test")');
+});
+
+test('all invalid input produces an exportable error list without allowing any resident writes',()=>{
+ const input=options([{'姓名':'张三','身份证':'bad','电话':'00123'},{'姓名':'李四','身份证':''}]);
+ const plan=planImport(input,builder);assert.equal(plan.validRows.length,0);assert.equal(plan.summary.failedRows,2);assert.equal(plan.summary.failedList[0].name,'张三');assert.equal(plan.summary.failedList[1].name,'李四');
 });

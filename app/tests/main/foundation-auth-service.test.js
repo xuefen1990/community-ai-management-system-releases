@@ -65,13 +65,13 @@ test('foundation IPC adds distinct channels, preserves legacy API names, and ret
 });
 
 test('a create-only member cannot use import upsert to overwrite an existing resident', async () => {
-  const database = { personnel: [{ id: 'existing', name: '合成居民', idCard: 'TEST-CARD', bankAccounts: [{ id: 'kept' }] }] };
+  const database = { personnel: [{ id: 'existing', name: '合成居民', idCard: '11010519491231002X', bankAccounts: [{ id: 'kept' }] }] };
   const auth = new FoundationAuthService({ authService: { getStatus: async () => ({ authenticated: true, entitlement: { type: 'licensed' },
     account: { role: 'member', permissions: { personnel: ['view', 'create'] } } }) } });
   const business = new FoundationBusinessService({ authorize: request => auth.authorize(request), store: {
     read: async () => structuredClone(database), update: async mutator => ({ result: await mutator(database) }),
   } });
-  const result = await business.request({ method: 'POST', path: '/api/v3/people/batch-upsert', body: { items: [{ fields: { idCard: 'TEST-CARD', name: '不应覆盖' } }] } });
+  const result = await business.request({ method: 'POST', path: '/api/v3/people/batch-upsert', body: { items: [{ fields: { idCard: '11010519491231002X', name: '不应覆盖' } }] } });
   assert.equal(result.data.failed[0].code, 'FORBIDDEN'); assert.equal(database.personnel[0].name, '合成居民');
   await assert.rejects(auth.authorize({ method: 'POST', path: '/people/batch-patch' }), { code: 'FORBIDDEN' });
 });

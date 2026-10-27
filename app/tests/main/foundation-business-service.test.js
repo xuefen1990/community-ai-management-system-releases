@@ -67,11 +67,11 @@ test('editing through the real v2.6.4 payload retains accounts, payment history,
   const view = (await request(api, '/people')).data.items[0];
   const saved = await request(api, '/people/batch-upsert', 'POST', { items: [{
     baseVersion: view.version, baseValues: { idCard: view.idCard }, householdNo: '0012', villageGroupName: '测试二组',
-    fields: { name: '测试更名', idCard: 'TEST-003', birthDate: '1981-01-01', customFields: view.customFields }, tags: view.tags,
+    fields: { name: '测试更名', idCard: '11010519491231002X', birthDate: '1981-01-01', customFields: view.customFields }, tags: view.tags,
   }] });
   assert.equal(saved.ok, true); assert.equal(saved.data.updatedRows, 1); assert.equal(saved.data.insertedRows, 0);
   const after = data(); const p = after.personnel[0];
-  assert.equal(p.id, 'resident-original'); assert.equal(p.idCard, 'TEST-003'); assert.equal(p.id_card, 'TEST-003');
+  assert.equal(p.id, 'resident-original'); assert.equal(p.idCard, '11010519491231002X'); assert.equal(p.id_card, '11010519491231002X');
   assert.equal(p.birth_date, '1981-01-01'); assert.equal(p.household_id, '0012');
   for (const key of ['bankAccounts', 'farmlandSubsidyHistory', 'disbursementHistory']) assert.deepEqual(p[key], before.personnel[0][key]);
   assert.deepEqual(after.disbursementBatches, before.disbursementBatches); assert.deepEqual(after.workItems, before.workItems);

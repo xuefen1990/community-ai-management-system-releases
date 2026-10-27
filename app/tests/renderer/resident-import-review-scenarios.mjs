@@ -21,6 +21,7 @@ export async function checkResidentImportReview({id,id3}){
  if(!find('resident-import-review-dialog').textContent.includes('保留已有值'))throw Error('字段差异未展示');
  await pause(200);await new Promise(requestAnimationFrame);await window.api.businessRequest({path:'/api/v3/__test/resident-review-capture'});
  click('resident-review-confirm');await wait(()=>find('import-done-btn')&&!find('import-done-btn').disabled,'导入未完成');
+ await wait(()=>document.getElementById('btnExportImportErrors')?.dataset.reviewExport,'导出错误信息按钮未就绪');document.getElementById('btnExportImportErrors').click();
  click('import-done-btn');await wait(()=>!find('personnel-import-dialog'));
  await foundation.personnel.load({force:true});if(foundation.personnel.people.length!==5)throw Error('归并后的档案数量不正确');
  click('resident-audit-open');await wait(()=>find('resident-audit-dialog'));
@@ -62,4 +63,33 @@ export async function checkResidentAuditEditing({validCard}){
  find('resident-audit-recheck').click();await wait(()=>!find('resident-audit-recheck').disabled,'手工重新查验失败');
  await pause(200);await new Promise(requestAnimationFrame);
  return {editOutsideCurrentFilter:true,cancelReturnsWithoutResolving:true,identityTwoConfirmations:true,saveReturnsAndRechecks:true,resolvedIssueRemoved:true,duplicateRecordEditable:true,manualRecheck:true};
+}
+
+
+export async function checkResidentMergeAndInvalidImport({id}) {
+ const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms)),find=id=>document.querySelector(`[data-testid="${id}"]`);
+ const wait=async(fn,message)=>{for(let i=0;i<500;i++){if(fn())return;await pause(30);}throw Error(message);};
+ const {foundation}=await import('../../src/renderer/foundation/bootstrap.mjs');
+ const closeAudit=()=>[...find('resident-audit-dialog').querySelectorAll('button')].find(b=>b.textContent==='关闭').click();
+ closeAudit();
+ const invalidResult=window.communityReviewResidentImport({rows:[{name:'原姓名',card:'11010519491231002X'},{name:'合成错号',card:'wrong'}],mappings:{name:'name',id_card:'card'},buildPlan:input=>({validRows:input.rows.map(row=>({fields:{name:row.name,idCard:row.card}})),summary:{failedList:[]}})});
+ await wait(()=>find('resident-import-review-dialog'),'错误号码检查未打开');
+ if(find('resident-review-confirm').disabled||!find('resident-import-review-dialog').textContent.includes('其余正确行可正常导入'))throw Error('错误行阻止了正确行导入');
+ if(find('resident-review-export-errors').disabled)throw Error('无法导出错误信息');
+ find('resident-review-cancel').click();if(await invalidResult!==null)throw Error('取消返回值错误');
+ find('resident-audit-open').click();await wait(()=>find('resident-audit-dialog'),'重复检查未打开');
+ const mergeButton=()=>document.querySelector('[data-resident-merge-open]');if(!mergeButton())throw Error('未提供合并入口');
+ mergeButton().click();await wait(()=>find('resident-merge-dialog'),'合并窗口未打开');
+ if(!find('resident-merge-confirm').disabled)throw Error('未核对可直接合并');
+ [...find('resident-merge-dialog').querySelectorAll('button')].find(b=>b.textContent==='取消').click();await wait(()=>find('resident-audit-dialog').style.display!=='none','取消未返回');
+ if(foundation.personnel.people.length!==5)throw Error('取消合并改变档案');
+ mergeButton().click();await wait(()=>find('resident-merge-dialog'),'再次合并未打开');
+ for(const [key,value] of [['primary','dup1'],['name','重复甲已核实']]){const select=find(`resident-merge-${key}`);select.value=value;select.dispatchEvent(new Event('change',{bubbles:true}));}
+ find('resident-merge-preview').click();await wait(()=>find('resident-merge-agree')&&!find('resident-merge-agree').parentElement.hidden,'差异预览未显示');
+ if(!find('resident-merge-confirm').disabled)throw Error('未确认身份即可提交');
+ find('resident-merge-agree').click();if(find('resident-merge-confirm').disabled)throw Error('确认后无法提交');
+ await window.api.businessRequest({path:'/api/v3/__test/resident-review-capture'});
+ find('resident-merge-confirm').click();await wait(()=>!find('resident-merge-dialog')&&!find('resident-audit-recheck').disabled,'合并未完成');
+ if(foundation.personnel.people.length!==4||foundation.personnel.people.some(p=>p.id==='dup2'))throw Error('合并后列表未刷新');
+ return {invalidRowsSkippedAndExportAvailable:true,mergeCancelPreservesData:true,mergeConfirmationRequired:true,existingDuplicatesMerged:true,mergedListRefreshed:true};
 }

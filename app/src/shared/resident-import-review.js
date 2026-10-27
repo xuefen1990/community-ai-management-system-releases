@@ -40,6 +40,22 @@
     return copy(current);
   }
 
+  // Candidates are evidence for review, never an instruction to merge.
+  function duplicateCandidates(people = []) {
+    const cards = new Map(), names = new Map(), result = [];
+    for (const person of people) {
+      const card = cardOf(person), name = nameOf(person);
+      const birth = text(person.birthDate || person.birth_date) || (/^\d{17}[\dX]$/.test(card) ? `${card.slice(6,10)}-${card.slice(10,12)}-${card.slice(12,14)}` : '');
+      if (card) { if (!cards.has(card)) cards.set(card, []); cards.get(card).push(person); }
+      if (name && /^\d{4}-\d{2}-\d{2}$/.test(birth)) {
+        const key = JSON.stringify([name,birth]); if (!names.has(key)) names.set(key, []); names.get(key).push(person);
+      }
+    }
+    for (const group of cards.values()) if (group.length > 1) result.push({ reason:'同一身份证有多份档案', people:group });
+    for (const group of names.values()) if (group.length > 1 && new Set(group.map(cardOf)).size > 1) result.push({ reason:'姓名、出生日期相同，身份证不同，需人工核实', people:group });
+    return result;
+  }
+
   function auditResidents(people = []) {
     const issues = [], byCard = new Map();
     people.forEach((person, index) => {
@@ -61,7 +77,7 @@
       if (different) nameConflictGroups++;
       for (const row of rows) issues.push({ ...row, type: different ? 'name-conflict' : 'duplicate-id', reason: `${different ? '同一身份证对应不同姓名' : '同一身份证有重复档案'}：第 ${rows.map(item => item.index).join('、')} 条`, relatedNames: [...new Set(rows.map(item => item.name))].join('、') });
     }
-    return { total: people.length, affected: new Set(issues.map(row => row.index)).size, duplicateGroups, nameConflictGroups,
+    return { mergeGroups: duplicateCandidates(people), total: people.length, affected: new Set(issues.map(row => row.index)).size, duplicateGroups, nameConflictGroups,
       missingId: issues.filter(row => row.type === 'missing-id').length, invalidId: issues.filter(row => row.type === 'invalid-id').length, issues };
   }
 
@@ -75,9 +91,9 @@
     const idColumn = mappings.id_card || mappings.idCard, nameColumn = mappings.name;
     rows.forEach((row, index) => {
       const idCard = identity.normalize(row[idColumn]), name = text(row[nameColumn]), rowNo = Number.isInteger(row.__residentSourceRow) ? row.__residentSourceRow : index + 2;
-      if (!idCard && !name) return;
+      if (!idCard && !name && !Object.entries(row).some(([key,value]) => key !== '__residentSourceRow' && text(value))) return;
       const validation = identity.validate(idCard);
-      if (!validation.valid) { invalid.push({ rowNo, name, idCard, reason: idCard ? `身份证号${validation.reason}` : '身份证号为空' }); return; }
+      if (!validation.valid) { invalid.push({ rowNo, name, idCard, raw:copy(row), identityError: true, reason: idCard ? `身份证号${validation.reason}` : '身份证号为空' }); return; }
       if (!grouped.has(idCard)) grouped.set(idCard, { idCard, rows: [], names: [], original: null });
       const group = grouped.get(idCard);
       group.rows.push({ rowNo, row });
@@ -93,13 +109,13 @@
       group.nameOptions = [...new Set([group.currentName, ...group.names].filter(Boolean))];
       if (!reason && !group.nameOptions.length) reason = '姓名为空';
       if (reason) {
-        for (const { rowNo } of group.rows) invalid.push({ rowNo, name: group.names.join(' / '), idCard: group.idCard, reason });
+        for (const { rowNo } of group.rows) invalid.push({ rowNo, name: group.names.join(' / '), idCard: group.idCard, raw:copy(group.rows.find(item=>item.rowNo===rowNo)?.row||{}), reason });
         continue;
       }
       group.nameConflict = group.nameOptions.length > 1;
       groups.push(group);
     }
-    return { groups, invalid, totalRows: rows.length, duplicateRows: [...grouped.values()].reduce((sum, group) => sum + group.rows.length - 1, 0),
+    return { groups, invalid, invalidIdentityRows: invalid.filter(row => row.identityError), totalRows: rows.length, duplicateRows: [...grouped.values()].reduce((sum, group) => sum + group.rows.length - 1, 0),
       nameConflicts: groups.filter(group => group.nameConflict) };
   }
 
@@ -112,7 +128,7 @@
     for (const group of inspection.groups) {
       const selected = group.nameConflict ? decisions[group.idCard] : group.nameOptions[0];
       if (selected === '__skip__') {
-        group.rows.forEach(({ rowNo }) => skipped.push({ rowNo, name: group.names.join(' / '), idCard: group.idCard, reason: '人工选择跳过姓名冲突' }));
+        group.rows.forEach(({ rowNo }) => skipped.push({ rowNo, name: group.names.join(' / '), idCard: group.idCard, raw:copy(group.rows.find(item=>item.rowNo===rowNo)?.row||{}), reason: '人工选择跳过姓名冲突' }));
         continue;
       }
       if (!group.nameOptions.includes(selected)) throw new Error(`请先选择身份证 ${group.idCard} 保留的姓名，或跳过此人`);
@@ -167,7 +183,10 @@
       if (changed) { indexMap.set(index, validRows.length); validRows.push(item); }
       else { indexMap.set(index, null); unchangedRows++; }
     }
-    const failedList = [...inspection.invalid, ...skipped, ...(legacy.summary.failedList || []).map(row => ({ ...row, rowNo: selectedGroups[row.rowNo - 2]?.rows.map(item => item.rowNo).join('、') || row.rowNo }))];
+    const failedList = [...inspection.invalid, ...skipped, ...(legacy.summary.failedList || []).flatMap(row => {
+      const group=selectedGroups[row.rowNo - 2];
+      return group ? group.rows.map(source=>({...row,rowNo:source.rowNo,raw:copy(source.row)})) : [{...row}];
+    })];
     const householdGroupCandidates = (legacy.householdGroupCandidates || []).filter(row => {
       const group = groupByCard.get(identity.normalize(row.idCard));
       // A different non-empty household number cannot move an existing resident
@@ -178,7 +197,7 @@
       summary: { totalRows: inspection.totalRows, insertedRows: validRows.filter(row => !row.importReview.expectedPersonId).length,
         updatedRows: validRows.filter(row => row.importReview.expectedPersonId).length, unchangedRows, duplicateRows: inspection.duplicateRows,
         nameConflictRows: inspection.nameConflicts.length, failedRows: failedList.length, failedList,
-        review: { policy: 'fill-empty', decisions: inspection.nameConflicts.map(group => ({ idCard: group.idCard, previousName: group.currentName, selectedName: decisions[group.idCard] })), differences } } };
+        review: { policy: 'fill-empty', failedList, fileName:options.fileName || '', decisions: inspection.nameConflicts.map(group => ({ idCard: group.idCard, previousName: group.currentName, selectedName: decisions[group.idCard] })), differences } } };
   }
-  return { fillEmpty, auditResidents, inspectImport, planImport };
+  return { fillEmpty, duplicateCandidates, auditResidents, inspectImport, planImport };
 });

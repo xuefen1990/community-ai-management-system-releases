@@ -1016,6 +1016,7 @@ if (typeof module !== 'undefined' && module.exports) {
       confirm.addEventListener('click', () => confirmFileImport(preview, confirm));
       card.appendChild(confirm);
     }
+    appendResidentImportErrors(card,preview.errorRows,preview.file?.fileName);
     container.appendChild(card);
     trimAssistantChat(container);
     container.scrollTop = container.scrollHeight;
@@ -1097,6 +1098,13 @@ if (typeof module !== 'undefined' && module.exports) {
     }
   }
 
+  function appendResidentImportErrors(container,rows,fileName) {
+    if(!rows?.length)return;
+    const button=document.createElement('button');button.type='button';button.className='ai-file-import-confirm';button.textContent=`导出错误信息（${rows.length} 行）`;button.dataset.residentErrorsExport='true';
+    button.addEventListener('click',async()=>{try{await window.communityExportResidentImportErrors(rows,fileName);}catch(error){notify(error.message||'错误信息导出失败','error');}});
+    container.appendChild(button);
+  }
+
   async function confirmFileImport(preview, button) {
     if (!preview?.file?.id || !api.confirmAiFileImport || button?.disabled) return;
     const original = button.textContent;
@@ -1106,6 +1114,9 @@ if (typeof module !== 'undefined' && module.exports) {
       const result = await api.confirmAiFileImport({ fileId: preview.file.id, targetModule: preview.targetModule,
         previewRevision: preview.previewRevision, confirmed: true });
       appendChatBubble('bot', result.message || '居民资料导入完成。');
+      button.parentElement.querySelector('[data-import-errors-result]')?.remove();
+      button.parentElement.querySelectorAll('[data-resident-errors-export]').forEach(element=>element.remove());
+      const errors=document.createElement('div');errors.dataset.importErrorsResult='true';appendResidentImportErrors(errors,result.errorRows,preview.file.fileName);button.parentElement.appendChild(errors);
       button.textContent = '已完成导入';
       button.dataset.completed = 'true';
       if (typeof window.loadDatabase === 'function') await window.loadDatabase();

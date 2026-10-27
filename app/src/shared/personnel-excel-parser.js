@@ -56,25 +56,27 @@
     });
   }
 
-  function parsePersonnelExcelGrid(grid) {
+  function parsePersonnelExcelGrid(grid, { allowInvalidRows = false } = {}) {
     const table = Array.isArray(grid) ? grid : [];
     const headerRowIndex = findHeaderRow(table);
     if (headerRowIndex === null) throw new Error('未识别到人员表头，请确认表中包含“身份证号”或至少两个支持字段名称');
     const columns = uniqueColumns(table[headerRowIndex]);
     const idCardColumnIndex = columns.findIndex((column) => fieldForHeader(column)?.key === 'idCard');
     if (idCardColumnIndex < 0) throw new Error('未识别到身份证号列，请确认表头字段名称');
-    const rows = [];
+    const rows = [], invalidRows = [], rowNumbers = [];
     let ignoredRows = 0;
-    table.slice(headerRowIndex + 1).forEach((values) => {
+    table.slice(headerRowIndex + 1).forEach((values, index) => {
       const row = Array.isArray(values) ? values : [];
       if (!row.some((value) => text(value))) return;
       if (!isValidIdCard(row[idCardColumnIndex])) {
         ignoredRows += 1;
+        invalidRows.push({ rowNo:headerRowIndex + index + 2, values:Object.fromEntries(columns.map((column, i) => [column,text(row[i])])) });
         return;
       }
       rows.push(Object.fromEntries(columns.map((column, index) => [column, text(row[index])])));
+      rowNumbers.push(headerRowIndex + index + 2);
     });
-    if (!rows.length) throw new Error('表格没有可导入的有效人员数据');
+    if (!rows.length && (!allowInvalidRows || !invalidRows.length)) throw new Error('表格没有可导入的有效人员数据');
     return {
       columns,
       rows,
@@ -82,7 +84,7 @@
       headerRowIndex,
       headerRowNumber: headerRowIndex + 1,
       idCardColumn: columns[idCardColumnIndex],
-      ignoredRows,
+      ignoredRows, invalidRows, rowNumbers,
     };
   }
 

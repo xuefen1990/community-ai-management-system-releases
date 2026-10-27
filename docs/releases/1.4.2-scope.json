@@ -1,0 +1,27 @@
+{
+  "version": "1.4.2",
+  "confirmedDate": "2026-10-27",
+  "repository": "https://github.com/xuefen1990/community-ai-management-system-releases",
+  "branch": "codex/macos-installer-update-repair",
+  "delivery": [
+    "Mac ARM64 full DMG",
+    "Windows x64 full EXE",
+    "reviewed source commit",
+    "GitHub release assets"
+  ],
+  "included": [
+    "duplicate resident review and manual merge with backup",
+    "partial valid-row import and invalid-row reports",
+    "Excel error export preserving original columns and text identifiers",
+    "corrected error rows can be reimported"
+  ],
+  "excluded": [
+    "unrelated Android/WeChat work",
+    "existing backend update changes",
+    "user profiles and credentials",
+    "ECS deployment",
+    "production in-app update",
+    "website changes"
+  ],
+  "baselineCommit": "134782e6966dfce3310e8380412ceeb318173b32"
+}

@@ -1,0 +1,57 @@
+{
+  "version": "1.4.2",
+  "date": "2026-10-27",
+  "appTests": {
+    "passed": 878,
+    "failed": 0
+  },
+  "bundledBackendTests": {
+    "passed": 34,
+    "failed": 0,
+    "configuration": "synthetic ADMIN_PASSWORD supplied, isolated temporary databases"
+  },
+  "residentIsolatedElectron": {
+    "ok": true,
+    "validRowsImported": true,
+    "invalidRowsSkipped": true,
+    "fullOriginalErrorXlsxDownloadedAndReadBack": true,
+    "mergeConfirmedAndRefreshed": true
+  },
+  "correctedErrorsReimport": {
+    "ok": true,
+    "test": "XLSX text identifiers and source columns preserved; corrected rows import successfully"
+  },
+  "macPackagedSyntheticSmoke": {
+    "ok": true,
+    "packaged": true,
+    "version": "1.4.2",
+    "menus": 15,
+    "savedMenuPreserved": true,
+    "residentMergeWithRealMain": true,
+    "errorWorkbookDownloaded": true,
+    "blockedPublicOrigins": [],
+    "rendererErrors": []
+  },
+  "bundleVerification": {
+    "ok": true,
+    "version": "1.4.2",
+    "sourceFileCounts": {
+      "app": 226,
+      "backend": 36
+    },
+    "vendorFilesUnchanged": 19,
+    "bundleProfileFiles": [],
+    "windowsProfileFiles": [],
+    "windowsArchitecture": "x64"
+  },
+  "macDmgChecksumVerified": true,
+  "windowsInstallerArchiveVerified": true,
+  "pending": [
+    "Windows real machine or VM install and launch acceptance"
+  ],
+  "delivery": {
+    "inAppUpdateRegistered": false,
+    "websiteChanged": false,
+    "ecsDeployed": false
+  }
+}

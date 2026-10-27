@@ -12,7 +12,8 @@ app.whenReady().then(async()=>{let window;try{
  const prefix='11010519800101001',weights=[7,9,10,5,8,4,2,1,6,3,7,9,10,5,8,4,2],checks=['1','0','X','9','8','7','6','5','4','3','2'];
  const id3=prefix+checks[weights.reduce((sum,w,i)=>sum+w*Number(prefix[i]),0)%11];
  const prefix4='11010519810101001',id4=prefix4+checks[weights.reduce((sum,w,i)=>sum+w*Number(prefix4[i]),0)%11];
- const csv=path.join(root,'synthetic-import.csv');await fs.writeFile(csv,`\uFEFF姓名,身份证号,手机号,地址\n表格姓名,${id},新电话,补充地址\n新增居民,${id3},12345,\n新增居民,${id3},,新居民地址\n异常行,错误号码,,\n`);
+ let exportedFile='';
+ const csv=path.join(root,'synthetic-import.csv');await fs.writeFile(csv,`\uFEFF姓名,身份证号,手机号,地址\n表格姓名,${id},新电话,补充地址\n新增居民,${id3},12345,\n新增居民,${id3},,新居民地址\n张三,错误号码,0012345,后续补齐\n`);
  const people=[{id:'old',name:'原姓名',id_card:id,phone:'原电话',address:'',household_id:'001',village_group:'一组',bankAccounts:[{id:'account',number:'synthetic'}]},
   {id:'dup1',name:'重复甲',id_card:id2},{id:'dup2',name:'重复乙',id_card:id2},{id:'invalid',name:'异常居民',id_card:'invalid',bankAccounts:[{id:'invalid-account',number:'synthetic-existing'}],disbursementHistory:[{id:'original-payment'}]}];
  const store=new JsonDatabaseStore({userDataPath:app.getPath('userData')});await store.write({personnel:people,settings:{villageName:'导入核对隔离验收'}});
@@ -30,8 +31,11 @@ app.whenReady().then(async()=>{let window;try{
  ipcMain.handle('check-for-app-update',async()=>({ok:true,disabled:true}));
  for(const [channel,response]of Object.entries({'get-ai-assistant-conversation':{messages:[]},'list-ai-assistant-files':[],'list-ai-assistant-operations':[],'get-ai-settings':{mode:'online',online:{enabled:false,providers:[]},local:{enabled:false}}}))ipcMain.handle(channel,async()=>response);
  window=new BrowserWindow({show:false,width:1450,height:1000,webPreferences:{offscreen:true,backgroundThrottling:false,contextIsolation:true,sandbox:false,nodeIntegration:false,webSecurity:true,preload:path.resolve(__dirname,'../../src/preload/index.js')}});
+ window.webContents.session.on('will-download',(_event,item)=>{exportedFile=path.join(root,item.getFilename());item.setSavePath(exportedFile);});
  await window.loadFile(path.resolve(__dirname,'../../src/renderer/foundation/index.html'));
  const result=await window.webContents.executeJavaScript(`import(new URL('../../../tests/renderer/resident-import-review-scenarios.mjs',location.href).href).then(m=>m.checkResidentImportReview(${JSON.stringify({id,id3})}))`);
+ const XLSX=require('xlsx');
+ for(let i=0;i<100;i++){try{const book=XLSX.readFile(exportedFile),rows=XLSX.utils.sheet_to_json(book.Sheets[book.SheetNames[0]],{defval:''});assert.equal(rows[0]['姓名'],'张三');assert.equal(rows[0]['手机号'],'0012345');assert.equal(rows[0]['地址'],'后续补齐');assert(rows[0]['错误原因'].includes('身份证号'));break;}catch(error){if(i===99)throw error;await new Promise(resolve=>setTimeout(resolve,50));}}
  const persisted=await store.read();assert.equal(snapshots,1);assert.equal(upserts,1);assert.equal(persisted.personnel.length,5);
  assert.equal(persisted.personnel[0].name,'原姓名');assert.equal(persisted.personnel[0].phone,'原电话');assert.equal(persisted.personnel[0].address,'补充地址');assert.deepEqual(persisted.personnel[0].bankAccounts,people[0].bankAccounts);
  const added=persisted.personnel.find(row=>row.id_card===id3||row.idCard===id3);assert.equal(added.phone,'12345');assert.equal(added.address,'新居民地址');
@@ -40,7 +44,9 @@ app.whenReady().then(async()=>{let window;try{
  const corrected=(await store.read()).personnel;assert.equal(corrected.find(row=>row.id==='invalid').id_card,id4);assert.equal(corrected.find(row=>row.id==='invalid').name,'已核实居民');
  assert.deepEqual(corrected.find(row=>row.id==='invalid').bankAccounts,people[3].bankAccounts);assert.deepEqual(corrected.find(row=>row.id==='invalid').disbursementHistory,people[3].disbursementHistory);assert.equal(corrected.find(row=>row.id==='invalid').identityCardHistory.length,1);
  assert.equal(corrected.find(row=>row.id==='dup1').name,'重复甲已核实');assert.equal(corrected.find(row=>row.id==='dup2').name,'重复乙');assert.equal(corrected.length,5);
+ const merging=await window.webContents.executeJavaScript(`import(new URL('../../../tests/renderer/resident-import-review-scenarios.mjs',location.href).href).then(m=>m.checkResidentMergeAndInvalidImport(${JSON.stringify({id:id2})}))`);
+ const mergedDb=await store.read();assert.equal(mergedDb.personnel.length,4);assert.equal(mergedDb.foundationResidentMerges.length,1);assert.equal(mergedDb.foundationResidentMerges[0].originals.length,2);
  const screenshot=path.join(root,'resident-import-review.png');await fs.writeFile(screenshot,(await window.webContents.capturePage()).toPNG());
- const output={ok:true,...result,...editing,snapshots,upserts,preservedOriginalName:true,preservedExistingPhone:true,filledBlankAddress:true,mergedSpreadsheetDuplicates:true,historyDecisionSaved:true,correctedResidentLinksPreserved:true,screenshot};await fs.writeFile(path.join(root,'result.json'),JSON.stringify(output,null,2));console.log(JSON.stringify(output));clearTimeout(timer);window.destroy();app.exit(0);
+ const output={ok:true,...result,...editing,...merging,snapshots,upserts,preservedOriginalName:true,preservedExistingPhone:true,filledBlankAddress:true,mergedSpreadsheetDuplicates:true,historyDecisionSaved:true,correctedResidentLinksPreserved:true,screenshot};await fs.writeFile(path.join(root,'result.json'),JSON.stringify(output,null,2));console.log(JSON.stringify(output));clearTimeout(timer);window.destroy();app.exit(0);
  }catch(error){if(window&&!window.isDestroyed()){await fs.writeFile(path.join(root,'failure.png'),(await window.webContents.capturePage()).toPNG());await fs.writeFile(path.join(root,'failure.html'),await window.webContents.executeJavaScript('document.documentElement.outerHTML'));}await fs.writeFile(path.join(root,'result.json'),JSON.stringify({ok:false,error:error.stack}));console.error(error);clearTimeout(timer);window?.destroy();app.exit(1);}
 });

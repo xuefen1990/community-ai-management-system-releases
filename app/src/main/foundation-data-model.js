@@ -4,6 +4,7 @@
 // resident from its visible form: bank accounts and extension history live on
 // the same original record and must survive every basic-information edit.
 const { createHash, randomUUID } = require('node:crypto');
+const identityCard = require('../shared/chinese-identity-card');
 const own = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 const list = (value) => Array.isArray(value) ? value : [];
 const string = (value) => value == null ? '' : String(value);
@@ -122,14 +123,14 @@ function applyPersonFields(record, changes) {
   }
 }
 
-function upsertPeople(database, items, { now = () => new Date(), uuid = randomUUID, checkWrite = () => {} } = {}) {
+function upsertPeople(database, items, { now = () => new Date(), uuid = randomUUID, checkWrite = () => {}, validateIdentity = false } = {}) {
   if (!Array.isArray(items) || items.length > 1000) fail('INVALID_INPUT', '每次最多处理 1000 条人员记录');
   const people = database.personnel ||= [];
   const byId = new Map(people.map((record, index) => [personRecordId(record, index), record]));
   const recordIndexes = new Map(people.map((record, index) => [record, index]));
   const byCard = new Map();
   for (const record of people) {
-    const card = string(field(record, PERSON_FIELDS.idCard)).trim().toUpperCase();
+    const card = identityCard.normalize(field(record, PERSON_FIELDS.idCard));
     if (card) {
       if (!byCard.has(card)) byCard.set(card, []);
       byCard.get(card).push(record);
@@ -139,8 +140,14 @@ function upsertPeople(database, items, { now = () => new Date(), uuid = randomUU
   for (const [index, input] of items.entries()) {
     try {
       const changes = input?.fields;
+      if (input?.importReview || validateIdentity) {
+        const legacy = input?.id && byId.get(string(input.id));
+        const retainingLegacy = !input?.importReview && legacy && input.baseVersion != null && identityCard.normalize(changes?.idCard) === identityCard.normalize(legacy.idCard || legacy.id_card);
+        const validation = identityCard.validate(changes?.idCard);
+        if (!retainingLegacy && !validation.valid) fail('INVALID_ID_CARD', `身份证号${validation.reason}`);
+      }
       if (!changes || !string(changes.name).trim()) fail('INVALID_INPUT', '居民姓名不能为空');
-      const lookupCard = string(input.baseValues?.idCard ?? changes.idCard).trim().toUpperCase();
+      const lookupCard = identityCard.normalize(input.baseValues?.idCard ?? changes.idCard);
       const matches = lookupCard ? byCard.get(lookupCard) || [] : [];
       if (!input.id && matches.length > 1) fail('AMBIGUOUS_PERSON', '存在相同身份证的多条档案，请先处理重复资料');
       const original = input.id ? byId.get(string(input.id)) : matches[0];
@@ -153,18 +160,18 @@ function upsertPeople(database, items, { now = () => new Date(), uuid = randomUU
       }
       if ((input.id || input.baseVersion != null) && !original) fail('NOT_FOUND', '原居民档案不存在，请刷新后重试');
       if (original && input.baseVersion != null) checkVersion(original, input.baseVersion);
-      const newCard = string(changes.idCard).trim().toUpperCase();
-      const originalCard = original && string(field(original, PERSON_FIELDS.idCard)).trim().toUpperCase();
+      const newCard = identityCard.normalize(changes.idCard);
+      const originalCard = original && identityCard.normalize(field(original, PERSON_FIELDS.idCard));
       const retainingOwnCard = original && input.id && input.baseVersion != null && newCard === originalCard;
       if (newCard && !retainingOwnCard && (byCard.get(newCard) || []).some(record => record !== original)) fail('DUPLICATE_ID_CARD', '身份证已存在于其他档案');
       const next = original ? copy(original) : { id: uuid(), created_at: now().toISOString() };
       if (original && !string(next.id).trim()) next.id = string(input.id || personRecordId(original, recordIndexes.get(original)));
-      applyPersonFields(next, changes);
+      applyPersonFields(next, Object.hasOwn(changes,'idCard') ? {...changes,idCard:newCard} : changes);
       if (own(input, 'tags')) next.tags = copy(list(input.tags));
       if (own(input, 'householdNo')) next.household_id = string(input.householdNo);
       if (own(input, 'villageGroupName')) next.village_group = string(input.villageGroupName).trim();
       next.updated_at = now().toISOString();
-      const oldCard = original && string(field(original, PERSON_FIELDS.idCard)).trim().toUpperCase();
+      const oldCard = original && identityCard.normalize(field(original, PERSON_FIELDS.idCard));
       if (original) { Object.assign(original, next); for (const key of SPECIAL_FIELDS) if (!own(next, key)) delete original[key]; result.updatedRows++; }
       else { people.push(next); byId.set(string(next.id), next); result.insertedRows++; }
       const saved = original || next;

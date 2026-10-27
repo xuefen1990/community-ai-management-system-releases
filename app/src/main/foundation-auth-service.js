@@ -78,6 +78,9 @@ class FoundationAuthService {
     const account = status.account || {};
     if ((moduleForPath(path) === 'finance' || path === '/import-backup' && domain === 'finance')
       && (!['main_account', 'unit_admin'].includes(account.role) || String(account.mainAccountId || account.id) !== String(account.id))) fail('FORBIDDEN', '财务仅限主账号使用');
+    if (path === '/people/merge' || path === '/people/merge-preview') {
+      if (!['main_account', 'unit_admin', 'admin', 'platform_admin'].includes(account.role)) fail('FORBIDDEN', '合并居民档案请由主账号操作');
+    }
     if (account.role !== 'member') return;
     if (path === '/finance-opening-balance' && method !== 'GET') fail('FORBIDDEN', '仅主账号可设置期初余额');
     if (path === '/backup') fail('FORBIDDEN', '仅主账号可备份或恢复完整工作区');
