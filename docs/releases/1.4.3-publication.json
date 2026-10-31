@@ -1,0 +1,37 @@
+{
+  "version": "1.4.3",
+  "checkedAt": "2026-10-31T04:48:26.860173+00:00",
+  "releaseUrl": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/tag/v1.4.3",
+  "latest": true,
+  "draft": false,
+  "sourceCommit": "897da29901dc197bb25bb873a12df63454cf5007",
+  "publicDownloads": [
+    {
+      "name": "community-ai-management-system-1.4.3-arm64.dmg",
+      "url": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/download/v1.4.3/community-ai-management-system-1.4.3-arm64.dmg",
+      "status": 200,
+      "bytes": 202270834,
+      "sha256": "ced0a9f80c08ad37ecf55f6360f7d8a954836de7472e0d6c013e52fad06103df"
+    },
+    {
+      "name": "community-ai-management-system-1.4.3-win-x64.exe",
+      "url": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/download/v1.4.3/community-ai-management-system-1.4.3-win-x64.exe",
+      "status": 200,
+      "bytes": 144817942,
+      "sha256": "22626187d980da695a8cc8f5edde6b0f3aa0b1fa929e90e4b37c6a7e79deecf8"
+    },
+    {
+      "name": "SHA256SUMS.txt",
+      "url": "https://github.com/xuefen1990/community-ai-management-system-releases/releases/download/v1.4.3/SHA256SUMS.txt",
+      "status": 200,
+      "bytes": 228,
+      "sha256": "9bc7f2913c6cddd49d6334c59f5516bc8d59244c10787875a171cd09bc17f157"
+    }
+  ],
+  "localInstallerDirectory": "/Users/xf/Desktop/社区AI管理系统/app/release/1.4.3",
+  "deliveryMode": "full installers and GitHub publication",
+  "inAppUpdateRegistered": false,
+  "websiteChanged": false,
+  "windowsDeviceAcceptance": "pending",
+  "liveMapKeyAcceptance": "pending"
+}
