@@ -6,11 +6,12 @@ import {
 } from './vendor/assets/foundation-runtime.mjs';
 import { MobileConnectivityPanel, LanSharingPanel, BackupReferencePanel } from './settings-connectivity-panels.mjs';
 import { SpecialCategoryPanel } from './special-category-panel.mjs';
+import { MapSettingsPanel } from './map-settings-panel.mjs';
 import { AccessManagementPanel } from './settings-access-panel.mjs';
 
 const tabs = [
   ['basic', '基础设置'], ['mobile', '手机互联'], ['lan', '局域网共享与账号授权'],
-  ['backup', '数据与备份'], ['menu', '菜单设置'], ['dictionary', '字典管理'],
+  ['map', '地图与村界'], ['backup', '数据与备份'], ['menu', '菜单设置'], ['dictionary', '字典管理'],
   ['special', "居民专项类别"], ['logs', '操作日志'],
   ['ai-assistant', '智能助理'],
 ];
@@ -116,6 +117,7 @@ export function installSettingsReferenceSync() {
         case 'basic': return h('div', { class: 'foundation-reference-basic' }, [component(UpdateSettingsCard), component(basicPanel, { settings: settings.value, onSaveSettings: save }), component(AppearanceSettingsCard)]);
         case 'mobile': return component(MobileConnectivityPanel, { onOpenAccess: cadre => { selectedCadre.value = cadre; activeTab.value = 'lan'; } });
         case 'lan': return h('div', { class: 'foundation-reference-basic' }, [component(LanSharingPanel), component(AccessManagementPanel, { cadre: selectedCadre.value }), component(lanPanel), component(accountPanel)]);
+        case 'map': return component(MapSettingsPanel, { settings: settings.value });
         case 'backup': return component(BackupReferencePanel);
         case 'menu': return component(menuPanel);
         case 'dictionary': return component(dictionaryPanel);

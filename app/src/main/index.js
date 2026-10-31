@@ -17,6 +17,7 @@ const { AccountWorkspaceManager } = require('./account-workspace-manager');
 const { createMachineId } = require('./machine-id');
 const { LocalModelCatalog } = require('./local-model-catalog');
 const { AiSettingsStore } = require('./ai-settings-store');
+const { MapService } = require('./map-service');
 const { OpenAiCompatibleClient } = require('./openai-compatible-client');
 const { LocalAiRuntime } = require('./local-ai-runtime');
 const { AiRouter } = require('./ai-router');
@@ -134,6 +135,7 @@ app.whenReady().then(async () => {
     .catch(() => {});
   const modelCatalog = new LocalModelCatalog({ userDataPath: app.getPath('userData') });
   const aiSettingsStore = new AiSettingsStore({ userDataPath: app.getPath('userData'), safeStorage });
+  const mapService = new MapService({ userDataPath: app.getPath('userData'), safeStorage, fetchImpl: (...args) => net.fetch(...args) });
   const onlineClient = new OpenAiCompatibleClient();
   const localAiRuntime = new LocalAiRuntime();
   const aiRouter = new AiRouter({ settingsStore: aiSettingsStore, localRuntime: localAiRuntime, onlineClient, authService, confirmCredits: async estimate => { const result = await dialog.showMessageBox(mainWindow, {type:'question',title:'确认 AI 积分消耗',message:`本次操作预计消耗 ${estimate.estimatedCredits} 积分`,detail:`本次最多扣除 ${estimate.approvedMaxCredits} 积分，完成后按实际用量结算。超出上限会停止后续步骤。`,buttons:['取消','确认继续'],defaultId:0,cancelId:0}); return result.response===1; } });
@@ -199,6 +201,7 @@ app.whenReady().then(async () => {
     machineId,
     modelCatalog,
     aiSettingsStore,
+    mapService,
     onlineClient,
     localAiRuntime,
     aiRouter,

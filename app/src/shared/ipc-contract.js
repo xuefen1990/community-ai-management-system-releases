@@ -1,6 +1,10 @@
 'use strict';
 
 const INVOKE_CHANNELS = Object.freeze({
+  getMapServiceConfig: 'get-map-service-config',
+  getVillageMapTile: 'get-village-map-tile',
+  saveMapServiceConfig: 'save-map-service-config',
+  searchVillageMap: 'search-village-map',
   readDb: 'read-db',
   writeDb: 'write-db',
   createDbBackup: 'create-db-backup',

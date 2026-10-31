@@ -26,6 +26,7 @@ function registerCompatibilityHandlers({
   machineId,
   modelCatalog,
   aiSettingsStore,
+  mapService,
   onlineClient,
   localAiRuntime,
   aiRouter,
@@ -346,6 +347,12 @@ function registerCompatibilityHandlers({
       if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
       return modelCatalog.importFile(result.filePaths[0]);
     });
+  }
+  if (mapService) {
+    handle(INVOKE_CHANNELS.getMapServiceConfig, async () => { await requireSignedIn(); const value = await mapService.config(); return { hasApiKey: value.hasApiKey, keyStorage: value.keyStorage }; });
+    handle(INVOKE_CHANNELS.saveMapServiceConfig, async (_event, value) => { await requireUnitAdmin(); const config = await mapService.save(value); return { hasApiKey: config.hasApiKey, keyStorage: config.keyStorage }; });
+    handle(INVOKE_CHANNELS.getVillageMapTile, async (_event, value) => { await requireSignedIn(); return mapService.tile(value); });
+    handle(INVOKE_CHANNELS.searchVillageMap, async (_event, value) => { await requireSignedIn(); return mapService.search(value); });
   }
   if (aiSettingsStore) {
     handle(INVOKE_CHANNELS.getAiSettings, async () => { await requireSignedIn(); return { ...await aiSettingsStore.getPublicSettings(), runtimeMode: authService?.mode || 'cloud' }; });

@@ -36,6 +36,8 @@ if (fs.existsSync(referenceMapPath)) {
   const names = [...new Set(Object.values(require(referenceMapPath).bindings).filter(name => !local.has(name)))];
   referenceExports = `\nexport const reference286Bindings = { ${names.join(', ')} };\n`;
 }
+const statisticsMapPath=path.join(__dirname,'map-statistics-reference-map.json');
+if(fs.existsSync(statisticsMapPath)){const stats=require(statisticsMapPath);const names=[...new Set(Object.entries(stats.bindings).filter(([name])=>!stats.localBindings.includes(name)).map(([,name])=>name))];referenceExports+=`\nexport const reference297StatisticsBindings = { ${names.join(', ')} };\n`;}
 fs.writeFileSync(path.join(target, 'assets/foundation-runtime.mjs'), adaptFoundation(source.replace(mount, '')) + extensionExports + referenceExports);
 fs.writeFileSync(path.join(target, 'provenance.json'), JSON.stringify({ version: '2.6.4', originalBundle: original.path, css: manifest.find(file => /^assets\/index-.*\.css$/u.test(file.path)).path, archiveSha256: crypto.createHash('sha256').update(fs.readFileSync(archive)).digest('hex'), files: manifest }, null, 2)+'\n');
 console.log(JSON.stringify({ imported: files.length, frontendVersion: '2.6.4', output: target }));

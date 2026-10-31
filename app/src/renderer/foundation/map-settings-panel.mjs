@@ -1,0 +1,42 @@
+import {createElementVNode as h,ref,onMounted,onBeforeUnmount,reference297StatisticsBindings as bindings} from './vendor/assets/foundation-runtime.mjs';
+import {mapConfiguration,mapChanges} from './map-statistics-model.mjs';
+import {saveStatisticsSettings,openStatisticsScreen} from './map-statistics-api.mjs';
+const {We:watch}=bindings;
+let libraryPromise;
+const asset=name=>new URL(`vendor/leaflet/${name}`,import.meta.url).href;
+export async function loadMapLibrary(){if(window.L)return window.L;if(!libraryPromise)libraryPromise=new Promise((resolve,reject)=>{const link=document.createElement('link');link.rel='stylesheet';link.href=asset('leaflet.css');document.head.appendChild(link);const script=document.createElement('script');script.src=asset('leaflet.js');script.onload=()=>resolve(window.L);script.onerror=()=>{script.remove();link.remove();libraryPromise=null;reject(Error('本地地图库加载失败，请重新打开页面'));};document.head.appendChild(script);});return libraryPromise;}
+export async function createVillageMap(container,settings,{onChange=()=>{},onTileError=()=>{},readOnly=false}={}){
+ const [L,service]=await Promise.all([loadMapLibrary(),window.api.getMapServiceConfig()]);
+ const configuration=mapConfiguration(settings),map=L.map(container,{center:configuration.center||[35,104.5],zoom:configuration.center?configuration.zoom:4,zoomControl:true});let marker=null,tileError=false,disposed=false;
+ // Attribution remains visible. The renderer receives only image bytes, never the service credential.
+ if(service.hasApiKey){for(const type of ['img_w','cia_w']){
+   const ImageLayer=L.GridLayer.extend({createTile(coords,done){const tile=document.createElement('img');tile.alt='';tile.setAttribute('role','presentation');
+     window.api.getVillageMapTile({type,x:coords.x,y:coords.y,z:coords.z}).then(bytes=>{if(disposed||tile._communityDisposed)return;const url=URL.createObjectURL(new Blob([bytes]));tile.onload=()=>{URL.revokeObjectURL(url);if(!disposed&&!tile._communityDisposed)done(null,tile);};tile.onerror=()=>{URL.revokeObjectURL(url);if(!disposed&&!tile._communityDisposed)done(Error('底图加载失败'),tile);};tile.src=url;}).catch(()=>{if(!disposed&&!tile._communityDisposed)done(Error('底图加载失败'),tile);});return tile;}});
+   const layer=new ImageLayer({maxZoom:18,minZoom:3,tileSize:256,attribution:'天地图'});layer.on('tileunload',event=>{event.tile._communityDisposed=true;if(event.tile.src?.startsWith('blob:'))URL.revokeObjectURL(event.tile.src);});layer.on('tileerror',()=>{if(!tileError&&!disposed){tileError=true;onTileError('底图加载失败，请检查网络、地图密钥或服务额度；仍可保存现有标记。');}});layer.addTo(map);
+ }}
+ L.control.scale({metric:true,imperial:false}).addTo(map);
+ const mark=center=>{if(disposed)return;if(marker)marker.setLatLng(center);else{const icon=L.divIcon({className:'community-village-marker',html:'<span>🚩 村委会</span>',iconSize:[82,30],iconAnchor:[41,30]});marker=L.marker(center,{icon,draggable:!readOnly}).addTo(map);marker.bindTooltip('村委会 / 党群服务中心（可拖动微调）');marker.on('dragend',()=>{const point=marker.getLatLng();configuration.center=[point.lat,point.lng];onChange(configuration.center,map.getZoom());});}configuration.center=center;};
+ if(configuration.center)mark(configuration.center);
+ map.on('zoomend',()=>{configuration.zoom=map.getZoom();if(configuration.center)onChange(configuration.center,configuration.zoom);});
+ const observer=new ResizeObserver(()=>{if(!disposed)map.invalidateSize();});observer.observe(container);
+ return {map,mark,service,configuration,destroy(){disposed=true;observer.disconnect();map.remove();}};
+}
+export const MapSettingsPanel={props:['settings'],setup(props){
+ const container=ref(null),center=ref(null),zoom=ref(15),search=ref(''),apiKey=ref(''),hasKey=ref(false),keyStorage=ref('none'),marking=ref(false),dirty=ref(false),saving=ref(false),searching=ref(false),message=ref(''),error=ref(''),saveState=ref('');let mapHandle=null,timer=null,disposed=false,sequence=0,saveQueue=Promise.resolve();
+ const notifyChange=(c,z)=>{center.value=c;zoom.value=z;dirty.value=true;sequence++;saveState.value='已修改，4秒后自动保存';clearTimeout(timer);timer=setTimeout(()=>void save(true),4000);};
+ const save=async(silent=false)=>{clearTimeout(timer);if(!dirty.value&&!silent){message.value='地图配置已是最新';return;}if(!center.value)return;const version=sequence,changes=mapChanges(center.value,zoom.value);saving.value=true;error.value='';saveState.value='正在保存…';const work=saveQueue.catch(()=>{}).then(()=>saveStatisticsSettings(changes));saveQueue=work;try{await work;if(version===sequence){dirty.value=false;saveState.value='已保存';}if(!silent)message.value='村委会位置与比例尺已保存，并同步至数据大屏。';}catch(cause){error.value=cause.message;saveState.value='保存失败，修改尚未保存';dirty.value=true;}finally{saving.value=false;}};
+ async function initialize(){if(mapHandle){mapHandle.destroy();mapHandle=null;}try{const active=center.value?{...props.settings,...mapChanges(center.value,zoom.value)}:props.settings;const config=mapConfiguration(active);center.value=config.center;zoom.value=config.zoom;search.value ||= config.villageName;const handle=await createVillageMap(container.value,active,{onChange:notifyChange,onTileError:t=>{if(!disposed)error.value=t;}});if(disposed){handle.destroy();return;}mapHandle=handle;hasKey.value=handle.service.hasApiKey;keyStorage.value=handle.service.keyStorage;if(!hasKey.value)message.value='请先配置天地图服务密钥，以加载在线底图。';handle.map.on('click',event=>{if(!marking.value)return;handle.mark([event.latlng.lat,event.latlng.lng]);marking.value=false;notifyChange(handle.configuration.center,handle.map.getZoom());});}catch(cause){if(!disposed)error.value=cause.message;}}
+ async function saveKey(clear=false){error.value='';try{if(dirty.value)await save(true);if(dirty.value)throw Error('请先保存地图位置，再更换服务密钥');const value=await window.api.saveMapServiceConfig({apiKey:apiKey.value,clear});apiKey.value='';hasKey.value=value.hasApiKey;keyStorage.value=value.keyStorage;await initialize();message.value=value.keyStorage==='session'?'系统安全存储不可用：密钥仅在本次运行期间有效。':clear?'已清除本机地图服务密钥。':'地图服务密钥已安全保存至本机。';}catch(cause){error.value=cause.message;}}
+ async function find(){searching.value=true;error.value='';try{const found=await window.api.searchVillageMap(search.value);if(disposed)return;if(!found.length)throw Error('未搜索到匹配位置，可缩放地图后手动标记。');mapHandle.mark(found[0].center);mapHandle.map.setView(found[0].center,15);notifyChange(found[0].center,15);message.value='已定位，请核对并拖动标记微调。';}catch(cause){if(!disposed)error.value=cause.message;}finally{searching.value=false;}}
+ watch(()=>props.settings,()=>{if(!dirty.value&&!saving.value){center.value=null;void initialize();}},{deep:true});
+ onMounted(()=>void initialize());
+ onBeforeUnmount(()=>{disposed=true;clearTimeout(timer);if(dirty.value&&center.value)void save(true);mapHandle?.destroy();});
+ const btn=(text,action,disabled=false)=>h('button',{type:'button',onClick:action,disabled},text);
+ return()=>h('section',{class:'community-map-settings','data-testid':'map-settings-panel'},[
+ h('div',{class:'community-map-key'},[h('label',{},['天地图服务密钥 ',h('input',{type:'password',autocomplete:'new-password',value:apiKey.value,placeholder:hasKey.value?'已配置，留空保留':'输入自己的天地图服务密钥','aria-label':'天地图服务密钥',onInput:e=>apiKey.value=e.target.value})]),btn('保存密钥',()=>saveKey(),saving.value),btn('清除密钥',()=>saveKey(true),!hasKey.value),h('small',{},keyStorage.value==='session'?'仅本次运行有效':'密钥仅保存在本机安全存储，不随业务数据备份。')]),
+ h('div',{class:'community-map-toolbar'},[h('input',{value:search.value,placeholder:'输入村庄或乡镇名称','aria-label':'村名搜索',onInput:e=>search.value=e.target.value,onKeyup:e=>{if(e.key==='Enter'&&!searching.value)void find();}}),btn(searching.value?'定位中…':'智能寻村定位',find,!hasKey.value||searching.value||!mapHandle),btn(marking.value?'取消标记':center.value?'重标村委会':'标记村委会',()=>marking.value=!marking.value,!mapHandle),btn('定位到村委会',()=>mapHandle?.map.setView(center.value,zoom.value),!center.value),btn('查看数据大屏',()=>openStatisticsScreen(),saving.value||dirty.value),btn(saving.value?'保存中…':'保存并同步大屏',()=>save(false),saving.value||!center.value)]),
+ h('div',{class:'community-map-meta'},[h('span',{},`村委会中心：${center.value?center.value.map(v=>v.toFixed(5)).join(', '):'尚未标记'} · 地图比例尺：${zoom.value} 级`),h('span',{'data-testid':'map-save-status'},saveState.value)]),
+ h('p',{class:'community-map-tips'},'输入村名或点击“标记”定位；红旗可拖动微调，修改后自动保存。此页不绘制村界，已有村界资料会保留。'),
+ error.value?h('p',{role:'alert'},error.value):null,message.value?h('p',{role:'status'},message.value):null,
+ h('div',{ref:container,class:'community-map-canvas','data-testid':'settings-map-canvas','aria-label':'村委会地图'})]);
+}};

@@ -1,8 +1,10 @@
+import { installSidebarFooter } from './sidebar-footer.mjs';
 import {installResidentBulkDelete} from './resident-bulk-delete.mjs';
 import {installResidentImportReview} from './resident-import-review.mjs';
 import { app, router, useAppStore, usePersonnelStore, useOverviewStore } from './vendor/assets/foundation-runtime.mjs';
 import { installExtensions, loadScript } from './extensions.mjs';
 import { installStatisticsFinanceChart } from './statistics-finance-chart.mjs';
+import { installMapStatisticsReference } from './map-statistics-reference.mjs';
 import { installPartyDutyReference } from './party-duty-reference.mjs';
 import { installCommunityAccountGate } from './account-gate.mjs';
 import { installCommunitySettings } from './settings-panels.mjs';
@@ -25,6 +27,7 @@ window.communityMayLoadBusiness = async () => !await needsLanSetup(window.api);
 installCommunityAccountGate();
 installStatisticsFinanceChart();
 installPartyDutyReference();
+installMapStatisticsReference();
 shell.villageName = "村居名称";
 shell.villageSubtitle = "村居AI管理系统";
 installExtensions({ router, shell });
@@ -37,6 +40,7 @@ installResidentBulkDelete(usePersonnelStore());
 installResidentImportReview();
 installHouseholdMemberRegistration(loadScript);
 app.mount('#app');
+installSidebarFooter({ document, router, shell });
 // Subscribe before the native startup update check can emit its result.
 loadScript('js/update-ui.js').catch(error => window.showToast(error.message, 'error'));
 

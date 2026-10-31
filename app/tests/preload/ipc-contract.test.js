@@ -6,7 +6,11 @@ const test = require('node:test');
 const { INVOKE_CHANNELS, SEND_CHANNELS, EVENT_CHANNELS } = require('../../src/shared/ipc-contract');
 
 test('compatibility contract retains all original preload API entries', () => {
-  assert.equal(Object.keys(INVOKE_CHANNELS).length, 141);
+  assert.equal(Object.keys(INVOKE_CHANNELS).length, 145);
+  assert.equal(INVOKE_CHANNELS.getVillageMapTile, 'get-village-map-tile');
+  assert.equal(INVOKE_CHANNELS.getMapServiceConfig, 'get-map-service-config');
+  assert.equal(INVOKE_CHANNELS.saveMapServiceConfig, 'save-map-service-config');
+  assert.equal(INVOKE_CHANNELS.searchVillageMap, 'search-village-map');
   assert.equal(INVOKE_CHANNELS.getAccountPreferences, 'get-account-preferences');
   assert.equal(INVOKE_CHANNELS.saveAccountPreferences, 'save-account-preferences');
   assert.equal(INVOKE_CHANNELS.listDisbursementPrinters, 'list-disbursement-printers');

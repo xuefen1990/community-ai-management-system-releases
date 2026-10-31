@@ -1,0 +1,29 @@
+{
+  "version": "1.4.3",
+  "confirmedDate": "2026-10-31",
+  "repository": "https://github.com/xuefen1990/community-ai-management-system-releases",
+  "branch": "codex/macos-installer-update-repair",
+  "delivery": [
+    "Mac ARM64 full DMG",
+    "Windows x64 full EXE",
+    "reviewed source commit",
+    "GitHub release assets"
+  ],
+  "included": [
+    "map and village boundary settings",
+    "six-domain local statistics and data screen",
+    "sidebar four-button footer"
+  ],
+  "excluded": [
+    "custom ledgers",
+    "Android and WeChat changes",
+    "backend Android update changes",
+    "unrelated developer scripts",
+    "user profiles and credentials",
+    "ECS deployment",
+    "production in-app update",
+    "website changes"
+  ],
+  "baselineCommit": "7beb7a758a1fd924b559fb158cdf6e5fb010a6eb",
+  "confirmedBy": "User replied 确认 to the explicit 1.4.3 Mac/Windows three-feature GitHub delivery proposal."
+}
